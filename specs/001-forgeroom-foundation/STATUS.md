@@ -2,10 +2,10 @@
 
 | Field | Current value |
 | --- | --- |
-| Overall | P0-101 monorepo scaffold complete; foundation contracts are ready to implement |
+| Overall | P0-101 complete; P0-102 shared contracts in review |
 | Current phase | Phase 1 — Foundation |
-| Active task | None |
-| Next task | P0-102 is ready; P0-000 remains ready in parallel |
+| Active task | P0-102 (in_review) |
+| Next task | P0-000 remains ready in parallel; P0-103 waits until P0-102 is reviewed and merged |
 | P0 blockers | Exact Composio tools/account, deterministic write, fixture, pure AG-UI baseline, controlled-GenUI/Task/skill demo fixture, storage/deployment choices, and PD-002 before public release |
 | Last updated | 2026-08-25 |
 

@@ -11,6 +11,8 @@
     "build": "esbuild src/main.ts --bundle --platform=node --format=esm --outfile=dist/main.js"
   },
   "dependencies": {
+    "@forgeroom/contracts": "workspace:*",
+    "@forgeroom/domain": "workspace:*",
     "@forgeroom/orchestration": "workspace:*",
     "@hono/node-server": "^1.19.0",
     "hono": "^4.9.6"

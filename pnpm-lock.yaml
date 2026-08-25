@@ -53,6 +53,12 @@ importers:
 
   apps/api:
     dependencies:
+      '@forgeroom/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@forgeroom/domain':
+        specifier: workspace:*
+        version: link:../../packages/domain
       '@forgeroom/orchestration':
         specifier: workspace:*
         version: link:../../packages/orchestration
@@ -81,6 +87,9 @@ importers:
 
   apps/web:
     dependencies:
+      '@forgeroom/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
       '@forgeroom/ui-components':
         specifier: workspace:*
         version: link:../../packages/ui/components

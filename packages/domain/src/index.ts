@@ -1,10 +1,49 @@
-import { PACKAGE_BOUNDARY, type PackageBoundary } from "@forgeroom/contracts";
+export {
+  PACKAGE_BOUNDARY,
+  agentChannelEnvelopeSchema,
+  auditReceiptSchema,
+  channelMessageCommandSchema,
+  channelUIStateV1Schema,
+  coworkerDraftConfirmCommandSchema,
+  coworkerDraftSchema,
+  errorEnvelopeSchema,
+  interpretP0Capability,
+  interpretUiRail,
+  parsePackageBoundary,
+  parseUpstreamAgUiEvent,
+  parseUpstreamRunAgentInput,
+  runActivityCountersSchema,
+  runLifecycleSchema,
+  runSchema,
+  skillBindingSchema,
+  skillDraftSchema,
+  skillVersionSchema,
+  taskGrantSchema,
+  taskRecordV1Schema,
+  taskRevisionSchema,
+  threadUIStateV1Schema,
+  uiInstanceSchema,
+} from "@forgeroom/contracts";
 
-export type { PackageBoundary };
+export type {
+  AgentChannelEnvelope,
+  ChannelUIStateV1,
+  CoworkerDraft,
+  PackageBoundary,
+  Run,
+  SkillVersion,
+  TaskRecordV1,
+  ThreadUIStateV1,
+} from "@forgeroom/contracts";
 
-export const DOMAIN_RELEASE = PACKAGE_BOUNDARY.release;
-
-/** Product schemas for channels, coworkers, runs and records are owned by P0-102. */
-export function assertFoundationBoundary(): PackageBoundary {
-  return PACKAGE_BOUNDARY;
-}
+export { assertFoundationBoundary, DOMAIN_RELEASE } from "./boundary";
+export {
+  canTransitionCoworkerDraft,
+  canTransitionRunLifecycle,
+  canTransitionRunStep,
+  canTransitionTask,
+  COWORKER_DRAFT_TRANSITIONS,
+  RUN_LIFECYCLE_TRANSITIONS,
+  RUN_STEP_TRANSITIONS,
+  TASK_TRANSITIONS,
+} from "./transitions";
