@@ -1,0 +1,16 @@
+packages:
+  - "apps/*"
+  - "packages/contracts"
+  - "packages/domain"
+  - "packages/db"
+  - "packages/orchestration"
+  - "packages/test-fixtures"
+  - "packages/integrations/*"
+  - "packages/ui/*"
+
+catalog:
+  typescript: "~5.9.2"
+  vitest: "^3.2.4"
+  react: "^19.1.1"
+  "@types/react": "^19.1.12"
+  "@types/node": "^22.18.0"

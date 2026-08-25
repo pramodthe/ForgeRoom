@@ -11,6 +11,12 @@
 
 # Generated browser snapshots and local Playwright state.
 .playwright-cli/
+playwright-report/
+test-results/
 
-# Private product specifications — kept local, not published.
-specs/
+# Node / TypeScript build outputs.
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+.data/
