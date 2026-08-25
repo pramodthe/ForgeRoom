@@ -1,0 +1,19 @@
+{
+  "extends": "./tsconfig.base.json",
+  "include": [],
+  "references": [
+    { "path": "./packages/contracts" },
+    { "path": "./packages/domain" },
+    { "path": "./packages/db" },
+    { "path": "./packages/orchestration" },
+    { "path": "./packages/test-fixtures" },
+    { "path": "./packages/integrations/ag-ui" },
+    { "path": "./packages/integrations/trueforge" },
+    { "path": "./packages/integrations/composio" },
+    { "path": "./packages/integrations/artifacts" },
+    { "path": "./packages/ui/components" },
+    { "path": "./apps/api" },
+    { "path": "./apps/worker" },
+    { "path": "./apps/web" }
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "name": "@forgeroom/worker",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/main.ts",
+    "start": "node dist/main.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "build": "esbuild src/main.ts --bundle --platform=node --format=esm --outfile=dist/main.js"
+  },
+  "dependencies": {
+    "@forgeroom/orchestration": "workspace:*"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.9",
+    "tsx": "^4.20.5",
+    "typescript": "catalog:",
+    "vitest": "catalog:",
+    "@types/node": "catalog:"
+  }
+}
