@@ -1,0 +1,16 @@
+# Qodo local review context and generated results.
+.qodo/
+
+# Local credentials and environment-specific configuration.
+.env
+.env.*
+!.env.example
+
+# macOS and editor noise.
+.DS_Store
+
+# Generated browser snapshots and local Playwright state.
+.playwright-cli/
+
+# Private product specifications — kept local, not published.
+specs/
