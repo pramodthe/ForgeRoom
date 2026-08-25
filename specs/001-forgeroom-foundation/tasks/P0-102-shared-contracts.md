@@ -1,7 +1,7 @@
 ---
 id: P0-102
 title: Create shared domain and API contracts
-status: blocked
+status: ready
 owner: unassigned
 depends_on: [P0-101]
 requirements: [CH-004, RUN-006, AG-010, TR-001, SK-001, AGUI-003, AGUI-004, GUI-002, GUI-011, GUI-014]

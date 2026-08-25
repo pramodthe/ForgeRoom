@@ -2,10 +2,10 @@
 
 | Field | Current value |
 | --- | --- |
-| Overall | 0.1 monorepo scaffold remediated; P0-101 awaiting hosted CI review evidence |
-| Current phase | Phase 1 — Foundation (scaffold in review after local verification) |
-| Active task | P0-101 (in_review) |
-| Next task | P0-000 remains ready in parallel; P0-102 unblocks after P0-101 is done |
+| Overall | P0-101 monorepo scaffold complete; foundation contracts are ready to implement |
+| Current phase | Phase 1 — Foundation |
+| Active task | None |
+| Next task | P0-102 is ready; P0-000 remains ready in parallel |
 | P0 blockers | Exact Composio tools/account, deterministic write, fixture, pure AG-UI baseline, controlled-GenUI/Task/skill demo fixture, storage/deployment choices, and PD-002 before public release |
 | Last updated | 2026-08-25 |
 
@@ -37,6 +37,7 @@ Record provider/demo candidates in `demo.md` through P0-000; P0-210 freezes exac
 
 ## Recently completed
 
+- P0-101 scaffold accepted after clean-clone verification and green GitHub CI.
 - Split canonical specifications created.
 - Product, technical, UX, and security reviews incorporated.
 - AG-UI northbound protocol, shared state, interrupt and durable replay contracts added.

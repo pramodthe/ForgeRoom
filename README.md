@@ -2,7 +2,7 @@
 
 ForgeRoom is an open-source workspace where humans and persistent AI coworkers collaborate in channels, use connected tools, create interactive UI and artifacts, and pause for human approval before consequential actions.
 
-> Status: 0.1 monorepo scaffold is in review. Product behavior is specified; most runtime features are not implemented yet.
+> Status: the 0.1 monorepo scaffold is complete. Shared domain and API contracts are next; most runtime features are not implemented yet.
 
 ## Requirements
 
