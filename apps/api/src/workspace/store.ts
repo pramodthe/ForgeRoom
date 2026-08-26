@@ -153,6 +153,9 @@ export type CoworkerMutationResult =
       actualStatus?: CoworkerStatus;
     };
 
+export type CoworkerUpdateResult =
+  CoworkerMutationResult | { ok: false; reason: "channel_archived"; channelId: string };
+
 export type WorkspaceCatalogStore = {
   getChannel(id: string): Promise<ChannelRecord | null>;
   listChannels(workspaceId: string): Promise<ChannelRecord[]>;
@@ -183,8 +186,8 @@ export type WorkspaceCatalogStore = {
   insertCoworker(coworker: CoworkerRecord, version: AgentVersionRecord): Promise<void>;
   updateCoworker(coworker: CoworkerRecord, version?: AgentVersionRecord): Promise<void>;
   /**
-   * Atomically locks the profile, requires expected revision+active status,
-   * then applies memberships/grants/profile/version.
+   * Atomically locks affected channels in deterministic order, rejects archived channels,
+   * then locks the profile, requires expected revision+active status, and applies the update.
    */
   commitCoworkerUpdate(input: {
     coworker: CoworkerRecord;
@@ -194,7 +197,7 @@ export type WorkspaceCatalogStore = {
     revokeGrantsAt: string;
     expectedConfigRevision: number;
     expectedStatus: "active";
-  }): Promise<CoworkerMutationResult>;
+  }): Promise<CoworkerUpdateResult>;
   /**
    * Atomically locks the profile, requires expected revision, then disables,
    * revokes grants, and removes every active coworker membership under that lock.
@@ -409,6 +412,18 @@ export function createMemoryWorkspaceStore(): WorkspaceCatalogStore {
       }
     },
     async commitCoworkerUpdate(input) {
+      const affectedChannelIds = [
+        ...new Set(input.memberships.map((membership) => membership.channelId)),
+      ].sort();
+      for (const channelId of affectedChannelIds) {
+        const channel = channels.get(channelId);
+        if (!channel || channel.workspaceId !== input.coworker.workspaceId) {
+          return { ok: false, reason: "conflict" };
+        }
+        if (channel.status === "archived") {
+          return { ok: false, reason: "channel_archived", channelId };
+        }
+      }
       const current = coworkers.get(input.coworker.id);
       if (!current) {
         return { ok: false, reason: "not_found" };

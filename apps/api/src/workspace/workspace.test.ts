@@ -11,7 +11,7 @@ import { createApiApp } from "../server";
 import { createAuthService } from "../auth/service";
 import { createMemoryAuthStore } from "../auth/store";
 import { createPostgresAuthStore } from "../auth/postgres-store";
-import { createMemoryWorkspaceStore } from "./store";
+import { createMemoryWorkspaceStore, type WorkspaceCatalogStore } from "./store";
 import { createPostgresWorkspaceStore } from "./postgres-store";
 import { createWorkspaceService, IDEMPOTENCY_CLAIM_LEASE_MS } from "./service";
 
@@ -23,9 +23,12 @@ function withoutRequestId(body: unknown): Record<string, unknown> {
   return rest;
 }
 
-async function createTestApp(options?: { now?: () => Date }) {
+async function createTestApp(options?: {
+  now?: () => Date;
+  workspaceStore?: WorkspaceCatalogStore;
+}) {
   const authStore = createMemoryAuthStore();
-  const workspaceStore = createMemoryWorkspaceStore();
+  const workspaceStore = options?.workspaceStore ?? createMemoryWorkspaceStore();
   const env = loadApiEnv({
     NODE_ENV: "test",
     APP_ORIGIN: "http://localhost:5173",
@@ -484,6 +487,71 @@ describe("channel and coworker API", () => {
     expect(errorEnvelopeSchema.parse(await dropped.json()).error.details).toMatchObject({
       reason: "channel_archived",
     });
+  });
+
+  it("rejects coworker membership when a channel archives after validation", async () => {
+    const baseStore = createMemoryWorkspaceStore();
+    let channelIdToArchive: string | null = null;
+    const racingStore: WorkspaceCatalogStore = {
+      ...baseStore,
+      async commitCoworkerUpdate(input) {
+        if (channelIdToArchive) {
+          await baseStore.patchChannel(channelIdToArchive, {
+            status: "archived",
+            updatedAt: new Date().toISOString(),
+          });
+        }
+        return baseStore.commitCoworkerUpdate(input);
+      },
+    };
+    const { app, env, workspace } = await createTestApp({ workspaceStore: racingStore });
+    const { session, cookie } = await login(app, env);
+    const channelRes = await app.request(`/api/workspaces/${env.workspaceId}/channels`, {
+      method: "POST",
+      headers: mutationHeaders(env, cookie, session.csrf_token),
+      body: JSON.stringify({
+        schemaVersion: 1,
+        name: "Archive race",
+        mission_brief: "Archive during coworker update",
+        idempotency_key: "idem_archive_race_channel",
+      }),
+    });
+    const channel = channelSchema.parse(withoutRequestId(await channelRes.json()));
+    const coworker = await workspace.seedCoworker({
+      workspaceId: env.workspaceId,
+      createdBy: env.ownerUserId,
+      handle: "archive-racer",
+      name: "Archive Racer",
+      title: "Racer",
+    });
+    channelIdToArchive = channel.id;
+
+    const updated = await app.request(`/api/coworkers/${coworker.id}`, {
+      method: "PATCH",
+      headers: mutationHeaders(env, cookie, session.csrf_token),
+      body: JSON.stringify({
+        name: "Archive Racer",
+        handle: "archive-racer",
+        title: "Racer",
+        standing_instructions: "",
+        model_preset: "default",
+        native_subagents_enabled: false,
+        channel_ids: [channel.id],
+        budget: { max_turn_tokens: 1000, max_tool_calls: 5 },
+        task_record_grants: [],
+        tool_grants: [],
+        skill_version_ids: [],
+        component_version_ids: [],
+      }),
+    });
+
+    expect(updated.status).toBe(409);
+    expect(errorEnvelopeSchema.parse(await updated.json()).error.details).toMatchObject({
+      channel_id: channel.id,
+      reason: "channel_archived",
+    });
+    expect(await baseStore.getParticipant(channel.id, "coworker", coworker.id)).toBeNull();
+    expect((await baseStore.getCoworker(coworker.id))?.editableConfigJson.channel_ids).toEqual([]);
   });
 
   it("rejects cross-channel parent_message_id and preserves next_sequence on rename", async () => {
@@ -1233,7 +1301,9 @@ describe("channel and coworker API", () => {
     expect(resurrect.ok).toBe(false);
     if (!resurrect.ok) {
       expect(resurrect.reason).toBe("conflict");
-      expect(resurrect.actualStatus).toBe("disabled");
+      if (resurrect.reason === "conflict") {
+        expect(resurrect.actualStatus).toBe("disabled");
+      }
     }
     const after = await workspaceStore.getCoworker(coworker.id);
     expect(after?.status).toBe("disabled");
@@ -1334,6 +1404,93 @@ describe("channel and coworker postgres integration", () => {
         }),
       });
       expect(blocked.status).toBe(409);
+    });
+  }, 60_000);
+
+  it("rechecks channel archive state inside the coworker update transaction", async () => {
+    await withMigratedDatabase(async (sql) => {
+      const env = loadApiEnv({
+        NODE_ENV: "test",
+        APP_ORIGIN: "http://localhost:5173",
+        OWNER_EMAIL: "owner@example.test",
+        OWNER_PASSWORD: PASSWORD,
+        OWNER_USER_ID: "user_owner",
+        OWNER_DISPLAY_NAME: "Owner",
+        WORKSPACE_ID: "workspace_1",
+        AUTH_STORE: "postgres",
+      });
+      const auth = createAuthService({ env, store: createPostgresAuthStore(sql) });
+      const baseStore = createPostgresWorkspaceStore(sql);
+      let channelIdToArchive: string | null = null;
+      const racingStore: WorkspaceCatalogStore = {
+        ...baseStore,
+        async commitCoworkerUpdate(input) {
+          if (channelIdToArchive) {
+            await baseStore.patchChannel(channelIdToArchive, {
+              status: "archived",
+              updatedAt: new Date().toISOString(),
+            });
+          }
+          return baseStore.commitCoworkerUpdate(input);
+        },
+      };
+      const workspace = createWorkspaceService({ store: racingStore });
+      await auth.seedOwner();
+      const app = createApiApp({ env, auth, workspace });
+      const { session, cookie } = await login(app, env);
+
+      const created = await app.request(`/api/workspaces/${env.workspaceId}/channels`, {
+        method: "POST",
+        headers: mutationHeaders(env, cookie, session.csrf_token),
+        body: JSON.stringify({
+          schemaVersion: 1,
+          name: "DB archive race",
+          mission_brief: "Archive during commit",
+          idempotency_key: "idem_db_archive_race_channel",
+        }),
+      });
+      const channel = channelSchema.parse(withoutRequestId(await created.json()));
+      const coworker = await workspace.seedCoworker({
+        workspaceId: env.workspaceId,
+        createdBy: env.ownerUserId,
+        handle: "db-archive-racer",
+        name: "DB Archive Racer",
+        title: "Racer",
+      });
+      channelIdToArchive = channel.id;
+
+      const updated = await app.request(`/api/coworkers/${coworker.id}`, {
+        method: "PATCH",
+        headers: mutationHeaders(env, cookie, session.csrf_token),
+        body: JSON.stringify({
+          name: "DB Archive Racer",
+          handle: "db-archive-racer",
+          title: "Racer",
+          standing_instructions: "",
+          model_preset: "default",
+          native_subagents_enabled: false,
+          channel_ids: [channel.id],
+          budget: { max_turn_tokens: 1000, max_tool_calls: 5 },
+          task_record_grants: [],
+          tool_grants: [],
+          skill_version_ids: [],
+          component_version_ids: [],
+        }),
+      });
+
+      expect(updated.status).toBe(409);
+      expect(errorEnvelopeSchema.parse(await updated.json()).error.details).toMatchObject({
+        channel_id: channel.id,
+        reason: "channel_archived",
+      });
+      const participants = await sql<{ participant_id: string }[]>`
+        SELECT participant_id
+        FROM channel_participants
+        WHERE channel_id = ${channel.id}
+          AND participant_type = 'coworker'
+          AND removed_at IS NULL
+      `;
+      expect(participants).toEqual([]);
     });
   }, 60_000);
 });

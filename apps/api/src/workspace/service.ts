@@ -1091,6 +1091,16 @@ export function createWorkspaceService(options?: {
         expectedStatus: "active",
       });
       if (!committed.ok) {
+        if (committed.reason === "channel_archived") {
+          return {
+            ok: false,
+            error: {
+              code: "conflict",
+              message: "Archived channels cannot change participants.",
+              details: { channel_id: committed.channelId, reason: "channel_archived" },
+            },
+          };
+        }
         if (committed.reason === "not_found") {
           return { ok: false, error: { code: "not_found", message: "Coworker not found." } };
         }

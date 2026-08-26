@@ -40,7 +40,7 @@ Run contract, authorization, validation and database integration tests for every
 ## Completion evidence
 
 - Files changed: `apps/api/src/workspace/*`, `apps/api/src/http-guards.ts`, `apps/api/src/server.ts`, `apps/api/src/index.ts`, `packages/contracts` type exports, `packages/db/package.json` test-harness export, task/STATUS index.
-- Commands: `pnpm --filter @forgeroom/api typecheck` (pass); `pnpm --filter @forgeroom/api test` (23 pass, including postgres integration); `pnpm --filter @forgeroom/contracts typecheck` (pass).
+- Commands: `pnpm --filter @forgeroom/api typecheck` (pass); `pnpm --filter @forgeroom/api test` (38 pass, including 22 workspace tests and postgres integration); `pnpm --filter @forgeroom/contracts typecheck` (pass).
 - Qodo pre-PR review: fixed atomic channel+owner create, row-locked message sequence allocation, and claim-first idempotency receipts.
 - Endpoint tests: `src/workspace/workspace.test.ts` covers channel CRUD, coworker list/get/edit/disable, absent create (404), coordinator rejection, grant isolation, archive blocks, CSRF/unauth, cross-workspace forbid, and migrated-postgres persistence.
 - Known limitations: capability-affecting coworker updates return empty `session_rotations` / `stale_proposal_ids` until P0-208; tool grants are stored on coworker editable config (connector-bound `tool_grants` rows remain later tasks); message POST persists channel event/message only (no turn dispatch).
@@ -53,7 +53,7 @@ Outcome: Authenticated channel and coworker HTTP APIs with P0-104 guards, archiv
 Requirements: CH-001, CH-002, CH-010, AG-007, AG-008
 Changed: apps/api workspace routes/service/stores, contracts type exports, db test-harness export, task status
 Verified: pnpm --filter @forgeroom/api typecheck && pnpm --filter @forgeroom/api test
-Evidence: apps/api/src/workspace/workspace.test.ts (23 API tests green)
+Evidence: apps/api/src/workspace/workspace.test.ts (22 workspace API tests green; 38 total API package tests)
 Open risks: session rotation / connector tool grant materialization deferred to later P0 tasks
 Next unblocked tasks: P0-107 (event log/SSE), P0-205 (depends on P0-106), P0-213 still blocked on P0-208
 ```

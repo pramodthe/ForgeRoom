@@ -18,6 +18,7 @@ import type {
   CoworkerEditableConfig,
   CoworkerMutationResult,
   CoworkerRecord,
+  CoworkerUpdateResult,
   MembershipWriteResult,
   MessageRecord,
   ParticipantRecord,
@@ -460,6 +461,29 @@ export function createPostgresWorkspaceStore(sql: SqlClient): WorkspaceCatalogSt
     },
     async commitCoworkerUpdate(input) {
       return sql.begin(async (tx) => {
+        const affectedChannelIds = [
+          ...new Set(input.memberships.map((membership) => membership.channelId)),
+        ].sort();
+        for (const channelId of affectedChannelIds) {
+          const channelRows = await tx<{ workspace_id: string; status: string }[]>`
+            SELECT workspace_id, status
+            FROM channels
+            WHERE id = ${channelId}
+            FOR UPDATE
+          `;
+          const channel = channelRows[0];
+          if (!channel || channel.workspace_id !== input.coworker.workspaceId) {
+            return { ok: false, reason: "conflict" } satisfies CoworkerUpdateResult;
+          }
+          if (channel.status === "archived") {
+            return {
+              ok: false,
+              reason: "channel_archived",
+              channelId,
+            } satisfies CoworkerUpdateResult;
+          }
+        }
+
         const locked = await tx<{ config_revision: number; status: string }[]>`
           SELECT config_revision, status
           FROM agent_profiles
@@ -468,7 +492,7 @@ export function createPostgresWorkspaceStore(sql: SqlClient): WorkspaceCatalogSt
         `;
         const current = locked[0];
         if (!current) {
-          return { ok: false, reason: "not_found" } satisfies CoworkerMutationResult;
+          return { ok: false, reason: "not_found" } satisfies CoworkerUpdateResult;
         }
         if (
           current.config_revision !== input.expectedConfigRevision ||
@@ -479,7 +503,7 @@ export function createPostgresWorkspaceStore(sql: SqlClient): WorkspaceCatalogSt
             reason: "conflict",
             actualRevision: current.config_revision,
             actualStatus: current.status as CoworkerRecord["status"],
-          } satisfies CoworkerMutationResult;
+          } satisfies CoworkerUpdateResult;
         }
 
         for (const membership of input.memberships) {
@@ -530,7 +554,7 @@ export function createPostgresWorkspaceStore(sql: SqlClient): WorkspaceCatalogSt
             input.coworker.id,
           ],
         );
-        return { ok: true } satisfies CoworkerMutationResult;
+        return { ok: true } satisfies CoworkerUpdateResult;
       });
     },
     async disableCoworkerCleanup(input) {
