@@ -1,13 +1,21 @@
 import { describe, expect, it } from "vitest";
 import {
   AG_UI_PACKAGE_PROFILE,
+  SELECTED_AG_UI_VERSIONS,
+  assertAgUiStartupProfile,
+  isCopilotKitGatewayEnabled,
   isOpenGeneratedUiRuntimeLoaded,
   rejectUnsupportedCapability,
 } from "./index";
 
 describe("AG-UI P0 boundary", () => {
-  it("does not select a package graph before P0-210", () => {
-    expect(AG_UI_PACKAGE_PROFILE).toBe("unset-pending-P0-210");
+  it("selects the pure AG-UI 0.0.57 profile", () => {
+    expect(AG_UI_PACKAGE_PROFILE).toBe("pure_ag_ui_0_0_57");
+    expect(SELECTED_AG_UI_VERSIONS).toEqual({
+      "@ag-ui/core": "0.0.57",
+      "@ag-ui/client": "0.0.57",
+    });
+    expect(isCopilotKitGatewayEnabled()).toBe(false);
     expect(isOpenGeneratedUiRuntimeLoaded()).toBe(false);
   });
 
@@ -18,5 +26,10 @@ describe("AG-UI P0 boundary", () => {
       reason: "unsupported_in_p0",
     });
     expect(rejectUnsupportedCapability("generate_open_ui").ok).toBe(false);
+    expect(rejectUnsupportedCapability("copilotkit_gateway").ok).toBe(false);
+  });
+
+  it("passes startup profile checks against selected fixtures and lockfile", () => {
+    expect(() => assertAgUiStartupProfile()).not.toThrow();
   });
 });

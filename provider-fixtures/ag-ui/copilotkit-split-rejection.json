@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 1,
+  "status": "rejected",
+  "ownerTask": "P0-210",
+  "selectionOwner": "P0-000",
+  "negativeControl": {
+    "package": "@copilotkit/runtime",
+    "version": "1.69.0",
+    "status": "rejected",
+    "policy": "reproduce_and_reject"
+  },
+  "split": {
+    "directRequest": {
+      "package": "@ag-ui/client",
+      "version": "0.0.57"
+    },
+    "transitiveRequest": {
+      "path": "@copilotkit/runtime@1.69.0 → @ag-ui/mcp-middleware@0.0.1 → @ag-ui/client@0.0.54",
+      "package": "@ag-ui/client",
+      "version": "0.0.54"
+    },
+    "problem": "CopilotKit runtime 1.69.0 resolves two incompatible AG-UI client lines in one graph"
+  },
+  "decision": {
+    "pureBaseline": {
+      "profile": "pure_ag_ui_0_0_57",
+      "packages": {
+        "@ag-ui/core": "0.0.57",
+        "@ag-ui/client": "0.0.57"
+      },
+      "status": "selected"
+    },
+    "copilotKitGateway": {
+      "route": "/api/copilotkit",
+      "enabled": false,
+      "whenDisabled": "404",
+      "enableOnlyWhen": "full transitive closure resolves exactly the selected stable AG-UI line without overrides"
+    }
+  },
+  "evidence": {
+    "recordedBy": "P0-210",
+    "method": "registry_metadata_and_lockfile_negative_control",
+    "doesNotBlockPureBaseline": true
+  }
+}

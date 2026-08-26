@@ -1,4 +1,5 @@
 import { serve } from "@hono/node-server";
+import { assertAgUiStartupProfile } from "@forgeroom/ag-ui";
 import { startWorker } from "@forgeroom/orchestration";
 import { migrate } from "@forgeroom/db";
 import { loadApiEnv } from "./env";
@@ -31,6 +32,7 @@ export async function startApiProcess(env: NodeJS.ProcessEnv = process.env) {
       await migrate(sql);
     }
     await auth.seedOwner();
+    assertAgUiStartupProfile();
 
     server = serve({
       fetch: app.fetch,

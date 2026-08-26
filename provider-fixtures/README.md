@@ -10,8 +10,18 @@ Safe, reproducible contract inputs for the ForgeRoom 0.1 demo. Credentials never
 | `candidate`          | Preferred value pending live probe or P0-210 selection        |
 | `blocked-on-secrets` | Requires human-provisioned credentials / live provider access |
 | `verified`           | Live probe succeeded and evidence is attached to P0-000       |
+| `selected`           | Chosen by P0-210; lockfile and harness tests must match       |
 
 Do not invent `verified` rows. Promote a `candidate` only after a redacted probe.
+
+## Selected AG-UI versions (P0-210)
+
+| Package         | Version | Status   |
+| --------------- | ------- | -------- |
+| `@ag-ui/core`   | 0.0.57  | selected |
+| `@ag-ui/client` | 0.0.57  | selected |
+
+CopilotKit gateway (`@copilotkit/runtime@1.69.0`) remains **rejected** due to the documented AG-UI 0.0.57 vs 0.0.54 split; `/api/copilotkit` is disabled (404) until a coherent graph passes parity fixtures.
 
 ## Layout
 
