@@ -19,6 +19,7 @@ import type {
 import { channelPinSchema, channelSchema, coworkerProfileSchema } from "@forgeroom/contracts";
 import {
   buildChannelContextEnvelope,
+  MAX_RECENT_DELTAS,
   nextDeliveryCursor,
   type TurnCreationStatus,
 } from "@forgeroom/orchestration";
@@ -30,6 +31,8 @@ import { DEFAULT_EVENT_PAGE_SIZE, envelopeFromStoredEvent } from "./event-read";
 import {
   createMemoryWorkspaceStore,
   emptyEditableConfig,
+  encodePinReceiptResultId,
+  parsePinReceiptResultId,
   type AgentVersionRecord,
   type ChannelEventInsert,
   type ChannelRecord,
@@ -422,6 +425,8 @@ export function createWorkspaceService(options?: {
     reload: (resultId: string) => Promise<T | null>;
     /** Optional: reject when an existing claim is bound to a different target. */
     assertReceipt?: (receipt: { resultId: string }) => WorkspaceServiceError | null;
+    /** Optional: rewrite durable result_id after success (e.g. pin id + event sequence). */
+    finalizeResultId?: (value: T) => string | null;
     run: () => Promise<WorkspaceServiceResult<T>>;
   }): Promise<WorkspaceServiceResult<T>> {
     const leaseOwner = randomOpaqueId("lease");
@@ -518,6 +523,18 @@ export function createWorkspaceService(options?: {
           leaseOwner,
         );
         return result;
+      }
+      if (input.finalizeResultId) {
+        const nextResultId = input.finalizeResultId(result.value);
+        if (nextResultId) {
+          await store.rebindCommandReceiptResultId(
+            input.workspaceId,
+            input.commandKind,
+            input.idempotencyKey,
+            leaseOwner,
+            nextResultId,
+          );
+        }
       }
       return result;
     } catch (error) {
@@ -1273,25 +1290,19 @@ export function createWorkspaceService(options?: {
         commandKind: "channel.pin.create",
         idempotencyKey: command.idempotency_key,
         resultId: pinId,
-        assertReceipt: (receipt) => {
-          if (receipt.resultId !== pinId) {
-            return {
-              code: "conflict",
-              message: "Idempotency key is bound to a different pin.",
-              details: { pin_id: pinId, bound_pin_id: receipt.resultId },
-            };
-          }
-          return null;
-        },
-        reload: async (id) => {
-          const row = await store.getPin(id);
+        reload: async (resultId) => {
+          const parsed = parsePinReceiptResultId(resultId);
+          const row = await store.getPin(parsed.pinId);
           if (!row || row.removedAt !== null) {
             return null;
           }
           const pin = await toChannelPin(store, row);
-          // Sequence is not stored on the receipt yet; -1 signals replay without a cursor claim.
-          return { pin, sequence: -1 };
+          if (parsed.sequence === null) {
+            return null;
+          }
+          return { pin, sequence: parsed.sequence };
         },
+        finalizeResultId: (value) => encodePinReceiptResultId(value.pin.id, value.sequence),
         run: async () => {
           const duplicate = await store.findActivePinBySource({
             channelId,
@@ -1390,32 +1401,43 @@ export function createWorkspaceService(options?: {
         idempotencyKey: command.idempotency_key,
         resultId: pinId,
         assertReceipt: (receipt) => {
-          if (receipt.resultId !== pinId) {
+          const boundPinId = parsePinReceiptResultId(receipt.resultId).pinId;
+          if (boundPinId !== pinId) {
             return {
               code: "conflict",
               message: "Idempotency key is bound to a different pin.",
-              details: { pin_id: pinId, bound_pin_id: receipt.resultId },
+              details: { pin_id: pinId, bound_pin_id: boundPinId },
             };
           }
           return null;
         },
-        reload: async (id) => {
-          const row = await store.getPin(id);
+        reload: async (resultId) => {
+          const parsed = parsePinReceiptResultId(resultId);
+          if (parsed.pinId !== pinId || parsed.sequence === null) {
+            return null;
+          }
+          const row = await store.getPin(parsed.pinId);
           if (!row || row.channelId !== channelId || row.removedAt === null) {
             return null;
           }
-          // Sequence is not stored on the receipt yet; -1 signals replay without a cursor claim.
-          return { pin: await toChannelPin(store, row), sequence: -1 };
+          return { pin: await toChannelPin(store, row), sequence: parsed.sequence };
         },
+        finalizeResultId: (value) =>
+          value.sequence >= 0 ? encodePinReceiptResultId(value.pin.id, value.sequence) : null,
         run: async () => {
           const existing = await store.getPin(pinId);
           if (!existing || existing.channelId !== channelId) {
             return { ok: false, error: { code: "not_found", message: "Pin not found." } };
           }
           if (existing.removedAt !== null) {
+            // Already removed outside this receipt — no durable sequence to claim.
             return {
-              ok: true,
-              value: { pin: await toChannelPin(store, existing), sequence: -1 },
+              ok: false,
+              error: {
+                code: "conflict",
+                message: "Pin is already removed; use the original idempotency key to replay.",
+                details: { pin_id: pinId, reason: "pin_already_removed" },
+              },
             };
           }
           let sourceMessageId: string | undefined;
@@ -1444,13 +1466,14 @@ export function createWorkspaceService(options?: {
               return { ok: false, error: { code: "not_found", message: "Pin not found." } };
             }
             if (error instanceof Error && error.message.includes("pin_already_removed")) {
-              const latest = await store.getPin(pinId);
-              if (latest) {
-                return {
-                  ok: true,
-                  value: { pin: await toChannelPin(store, latest), sequence: -1 },
-                };
-              }
+              return {
+                ok: false,
+                error: {
+                  code: "conflict",
+                  message: "Pin is already removed; use the original idempotency key to replay.",
+                  details: { pin_id: pinId, reason: "pin_already_removed" },
+                },
+              };
             }
             if (error instanceof ChannelEventPersistenceError) {
               return {
@@ -1536,7 +1559,9 @@ export function createWorkspaceService(options?: {
       const deltaPage = await store.listEventsAfter(
         input.channelId,
         agentSession.lastDeliveredChannelSequence,
-        { limit: 64 },
+        // Fetch exactly the contiguous oldest page the envelope will retain — never a larger
+        // window that could be truncated mid-page before the cursor advances.
+        { limit: MAX_RECENT_DELTAS },
       );
       const recent_deltas = deltaPage.events.map((row) => ({
         sequence: row.sequence,

@@ -234,6 +234,28 @@ export function decodeReceiptResultId(stored: string): { resultId: string; lease
   };
 }
 
+/** Persist pin id + channel event sequence inside command receipt result_id for replay. */
+export const PIN_RECEIPT_SEQ_SEP = "@seq:";
+
+export function encodePinReceiptResultId(pinId: string, sequence: number): string {
+  return `${pinId}${PIN_RECEIPT_SEQ_SEP}${sequence}`;
+}
+
+export function parsePinReceiptResultId(resultId: string): {
+  pinId: string;
+  sequence: number | null;
+} {
+  const index = resultId.lastIndexOf(PIN_RECEIPT_SEQ_SEP);
+  if (index === -1) {
+    return { pinId: resultId, sequence: null };
+  }
+  const raw = resultId.slice(index + PIN_RECEIPT_SEQ_SEP.length);
+  if (!/^(0|[1-9][0-9]*)$/.test(raw)) {
+    return { pinId: resultId, sequence: null };
+  }
+  return { pinId: resultId.slice(0, index), sequence: Number(raw) };
+}
+
 export type MembershipWriteResult =
   | { ok: true; coworker: CoworkerRecord; channel: ChannelRecord; event?: AppendChannelEventResult }
   | { ok: false; reason: "not_found" | "channel_archived" | "coworker_inactive" };
@@ -380,6 +402,17 @@ export type WorkspaceCatalogStore = {
     idempotencyKey: string,
     leaseOwner: string,
   ): Promise<void>;
+  /**
+   * After a successful mutation, rebind the durable result_id while the lease owner still holds
+   * the claim (used to persist pin event sequence for idempotent replay).
+   */
+  rebindCommandReceiptResultId(
+    workspaceId: string,
+    commandKind: string,
+    idempotencyKey: string,
+    leaseOwner: string,
+    nextResultId: string,
+  ): Promise<boolean>;
 
   /**
    * Insert channel + owner + channel.created event (sequence 0) atomically.
@@ -826,14 +859,13 @@ export function createMemoryWorkspaceStore(): WorkspaceCatalogStore {
       if (!existing) {
         return null;
       }
-      // Monotonic: never move the cursor backwards under concurrent writers.
-      if (nextSequence < existing.lastDeliveredChannelSequence) {
-        return structuredClone(existing);
-      }
+      // Monotonic GREATEST semantics (mirrors postgres).
+      const nextValue = Math.max(existing.lastDeliveredChannelSequence, nextSequence);
       const next = {
         ...existing,
-        lastDeliveredChannelSequence: nextSequence,
-        updatedAt,
+        lastDeliveredChannelSequence: nextValue,
+        updatedAt:
+          nextValue > existing.lastDeliveredChannelSequence ? updatedAt : existing.updatedAt,
       };
       agentSessions.set(sessionId, next);
       return structuredClone(next);
@@ -895,6 +927,21 @@ export function createMemoryWorkspaceStore(): WorkspaceCatalogStore {
         return;
       }
       receipts.delete(key);
+    },
+    async rebindCommandReceiptResultId(
+      workspaceId,
+      commandKind,
+      idempotencyKey,
+      leaseOwner,
+      nextResultId,
+    ) {
+      const key = receiptKey(workspaceId, commandKind, idempotencyKey);
+      const existing = receipts.get(key);
+      if (!existing || existing.leaseOwner !== leaseOwner) {
+        return false;
+      }
+      receipts.set(key, { ...existing, resultId: nextResultId });
+      return true;
     },
     async insertChannelWithOwner(channel, owner, createdEvent) {
       return withChannelLock(channel.id, () => {

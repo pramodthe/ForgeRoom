@@ -1071,16 +1071,20 @@ export function createPostgresWorkspaceStore(sql: SqlClient): WorkspaceCatalogSt
         }[]
       >`
         UPDATE channel_agent_sessions
-        SET last_delivered_channel_sequence = ${nextSequence},
-            updated_at = ${updatedAt}
+        SET last_delivered_channel_sequence = GREATEST(
+              last_delivered_channel_sequence,
+              ${nextSequence}
+            ),
+            updated_at = CASE
+              WHEN last_delivered_channel_sequence < ${nextSequence} THEN ${updatedAt}
+              ELSE updated_at
+            END
         WHERE id = ${sessionId}
-          AND last_delivered_channel_sequence <= ${nextSequence}
         RETURNING *
       `;
       const row = rows[0];
       if (!row) {
-        // Missing session, or a concurrent writer already advanced past nextSequence.
-        return this.getChannelAgentSession(sessionId);
+        return null;
       }
       return {
         id: row.id,
@@ -1220,6 +1224,24 @@ export function createPostgresWorkspaceStore(sql: SqlClient): WorkspaceCatalogSt
           AND idempotency_key = ${idempotencyKey}
           AND result_id LIKE ${"%\u001f" + leaseOwner}
       `;
+    },
+    async rebindCommandReceiptResultId(
+      workspaceId,
+      commandKind,
+      idempotencyKey,
+      leaseOwner,
+      nextResultId,
+    ) {
+      const updated = await sql`
+        UPDATE workspace_command_receipts
+        SET result_id = ${encodeReceiptResultId(nextResultId, leaseOwner)}
+        WHERE workspace_id = ${workspaceId}
+          AND command_kind = ${commandKind}
+          AND idempotency_key = ${idempotencyKey}
+          AND result_id LIKE ${"%\u001f" + leaseOwner}
+        RETURNING result_id
+      `;
+      return updated.length > 0;
     },
     async insertChannelWithOwner(channel, owner, createdEvent) {
       return sql.begin(async (tx) => {

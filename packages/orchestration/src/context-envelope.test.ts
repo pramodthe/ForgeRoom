@@ -120,6 +120,22 @@ describe("channel context envelope", () => {
     expect(envelope.last_delivered_channel_sequence).toBe(1);
   });
 
+  it("keeps the oldest contiguous undelivered page, never the newest tail", () => {
+    const input = baseInput();
+    input.last_delivered_channel_sequence = 0;
+    input.recent_deltas = Array.from({ length: 40 }, (_, i) => ({
+      sequence: i + 1,
+      type: "message.created",
+      summary: `delta ${i + 1}`,
+    }));
+    const envelope = buildChannelContextEnvelope(input);
+    expect(envelope.recent_deltas[0]?.sequence).toBe(1);
+    expect(envelope.recent_deltas.map((d) => d.sequence)).toEqual(
+      Array.from({ length: envelope.recent_deltas.length }, (_, i) => i + 1),
+    );
+    expect(envelope.recent_deltas.at(-1)?.sequence).toBeLessThanOrEqual(32);
+  });
+
   it("refuses cross-channel id mismatch", () => {
     const input = baseInput();
     input.channel.expected_channel_id = "channel_other";

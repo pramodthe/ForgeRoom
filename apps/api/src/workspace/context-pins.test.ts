@@ -502,4 +502,181 @@ describe("P0-108 channel context and pins", () => {
     expect(pin.source_artifact_id).toBe("artifact_pin");
     expect(pin.source_message_id).toBeNull();
   });
+
+  it("replays pin create/remove with the real event sequence and rejects cross-pin key reuse", async () => {
+    const { app, env, workspace, workspaceStore } = await createTestApp();
+    const { session, cookie } = await login(app, env);
+    const channel = await createChannel(
+      app,
+      env,
+      cookie,
+      session.csrf_token,
+      "IdemPins",
+      "idem_pin_seq_ch",
+    );
+
+    const msgA = await app.request(`/api/channels/${channel.id}/messages`, {
+      method: "POST",
+      headers: mutationHeaders(env, cookie, session.csrf_token),
+      body: JSON.stringify({
+        body: "A",
+        recipient_handles: [],
+        routing_mode: "direct",
+        parent_message_id: null,
+      }),
+    });
+    const msgB = await app.request(`/api/channels/${channel.id}/messages`, {
+      method: "POST",
+      headers: mutationHeaders(env, cookie, session.csrf_token),
+      body: JSON.stringify({
+        body: "B",
+        recipient_handles: [],
+        routing_mode: "direct",
+        parent_message_id: null,
+      }),
+    });
+    const a = (await msgA.json()) as { message_id: string };
+    const b = (await msgB.json()) as { message_id: string };
+
+    const createBody = {
+      schemaVersion: 1,
+      source_message_id: a.message_id,
+      source_artifact_id: null,
+      label: "A",
+      idempotency_key: "idem_pin_seq_create",
+    };
+    const created = await app.request(`/api/channels/${channel.id}/pins`, {
+      method: "POST",
+      headers: mutationHeaders(env, cookie, session.csrf_token),
+      body: JSON.stringify(createBody),
+    });
+    expect(created.status).toBe(201);
+    const createdPayload = withoutRequestId(await created.json()) as {
+      pin: { id: string };
+      sequence: number;
+    };
+    expect(createdPayload.sequence).toBeGreaterThanOrEqual(0);
+
+    const createReplay = await app.request(`/api/channels/${channel.id}/pins`, {
+      method: "POST",
+      headers: mutationHeaders(env, cookie, session.csrf_token),
+      body: JSON.stringify(createBody),
+    });
+    expect(createReplay.status).toBe(201);
+    const createReplayPayload = withoutRequestId(await createReplay.json()) as {
+      pin: { id: string };
+      sequence: number;
+    };
+    expect(createReplayPayload.pin.id).toBe(createdPayload.pin.id);
+    expect(createReplayPayload.sequence).toBe(createdPayload.sequence);
+
+    const other = await app.request(`/api/channels/${channel.id}/pins`, {
+      method: "POST",
+      headers: mutationHeaders(env, cookie, session.csrf_token),
+      body: JSON.stringify({
+        schemaVersion: 1,
+        source_message_id: b.message_id,
+        source_artifact_id: null,
+        label: "B",
+        idempotency_key: "idem_pin_seq_other",
+      }),
+    });
+    const otherPin = withoutRequestId(await other.json()) as {
+      pin: { id: string };
+      sequence: number;
+    };
+
+    const removeBody = {
+      schemaVersion: 1,
+      idempotency_key: "idem_pin_seq_remove",
+    };
+    const removed = await app.request(`/api/channels/${channel.id}/pins/${createdPayload.pin.id}`, {
+      method: "DELETE",
+      headers: mutationHeaders(env, cookie, session.csrf_token),
+      body: JSON.stringify(removeBody),
+    });
+    expect(removed.status).toBe(200);
+    const removedPayload = withoutRequestId(await removed.json()) as {
+      pin: { id: string };
+      sequence: number;
+    };
+    expect(removedPayload.sequence).toBeGreaterThan(createdPayload.sequence);
+
+    const removeReplay = await app.request(
+      `/api/channels/${channel.id}/pins/${createdPayload.pin.id}`,
+      {
+        method: "DELETE",
+        headers: mutationHeaders(env, cookie, session.csrf_token),
+        body: JSON.stringify(removeBody),
+      },
+    );
+    expect(removeReplay.status).toBe(200);
+    const removeReplayPayload = withoutRequestId(await removeReplay.json()) as {
+      pin: { id: string };
+      sequence: number;
+    };
+    expect(removeReplayPayload.pin.id).toBe(createdPayload.pin.id);
+    expect(removeReplayPayload.sequence).toBe(removedPayload.sequence);
+
+    const wrongPin = await app.request(`/api/channels/${channel.id}/pins/${otherPin.pin.id}`, {
+      method: "DELETE",
+      headers: mutationHeaders(env, cookie, session.csrf_token),
+      body: JSON.stringify(removeBody),
+    });
+    expect(wrongPin.status).toBe(409);
+
+    const coworker = await workspace.seedCoworker({
+      workspaceId: env.workspaceId,
+      createdBy: env.ownerUserId,
+      handle: "cursor",
+      name: "Cursor",
+      title: "Cursor",
+    });
+    await app.request(`/api/channels/${channel.id}/participants`, {
+      method: "POST",
+      headers: mutationHeaders(env, cookie, session.csrf_token),
+      body: JSON.stringify({
+        schemaVersion: 1,
+        participant_type: "coworker",
+        participant_id: coworker.id,
+        role: "member",
+        idempotency_key: "idem_cursor_member",
+      }),
+    });
+    const nowIso = new Date().toISOString();
+    await workspaceStore.upsertChannelAgentSession({
+      id: "cas_mono",
+      workspaceId: env.workspaceId,
+      channelId: channel.id,
+      agentProfileId: coworker.id,
+      logicalAguiThreadId: "thread_mono",
+      currentGenerationId: null,
+      lastDeliveredChannelSequence: 0,
+      state: "active",
+      createdAt: nowIso,
+      updatedAt: nowIso,
+    });
+    const channelRow = await workspaceStore.getChannel(channel.id);
+    const highWater = Math.max(0, (channelRow?.nextSequence ?? 1) - 1);
+    const [low, high] = await Promise.all([
+      workspace.advanceSessionDeliveryCursor({
+        session,
+        channelAgentSessionId: "cas_mono",
+        deliveredThroughSequence: Math.min(2, highWater),
+        turnCreation: "confirmed",
+      }),
+      workspace.advanceSessionDeliveryCursor({
+        session,
+        channelAgentSessionId: "cas_mono",
+        deliveredThroughSequence: highWater,
+        turnCreation: "confirmed",
+      }),
+    ]);
+    expect(low.ok && high.ok).toBe(true);
+    const finalSession = await workspaceStore.getChannelAgentSession("cas_mono");
+    expect(finalSession?.lastDeliveredChannelSequence).toBe(highWater);
+    expect(finalSession?.lastDeliveredChannelSequence).toBeGreaterThanOrEqual(
+      Math.min(2, highWater),
+    );
+  });
 });
