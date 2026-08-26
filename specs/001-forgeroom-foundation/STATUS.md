@@ -2,10 +2,10 @@
 
 | Field | Current value |
 | --- | --- |
-| Overall | P0-101–P0-104, P0-106–P0-107, P0-205 complete; P0-108 landing; P0-000 in progress |
+| Overall | P0-101–P0-108 foundation API complete (incl. P0-205 router); P0-401/P0-210 in review; P0-000 in progress |
 | Current phase | Phase 1 — Foundation |
-| Active task | P0-108 (in_review); P0-000 (in_progress); P0-401/P0-210 in flight |
-| Next task | Merge P0-108 PR #10; review P0-000 PR #12; P0-105 waits on P0-000 completion |
+| Active task | P0-000 (in_progress); P0-401/P0-210 in review |
+| Next task | Review/merge P0-401 PR #15 and P0-210 PR #16; P0-000 PR #12; P0-105 waits on P0-000 completion |
 | P0 blockers | Live Composio tools/account/descriptor hashes, Daytona+storage probe, model presets, remaining OD-002–OD-012 verified rows, controlled-GenUI/Task/skill demo fixture, storage/deployment choices, and PD-002 before public release |
 | Last updated | 2026-08-26 |
 
@@ -14,7 +14,7 @@
 | Milestone | Status | Exit condition |
 | --- | --- | --- |
 | M0 Demo contract | in_progress | P0-000 done |
-| M1 Foundation | in_progress | P0-101 through P0-108 done |
+| M1 Foundation | done | P0-101 through P0-108 done |
 | M2 TrueForge + AG-UI runtime and Task integration | blocked | P0-109, P0-201–P0-206, P0-208, P0-210–P0-213 done |
 | M3 Tools, approvals and UI capabilities | blocked | P0-301–P0-316 and P0-318 done |
 | M4 Product UI | blocked | P0-401–P0-408 and P0-410 done |
@@ -41,6 +41,7 @@ Never put credentials in this file.
 
 ## Recently completed
 
+- P0-108 bounded channel context and pins merged to `main` via PR #10 (`1c3589b`).
 - P0-205 mention/team router merged to `main` via PR #11 (`fe36cd1`).
 - P0-107 canonical event log and resumable SSE merged to `main` via PR #8 (merge commit `ffbca91`).
 - P0-106 channel/coworker API accepted via PR #7 after archive-race remediation, full CI, and exact-head Qodo review.
