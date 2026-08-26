@@ -1,6 +1,6 @@
 import { startApiProcess } from "./index";
 
-const handle = startApiProcess();
+const handle = await startApiProcess();
 
 console.log(
   JSON.stringify({

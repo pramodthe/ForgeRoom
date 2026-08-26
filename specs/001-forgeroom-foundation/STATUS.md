@@ -2,12 +2,12 @@
 
 | Field | Current value |
 | --- | --- |
-| Overall | P0-101 and P0-102 complete; P0-103 database schema in review |
+| Overall | P0-101 through P0-103 complete; P0-104 owner auth in review |
 | Current phase | Phase 1 — Foundation |
-| Active task | P0-103 (in_review) |
-| Next task | P0-000 remains ready in parallel; P0-104 waits until P0-103 is reviewed and merged |
+| Active task | P0-104 (in_review) |
+| Next task | P0-000 remains ready in parallel and should start soon (blocks fixtures/TrueForge/Composio/AG-UI/Daytona/GenUI); P0-105 waits on P0-000 + P0-104 |
 | P0 blockers | Exact Composio tools/account, deterministic write, fixture, pure AG-UI baseline, controlled-GenUI/Task/skill demo fixture, storage/deployment choices, and PD-002 before public release |
-| Last updated | 2026-08-25 |
+| Last updated | 2026-08-26 |
 
 ## Milestones
 
@@ -37,6 +37,7 @@ Record provider/demo candidates in `demo.md` through P0-000; P0-210 freezes exac
 
 ## Recently completed
 
+- P0-103 database schema and session workspace boundary merged to `main` (`d7b6273`).
 - P0-102 shared contracts merged to `main`.
 - P0-101 scaffold accepted after clean-clone verification and green GitHub CI.
 - Split canonical specifications created.

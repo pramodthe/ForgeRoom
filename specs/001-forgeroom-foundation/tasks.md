@@ -17,8 +17,8 @@ Each task file is authoritative for its status and evidence. Keep this index and
 | [ ] | [P0-000](./tasks/P0-000-freeze-demo-contract.md) | Freeze demo/tool contract | ready | — |
 | [x] | [P0-101](./tasks/P0-101-scaffold-monorepo.md) | Scaffold monorepo and CI | done | — |
 | [x] | [P0-102](./tasks/P0-102-shared-contracts.md) | Shared domain/API contracts | done | P0-101 |
-| [ ] | [P0-103](./tasks/P0-103-database-migrations.md) | Database schema and migrations | in_review | P0-102 |
-| [ ] | [P0-104](./tasks/P0-104-owner-auth.md) | Owner authentication/authorization | blocked | P0-103 |
+| [x] | [P0-103](./tasks/P0-103-database-migrations.md) | Database schema and migrations | done | P0-102 |
+| [ ] | [P0-104](./tasks/P0-104-owner-auth.md) | Owner authentication/authorization | in_review | P0-103 |
 | [ ] | [P0-105](./tasks/P0-105-demo-fixtures.md) | Idempotent demo fixtures | blocked | P0-000, P0-103, P0-104 |
 | [ ] | [P0-106](./tasks/P0-106-channel-coworker-api.md) | Channel and coworker API | blocked | P0-103, P0-104 |
 | [ ] | [P0-107](./tasks/P0-107-event-log-sse.md) | Canonical event log and SSE | blocked | P0-106 |

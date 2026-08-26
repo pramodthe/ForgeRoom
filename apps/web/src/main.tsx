@@ -8,8 +8,8 @@ import {
 } from "@tanstack/react-router";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import { HostButton } from "@forgeroom/ui-components";
 import { APP_NAME } from "./app-name";
+import { LoginPage } from "./login-page";
 import "./styles.css";
 
 const queryClient = new QueryClient();
@@ -19,20 +19,10 @@ function AppShell() {
     <main className="mx-auto max-w-xl p-8 text-zinc-900">
       <h1 className="text-2xl font-semibold">{APP_NAME}</h1>
       <p className="mt-2 text-sm text-zinc-600">
-        Channel workspace scaffold. Product UI is owned by later P0 tasks.
+        Owner authentication for the channel workspace. Product UI is owned by later P0 tasks.
       </p>
       <Outlet />
     </main>
-  );
-}
-
-function HomePage() {
-  return (
-    <p className="mt-6">
-      <HostButton className="rounded border border-zinc-300 px-3 py-1.5 text-sm">
-        Health checks live at <code>/health</code> on the API.
-      </HostButton>
-    </p>
   );
 }
 
@@ -43,7 +33,7 @@ const rootRoute = createRootRoute({
 const indexRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/",
-  component: HomePage,
+  component: LoginPage,
 });
 
 const router = createRouter({
