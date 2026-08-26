@@ -47,3 +47,4 @@ export {
   RUN_STEP_TRANSITIONS,
   TASK_TRANSITIONS,
 } from "./transitions";
+export { isOwnerRole, isRecentAuthentication, OWNER_ROLE, type WorkspaceRole } from "./auth";

@@ -1,7 +1,7 @@
 ---
 id: P0-103
 title: Implement database schema and migrations
-status: in_review
+status: done
 owner: cursor-agent
 started: 2026-08-25
 depends_on: [P0-102]
@@ -19,14 +19,14 @@ An empty PostgreSQL database migrates to the complete P0 schema with concurrency
 
 ## Acceptance criteria
 
-- [ ] Every required P0 entity and relation is migrated.
-- [ ] Channel sequence, CoworkerDraft, Task/TaskRevision/TaskGrant, Skill/SkillVersion/SkillBinding, stable logical session/thread, immutable session-generation history/current pointer, remote-active turn, UIComponentInterrupt, PauseGroup, RequiredAction, PauseResume and decision uniqueness constraints exist.
-- [ ] Component/version/grant, independent UI render/state revision, controlled renderer/validated-props/data/state hashes, interaction-token/idempotency and atomic grant-use constraints exist.
-- [ ] P0 migrations contain no iframe classification/source/body/bootstrap/CSP/verifier/delivery-capability fields or generated-origin tables; the separately gated P1 migration adds them if implemented.
-- [ ] UI interaction constraints distinguish render-node identity from component-version identity and enforce the P0 `prepared → token_issued → terminal` combinations; trusted-confirmation columns/states are absent.
-- [ ] Append-only audit writes have no update/delete application path.
-- [ ] Forward migration and clean rollback strategy are documented.
-- [ ] Constraint tests fail the intended duplicate/concurrent writes.
+- [x] Every required P0 entity and relation is migrated.
+- [x] Channel sequence, CoworkerDraft, Task/TaskRevision/TaskGrant, Skill/SkillVersion/SkillBinding, stable logical session/thread, immutable session-generation history/current pointer, remote-active turn, UIComponentInterrupt, PauseGroup, RequiredAction, PauseResume and decision uniqueness constraints exist.
+- [x] Component/version/grant, independent UI render/state revision, controlled renderer/validated-props/data/state hashes, interaction-token/idempotency and atomic grant-use constraints exist.
+- [x] P0 migrations contain no iframe classification/source/body/bootstrap/CSP/verifier/delivery-capability fields or generated-origin tables; the separately gated P1 migration adds them if implemented.
+- [x] UI interaction constraints distinguish render-node identity from component-version identity and enforce the P0 `prepared → token_issued → terminal` combinations; trusted-confirmation columns/states are absent.
+- [x] Append-only audit writes have no update/delete application path.
+- [x] Forward migration and clean rollback strategy are documented.
+- [x] Constraint tests fail the intended duplicate/concurrent writes.
 
 ## Verification
 
@@ -56,6 +56,7 @@ Run migrations against an empty database and integration tests for every named i
   - grant `use_count <= max_uses`; audit update/delete rejected
   - static + `information_schema` scan finds no generated-document/trusted-confirmation columns
 - Known limitations: HTTP handlers, owner seed, and demo fixtures remain later tasks. Generated-document tables stay out of this migration.
+- Merged: PR #4 (`d7b6273`) after Qodo findings were marked implemented; local CI suite green. GitHub Actions did not create runs for the PR/merge (Actions delivery issue); merge proceeded with local verification.
 
 ## Work log
 
@@ -70,9 +71,10 @@ Run migrations against an empty database and integration tests for every named i
 - 2026-08-26 — Closed the follow-up current-generation race by locking the candidate generation during pointer validation and covering the two-connection assignment/retirement interleaving.
 - 2026-08-26 — Added a follow-up migration that composite-binds stable sessions, channels, and coworkers to the same workspace and rejects cross-tenant session creation.
 - 2026-08-26 — Serialized session writes across migration 0002 validation, backfill, and constraint enforcement to prevent concurrent inserts from bypassing the preflight.
+- 2026-08-26 — Independent review accepted after merge to `main` (`d7b6273`); Qodo findings marked implemented; moved to `done`.
 
 ## Handoff
 
 - Outcome: An empty PostgreSQL database migrates to the P0 schema with uniqueness, CAS, append-only audit, and controlled-UI interaction constraints enforced in the database.
-- Open risks: no known local blockers; a fresh Qodo review is pending after the remediation commit is pushed. CI requires the Postgres 16 service.
-- Follow-up tasks: P0-104 after this task is reviewed and merged; P0-000 remains independently ready.
+- Open risks: GitHub Actions failed to schedule runs for PR #4 / its merge commit; local suite was green. Investigate Actions delivery separately.
+- Follow-up tasks: P0-104 unblocked; P0-000 remains independently ready and should start soon (blocks fixtures, TrueForge, Composio, AG-UI, Daytona, GenUI).
