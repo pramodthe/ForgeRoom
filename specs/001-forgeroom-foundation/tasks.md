@@ -20,7 +20,7 @@ Each task file is authoritative for its status and evidence. Keep this index and
 | [x] | [P0-103](./tasks/P0-103-database-migrations.md) | Database schema and migrations | done | P0-102 |
 | [x] | [P0-104](./tasks/P0-104-owner-auth.md) | Owner authentication/authorization | done | P0-103 |
 | [ ] | [P0-105](./tasks/P0-105-demo-fixtures.md) | Idempotent demo fixtures | blocked | P0-000, P0-103, P0-104 |
-| [ ] | [P0-106](./tasks/P0-106-channel-coworker-api.md) | Channel and coworker API | blocked | P0-103, P0-104 |
+| [ ] | [P0-106](./tasks/P0-106-channel-coworker-api.md) | Channel and coworker API | in_review | P0-103, P0-104 |
 | [ ] | [P0-107](./tasks/P0-107-event-log-sse.md) | Canonical event log and SSE | blocked | P0-106 |
 | [ ] | [P0-108](./tasks/P0-108-context-pins.md) | Channel context and pins | blocked | P0-107 |
 | [ ] | [P0-109](./tasks/P0-109-task-record.md) | Application-owned TaskRecord | blocked | P0-103, P0-104, P0-107, P0-203, P0-208 |

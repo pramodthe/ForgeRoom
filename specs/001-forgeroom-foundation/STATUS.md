@@ -2,10 +2,10 @@
 
 | Field | Current value |
 | --- | --- |
-| Overall | P0-101 through P0-104 complete; P0-000 ready in parallel |
+| Overall | P0-101 through P0-104 complete; P0-106 channel/coworker API in_review (P0-000 may proceed in parallel on its own branch) |
 | Current phase | Phase 1 — Foundation |
-| Active task | none (P0-104 done) |
-| Next task | P0-000 remains ready and should start soon (blocks fixtures/TrueForge/Composio/AG-UI/Daytona/GenUI); P0-105 waits on P0-000 + P0-104; P0-106 unblocked on auth |
+| Active task | P0-106 (in_review, owner cursor-agent); P0-000 remains independently claimable/in progress on its branch |
+| Next task | Independent review of P0-106; P0-105 waits on P0-000 + P0-103/P0-104; P0-107 waits on P0-106 done |
 | P0 blockers | Exact Composio tools/account, deterministic write, fixture, pure AG-UI baseline, controlled-GenUI/Task/skill demo fixture, storage/deployment choices, and PD-002 before public release |
 | Last updated | 2026-08-26 |
 
