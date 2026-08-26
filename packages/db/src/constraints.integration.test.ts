@@ -73,6 +73,70 @@ describe("P0 foundation migration", () => {
 });
 
 describe("concurrency-critical constraints", () => {
+  it("serializes current-generation assignment against concurrent retirement", async () => {
+    await withTemporaryDatabase(async (url) => {
+      const assigner = createSql(url);
+      const retiree = createSql(url);
+      try {
+        await migrate(assigner);
+        await seedRuntime(assigner);
+        await assigner`
+          INSERT INTO channel_agent_session_generations (
+            id, channel_agent_session_id, generation, agent_version_id, session_revision_id,
+            trueforge_session_id, effective_spec_hash, approval_policy_hash, state, created_at
+          )
+          VALUES (
+            'gen_2', 'cas_1', 2, 'av_1', 'sr_1',
+            'tf_sess_2', ${HASH}, ${HASH}, 'ready', ${NOW}
+          )
+        `;
+
+        let currentGenerationLocked!: () => void;
+        const pointerUpdateReachedTrigger = new Promise<void>((resolve) => {
+          currentGenerationLocked = resolve;
+        });
+        const assignCurrent = assigner.begin(async (tx) => {
+          await tx`
+            UPDATE channel_agent_sessions
+            SET current_generation_id = 'gen_2'
+            WHERE id = 'cas_1'
+          `;
+          currentGenerationLocked();
+          await tx`SELECT pg_sleep(0.25)`;
+        });
+
+        await pointerUpdateReachedTrigger;
+        const retireConcurrently = retiree`
+          UPDATE channel_agent_session_generations
+          SET state = 'retired', retired_at = ${NOW}
+          WHERE id = 'gen_2'
+        `;
+        const [assignmentResult, retirementResult] = await Promise.allSettled([
+          assignCurrent,
+          retireConcurrently,
+        ]);
+
+        expect(assignmentResult.status).toBe("fulfilled");
+        expect(retirementResult.status).toBe("rejected");
+        if (retirementResult.status === "rejected") {
+          expect(String(retirementResult.reason)).toMatch(/current generation must be replaced/i);
+        }
+        const [session] = await assigner<
+          { current_generation_id: string; generation_state: string }[]
+        >`
+          SELECT sessions.current_generation_id, generations.state AS generation_state
+          FROM channel_agent_sessions AS sessions
+          JOIN channel_agent_session_generations AS generations
+            ON generations.id = sessions.current_generation_id
+          WHERE sessions.id = 'cas_1'
+        `;
+        expect(session).toEqual({ current_generation_id: "gen_2", generation_state: "ready" });
+      } finally {
+        await Promise.all([assigner.end({ timeout: 5 }), retiree.end({ timeout: 5 })]);
+      }
+    });
+  }, 60_000);
+
   it("rejects duplicate channel sequences and native-subagent sessions", async () => {
     await withMigratedDatabase(async (sql) => {
       await seedRuntime(sql);

@@ -78,7 +78,8 @@ BEGIN
   SELECT channel_agent_session_id, state, retired_at
     INTO generation_session_id, generation_state, generation_retired_at
     FROM channel_agent_session_generations
-    WHERE id = NEW.current_generation_id;
+    WHERE id = NEW.current_generation_id
+    FOR UPDATE;
   IF generation_session_id IS NULL THEN
     RAISE EXCEPTION 'current_generation_id must reference a generation row'
       USING ERRCODE = 'foreign_key_violation';
