@@ -3,6 +3,7 @@ id: P0-205
 title: Implement mention and team router
 status: in_review
 owner: cursor-agent
+completed: 2026-08-26
 started: 2026-08-26
 depends_on: [P0-102, P0-106]
 requirements: [CH-003, CH-011, OR-002, OR-004]
@@ -32,4 +33,5 @@ Run table-driven router tests for every valid and invalid combination.
 
 ## Completion evidence
 
-- Test matrix/results: `packages/orchestration` router table (22 cases) + contracts routing tests + API channel message routing integration; all green after typecheck/lint.
+- Merged to main via PR #11 (merge commit `fe36cd1`).
+- Test matrix/results: orchestration router matrix + API tests green. `packages/orchestration` router table (22 cases) + contracts routing tests + API channel message routing integration; all green after typecheck/lint.
