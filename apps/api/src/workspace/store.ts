@@ -1,4 +1,9 @@
-import type { SessionResponse } from "@forgeroom/contracts";
+import type {
+  AgentChannelEnvelope,
+  P0PersistedAguiEvent,
+  SessionResponse,
+} from "@forgeroom/contracts";
+import { materializeChannelEvent } from "./event-persist";
 
 export type ChannelStatus = "active" | "archived";
 export type CoworkerStatus = "active" | "disabled";
@@ -96,8 +101,40 @@ export type ChannelEventRecord = {
   actorType: "human" | "coworker" | "system";
   actorId: string;
   runId: string | null;
-  payloadJson: Record<string, unknown>;
+  /** Full validated AgentChannelEnvelope (authoritative durable projection). */
+  payloadJson: AgentChannelEnvelope;
+  aguiEventType: string | null;
+  aguiEventJson: P0PersistedAguiEvent | null;
+  logicalThreadId: string | null;
   createdAt: string;
+};
+
+export type ChannelEventInsert = {
+  id: string;
+  type: string;
+  actorType: "human" | "coworker" | "system";
+  actorId: string;
+  runId?: string | null;
+  logicalThreadId?: string | null;
+  createdAt: string;
+  /** Correlation + nested AG-UI event; channelSequence is assigned inside the append transaction. */
+  draft: {
+    actorKind: AgentChannelEnvelope["actorKind"];
+    applicationRunId?: string;
+    runStepId?: string;
+    agentTurnId?: string;
+    coworkerId?: string;
+    logicalThreadId?: string;
+    sourceMessageId?: string;
+    aguiEvent: P0PersistedAguiEvent;
+  };
+};
+
+export type AppendChannelEventResult = {
+  sequence: number;
+  channel: ChannelRecord;
+  envelope: AgentChannelEnvelope;
+  event: ChannelEventRecord;
 };
 
 export type MessageRecord = {
@@ -141,7 +178,7 @@ export function decodeReceiptResultId(stored: string): { resultId: string; lease
 }
 
 export type MembershipWriteResult =
-  | { ok: true; coworker: CoworkerRecord; channel: ChannelRecord }
+  | { ok: true; coworker: CoworkerRecord; channel: ChannelRecord; event?: AppendChannelEventResult }
   | { ok: false; reason: "not_found" | "channel_archived" | "coworker_inactive" };
 
 export type CoworkerMutationResult =
@@ -173,12 +210,14 @@ export type WorkspaceCatalogStore = {
   /**
    * Atomically locks channel+coworker, rejects archived channels, merges channel_ids
    * from the locked coworker row, and writes the participant row.
+   * When `event` is provided, sequence allocation + channel_events insert share the same transaction.
    */
   upsertParticipantMembership(input: {
     participant: ParticipantRecord;
     coworkerId: string;
     coworkerUpdatedAt: string;
     channelOp: { type: "add"; channelId: string } | { type: "remove"; channelId: string };
+    event?: ChannelEventInsert;
   }): Promise<MembershipWriteResult>;
 
   getCoworker(id: string): Promise<CoworkerRecord | null>;
@@ -193,11 +232,12 @@ export type WorkspaceCatalogStore = {
     coworker: CoworkerRecord;
     version: AgentVersionRecord;
     memberships: ParticipantRecord[];
+    membershipEvents?: Array<{ channelId: string; event: ChannelEventInsert }>;
     taskGrants: TaskGrantRecord[];
     revokeGrantsAt: string;
     expectedConfigRevision: number;
     expectedStatus: "active";
-  }): Promise<CoworkerUpdateResult>;
+  }): Promise<CoworkerUpdateResult & { events?: AppendChannelEventResult[] }>;
   /**
    * Atomically locks the profile, requires expected revision, then disables,
    * revokes grants, and removes every active coworker membership under that lock.
@@ -206,7 +246,8 @@ export type WorkspaceCatalogStore = {
     coworker: CoworkerRecord;
     revokeAt: string;
     expectedConfigRevision: number;
-  }): Promise<CoworkerMutationResult>;
+    removalEvents?: Array<{ channelId: string; event: ChannelEventInsert }>;
+  }): Promise<CoworkerMutationResult & { events?: AppendChannelEventResult[] }>;
 
   listActiveTaskGrantsForSubject(subjectId: string): Promise<TaskGrantRecord[]>;
   replaceActiveTaskGrantsForSubject(
@@ -216,6 +257,8 @@ export type WorkspaceCatalogStore = {
   ): Promise<void>;
 
   getMessage(id: string): Promise<MessageRecord | null>;
+
+  listEventsAfter(channelId: string, afterSequence: number): Promise<ChannelEventRecord[]>;
 
   getCommandReceipt(
     workspaceId: string,
@@ -250,13 +293,35 @@ export type WorkspaceCatalogStore = {
     leaseOwner: string,
   ): Promise<void>;
 
-  insertChannelWithOwner(channel: ChannelRecord, owner: ParticipantRecord): Promise<void>;
+  /**
+   * Insert channel + owner + channel.created event (sequence 0) atomically.
+   * Channel.nextSequence must be 1 (next free after the create event).
+   */
+  insertChannelWithOwner(
+    channel: ChannelRecord,
+    owner: ParticipantRecord,
+    createdEvent: ChannelEventInsert,
+  ): Promise<AppendChannelEventResult>;
+
+  /**
+   * Lock channel, allocate sequence, insert channel_events (+ optional message / patch)
+   * in one transaction.
+   */
+  appendChannelEvent(input: {
+    channelId: string;
+    event: ChannelEventInsert;
+    message?: MessageRecord;
+    channelPatch?: ChannelPatch;
+    participantUpsert?: ParticipantRecord;
+    /** When true, allow append on an already-archived channel (idempotent archive). */
+    allowArchived?: boolean;
+  }): Promise<AppendChannelEventResult>;
 
   appendMessage(input: {
     channelId: string;
-    event: Omit<ChannelEventRecord, "sequence">;
+    event: ChannelEventInsert;
     message: MessageRecord;
-  }): Promise<{ sequence: number; channel: ChannelRecord }>;
+  }): Promise<AppendChannelEventResult>;
 };
 
 export function emptyEditableConfig(): CoworkerEditableConfig {
@@ -281,6 +346,27 @@ export function createMemoryWorkspaceStore(): WorkspaceCatalogStore {
   const receipts = new Map<string, CommandReceipt>();
   const events = new Map<string, ChannelEventRecord>();
   const messages = new Map<string, MessageRecord>();
+  /** Serialize per-channel appends so concurrent callers preserve unique monotonic sequences. */
+  const channelLocks = new Map<string, Promise<void>>();
+
+  async function withChannelLock<T>(channelId: string, fn: () => T | Promise<T>): Promise<T> {
+    const previous = channelLocks.get(channelId) ?? Promise.resolve();
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const chained = previous.catch(() => undefined).then(() => gate);
+    channelLocks.set(channelId, chained);
+    await previous.catch(() => undefined);
+    try {
+      return await fn();
+    } finally {
+      release();
+      if (channelLocks.get(channelId) === chained) {
+        channelLocks.delete(channelId);
+      }
+    }
+  }
 
   function participantKey(
     channelId: string,
@@ -322,6 +408,56 @@ export function createMemoryWorkspaceStore(): WorkspaceCatalogStore {
     return current.filter((id) => id !== op.channelId);
   }
 
+  function appendEventLocked(input: {
+    channelId: string;
+    event: ChannelEventInsert;
+    message?: MessageRecord;
+    channelPatch?: ChannelPatch;
+    participantUpsert?: ParticipantRecord;
+    allowArchived?: boolean;
+  }): AppendChannelEventResult {
+    const channel = channels.get(input.channelId);
+    if (!channel) {
+      throw new Error(`channel ${input.channelId} not found`);
+    }
+    if (channel.status === "archived" && !input.allowArchived) {
+      throw new Error("channel_archived");
+    }
+    const sequence = channel.nextSequence;
+    const { envelope, event } = materializeChannelEvent(input.channelId, sequence, input.event);
+    let updated: ChannelRecord = {
+      ...channel,
+      nextSequence: sequence + 1,
+      updatedAt: input.event.createdAt,
+    };
+    if (input.channelPatch) {
+      updated = {
+        ...updated,
+        name: input.channelPatch.name ?? updated.name,
+        missionBrief: input.channelPatch.missionBrief ?? updated.missionBrief,
+        summary:
+          input.channelPatch.summary !== undefined ? input.channelPatch.summary : updated.summary,
+        policyJson: input.channelPatch.policyJson ?? updated.policyJson,
+        status: input.channelPatch.status ?? updated.status,
+        updatedAt: input.channelPatch.updatedAt,
+      };
+    }
+    channels.set(updated.id, structuredClone(updated));
+    events.set(event.id, structuredClone(event));
+    if (input.message) {
+      messages.set(input.message.id, structuredClone(input.message));
+    }
+    if (input.participantUpsert) {
+      writeParticipant(input.participantUpsert);
+    }
+    return {
+      sequence,
+      channel: structuredClone(updated),
+      envelope,
+      event: structuredClone(event),
+    };
+  }
+
   return {
     async getChannel(id) {
       return channels.get(id) ?? null;
@@ -361,37 +497,48 @@ export function createMemoryWorkspaceStore(): WorkspaceCatalogStore {
       writeParticipant(participant);
     },
     async upsertParticipantMembership(input) {
-      const channelId = input.channelOp.channelId;
-      const channel = channels.get(channelId);
-      if (!channel) {
-        return { ok: false, reason: "not_found" };
-      }
-      if (channel.status === "archived") {
-        return { ok: false, reason: "channel_archived" };
-      }
-      const coworker = coworkers.get(input.coworkerId);
-      if (!coworker) {
-        return { ok: false, reason: "not_found" };
-      }
-      if (input.channelOp.type === "add" && coworker.status !== "active") {
-        return { ok: false, reason: "coworker_inactive" };
-      }
-      writeParticipant(input.participant);
-      const updated: CoworkerRecord = {
-        ...coworker,
-        editableConfigJson: {
-          ...coworker.editableConfigJson,
-          channel_ids: mergeChannelIds(coworker.editableConfigJson.channel_ids, input.channelOp),
-        },
-        configRevision: coworker.configRevision + 1,
-        updatedAt: input.coworkerUpdatedAt,
-      };
-      coworkers.set(updated.id, structuredClone(updated));
-      return {
-        ok: true,
-        coworker: structuredClone(updated),
-        channel: structuredClone(channel),
-      };
+      return withChannelLock(input.channelOp.channelId, () => {
+        const channelId = input.channelOp.channelId;
+        const channel = channels.get(channelId);
+        if (!channel) {
+          return { ok: false, reason: "not_found" };
+        }
+        if (channel.status === "archived") {
+          return { ok: false, reason: "channel_archived" };
+        }
+        const coworker = coworkers.get(input.coworkerId);
+        if (!coworker) {
+          return { ok: false, reason: "not_found" };
+        }
+        if (input.channelOp.type === "add" && coworker.status !== "active") {
+          return { ok: false, reason: "coworker_inactive" };
+        }
+        let appended: AppendChannelEventResult | undefined;
+        if (input.event) {
+          appended = appendEventLocked({
+            channelId,
+            event: input.event,
+          });
+        }
+        writeParticipant(input.participant);
+        const updated: CoworkerRecord = {
+          ...coworker,
+          editableConfigJson: {
+            ...coworker.editableConfigJson,
+            channel_ids: mergeChannelIds(coworker.editableConfigJson.channel_ids, input.channelOp),
+          },
+          configRevision: coworker.configRevision + 1,
+          updatedAt: input.coworkerUpdatedAt,
+        };
+        coworkers.set(updated.id, structuredClone(updated));
+        const latestChannel = channels.get(channelId) ?? channel;
+        return {
+          ok: true,
+          coworker: structuredClone(updated),
+          channel: structuredClone(latestChannel),
+          ...(appended ? { event: appended } : {}),
+        };
+      });
     },
     async getCoworker(id) {
       return coworkers.get(id) ?? null;
@@ -413,7 +560,10 @@ export function createMemoryWorkspaceStore(): WorkspaceCatalogStore {
     },
     async commitCoworkerUpdate(input) {
       const affectedChannelIds = [
-        ...new Set(input.memberships.map((membership) => membership.channelId)),
+        ...new Set([
+          ...input.memberships.map((membership) => membership.channelId),
+          ...(input.membershipEvents ?? []).map((row) => row.channelId),
+        ]),
       ].sort();
       for (const channelId of affectedChannelIds) {
         const channel = channels.get(channelId);
@@ -439,13 +589,22 @@ export function createMemoryWorkspaceStore(): WorkspaceCatalogStore {
           actualStatus: current.status,
         };
       }
+      const appended: AppendChannelEventResult[] = [];
+      for (const membershipEvent of input.membershipEvents ?? []) {
+        appended.push(
+          appendEventLocked({
+            channelId: membershipEvent.channelId,
+            event: membershipEvent.event,
+          }),
+        );
+      }
       for (const membership of input.memberships) {
         writeParticipant(membership);
       }
       replaceGrants(input.coworker.id, input.taskGrants, input.revokeGrantsAt);
       coworkers.set(input.coworker.id, structuredClone(input.coworker));
       versions.set(input.version.id, structuredClone(input.version));
-      return { ok: true };
+      return { ok: true, ...(appended.length > 0 ? { events: appended } : {}) };
     },
     async disableCoworkerCleanup(input) {
       const current = coworkers.get(input.coworker.id);
@@ -473,6 +632,16 @@ export function createMemoryWorkspaceStore(): WorkspaceCatalogStore {
           actualStatus: current.status,
         };
       }
+      const appended: AppendChannelEventResult[] = [];
+      for (const removal of input.removalEvents ?? []) {
+        appended.push(
+          appendEventLocked({
+            channelId: removal.channelId,
+            event: removal.event,
+            allowArchived: true,
+          }),
+        );
+      }
       for (const [key, row] of participants) {
         if (
           row.participantType === "coworker" &&
@@ -484,7 +653,7 @@ export function createMemoryWorkspaceStore(): WorkspaceCatalogStore {
       }
       replaceGrants(input.coworker.id, [], input.revokeAt);
       coworkers.set(input.coworker.id, structuredClone(input.coworker));
-      return { ok: true };
+      return { ok: true, ...(appended.length > 0 ? { events: appended } : {}) };
     },
     async listActiveTaskGrantsForSubject(subjectId) {
       return [...taskGrants.values()].filter(
@@ -496,6 +665,12 @@ export function createMemoryWorkspaceStore(): WorkspaceCatalogStore {
     },
     async getMessage(id) {
       return messages.get(id) ?? null;
+    },
+    async listEventsAfter(channelId, afterSequence) {
+      return [...events.values()]
+        .filter((row) => row.channelId === channelId && row.sequence > afterSequence)
+        .sort((a, b) => a.sequence - b.sequence)
+        .map((row) => structuredClone(row));
     },
     async getCommandReceipt(workspaceId, commandKind, idempotencyKey) {
       const existing = receipts.get(receiptKey(workspaceId, commandKind, idempotencyKey));
@@ -538,29 +713,30 @@ export function createMemoryWorkspaceStore(): WorkspaceCatalogStore {
       }
       receipts.delete(key);
     },
-    async insertChannelWithOwner(channel, owner) {
-      channels.set(channel.id, structuredClone(channel));
-      writeParticipant(owner);
+    async insertChannelWithOwner(channel, owner, createdEvent) {
+      return withChannelLock(channel.id, () => {
+        if (channel.nextSequence !== 1) {
+          throw new Error("channel create must seed nextSequence=1 after sequence 0 create event");
+        }
+        channels.set(channel.id, structuredClone({ ...channel, nextSequence: 0 }));
+        writeParticipant(owner);
+        return appendEventLocked({
+          channelId: channel.id,
+          event: createdEvent,
+        });
+      });
+    },
+    async appendChannelEvent(input) {
+      return withChannelLock(input.channelId, () => appendEventLocked(input));
     },
     async appendMessage(input) {
-      const channel = channels.get(input.channelId);
-      if (!channel) {
-        throw new Error(`channel ${input.channelId} not found`);
-      }
-      if (channel.status === "archived") {
-        throw new Error("channel_archived");
-      }
-      const sequence = channel.nextSequence;
-      const updated: ChannelRecord = {
-        ...channel,
-        nextSequence: sequence + 1,
-        updatedAt: input.event.createdAt,
-      };
-      const event = { ...input.event, sequence };
-      channels.set(updated.id, structuredClone(updated));
-      events.set(event.id, structuredClone(event));
-      messages.set(input.message.id, structuredClone(input.message));
-      return { sequence, channel: structuredClone(updated) };
+      return withChannelLock(input.channelId, () =>
+        appendEventLocked({
+          channelId: input.channelId,
+          event: input.event,
+          message: input.message,
+        }),
+      );
     },
   };
 }

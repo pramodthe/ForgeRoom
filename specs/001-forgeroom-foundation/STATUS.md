@@ -2,10 +2,10 @@
 
 | Field | Current value |
 | --- | --- |
-| Overall | P0-101 through P0-104 and P0-106 complete; P0-000 demo/tool contract in progress |
+| Overall | P0-101–P0-104 and P0-106 complete; P0-107 event log/SSE in review; P0-000 demo/tool contract in progress |
 | Current phase | Phase 1 — Foundation |
-| Active task | P0-000 (in_progress) |
-| Next task | P0-107 canonical event log/SSE; P0-205 mention/team router is also ready; P0-105 waits on P0-000 live probes |
+| Active task | P0-107 (in_review, owner cursor-agent); P0-000 (in_progress) |
+| Next task | Land P0-107 PR; P0-205 router also ready; P0-105 waits on P0-000 live probes |
 | P0 blockers | Live Composio tools/account/descriptor hashes, Daytona+storage probe, model presets, remaining OD-002–OD-012 verified rows, controlled-GenUI/Task/skill demo fixture, storage/deployment choices, and PD-002 before public release |
 | Last updated | 2026-08-26 |
 

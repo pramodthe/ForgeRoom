@@ -1,6 +1,7 @@
 import type { Context } from "hono";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
-import type { SafeJsonObject } from "@forgeroom/contracts";
+import { streamSSE } from "hono/streaming";
+import type { AgentChannelEnvelope, SafeJsonObject } from "@forgeroom/contracts";
 import {
   channelArchiveCommandSchema,
   channelCreateCommandSchema,
@@ -36,6 +37,21 @@ function fail(c: Context, error: WorkspaceServiceError) {
 
 function okJson(c: Context, body: object, status: ContentfulStatusCode) {
   return c.json({ ...body, request_id: randomOpaqueId("req") }, status);
+}
+
+/** Strict decimal channel sequence cursor (rejects parseInt soft matches). */
+function parseSequenceCursor(raw: string | undefined): { ok: true; value: number } | { ok: false } {
+  if (raw === undefined || raw === "") {
+    return { ok: true, value: -1 };
+  }
+  if (!/^(0|[1-9][0-9]*)$/.test(raw) && raw !== "-1") {
+    return { ok: false };
+  }
+  const value = Number(raw);
+  if (!Number.isSafeInteger(value) || value < -1 || value > 2_147_483_647) {
+    return { ok: false };
+  }
+  return { ok: true, value };
 }
 
 export function mountWorkspaceRoutes(
@@ -240,6 +256,145 @@ export function mountWorkspaceRoutes(
       return fail(c, result.error);
     }
     return okJson(c, result.value, 201);
+  });
+
+  app.get("/api/channels/:channelId/events", async (c) => {
+    const authed = await requireSession(c, env, auth);
+    if (authed instanceof Response) {
+      return authed;
+    }
+    const channelId = requireParam(c, "channelId");
+    if (channelId instanceof Response) {
+      return channelId;
+    }
+    const rawAfter = c.req.query("afterSequence");
+    const parsedAfter = parseSequenceCursor(rawAfter);
+    if (!parsedAfter.ok) {
+      const failure = errorResponse(
+        "validation_failed",
+        "afterSequence must be a decimal integer greater than or equal to -1.",
+        { status: 400 },
+      );
+      return c.json(failure.body, failure.status);
+    }
+    const afterSequence = parsedAfter.value;
+    const result = await workspace.listEvents(authed.session, channelId, afterSequence);
+    if (!result.ok) {
+      return fail(c, result.error);
+    }
+    return okJson(c, result.value, 200);
+  });
+
+  app.get("/api/channels/:channelId/stream", async (c) => {
+    const authed = await requireSession(c, env, auth);
+    if (authed instanceof Response) {
+      return authed;
+    }
+    const channelId = requireParam(c, "channelId");
+    if (channelId instanceof Response) {
+      return channelId;
+    }
+
+    const owned = await workspace.getChannel(authed.session, channelId);
+    if (!owned.ok) {
+      return fail(c, owned.error);
+    }
+
+    const headerLast = c.req.header("last-event-id");
+    const queryAfter = c.req.query("afterSequence");
+    const rawCursor = headerLast ?? queryAfter;
+    const parsedCursor = parseSequenceCursor(rawCursor);
+    if (!parsedCursor.ok) {
+      const failure = errorResponse(
+        "validation_failed",
+        "Last-Event-ID / afterSequence must be a decimal integer channel sequence.",
+        { status: 400 },
+      );
+      return c.json(failure.body, failure.status);
+    }
+    const afterSequence = parsedCursor.value;
+
+    const HEARTBEAT_MS = 15_000;
+
+    return streamSSE(c, async (stream) => {
+      const sent = new Set<number>();
+      let lastSent = afterSequence;
+      let closed = false;
+      let liveEnabled = false;
+      const liveBuffer: AgentChannelEnvelope[] = [];
+
+      const writeEnvelope = async (envelope: AgentChannelEnvelope) => {
+        if (closed || sent.has(envelope.channelSequence)) {
+          return;
+        }
+        if (envelope.channelSequence <= afterSequence) {
+          return;
+        }
+        sent.add(envelope.channelSequence);
+        lastSent = Math.max(lastSent, envelope.channelSequence);
+        await stream.writeSSE({
+          id: String(envelope.channelSequence),
+          event: "channel_event",
+          data: JSON.stringify(envelope),
+        });
+      };
+
+      // Subscribe first so live events during replay are buffered, then catch up.
+      const unsubscribe = workspace.subscribeChannelEvents(channelId, (envelope) => {
+        // Dedupe only by sequence already delivered — never drop an earlier
+        // not-yet-seen sequence if live publishes arrive out of order.
+        if (sent.has(envelope.channelSequence) || envelope.channelSequence <= afterSequence) {
+          return;
+        }
+        if (!liveEnabled) {
+          liveBuffer.push(envelope);
+          return;
+        }
+        void writeEnvelope(envelope).catch(() => {
+          closed = true;
+        });
+      });
+
+      try {
+        const replay = await workspace.listEvents(authed.session, channelId, afterSequence);
+        if (!replay.ok) {
+          await stream.writeSSE({
+            event: "error",
+            data: JSON.stringify({ code: replay.error.code, message: replay.error.message }),
+          });
+          return;
+        }
+        for (const envelope of replay.value.events) {
+          await writeEnvelope(envelope);
+        }
+
+        // Catch up any rows committed between replay query and subscribe attach.
+        const catchUp = await workspace.listEvents(authed.session, channelId, lastSent);
+        if (catchUp.ok) {
+          for (const envelope of catchUp.value.events) {
+            await writeEnvelope(envelope);
+          }
+        }
+
+        liveEnabled = true;
+        for (const buffered of liveBuffer
+          .splice(0)
+          .sort((a, b) => a.channelSequence - b.channelSequence)) {
+          await writeEnvelope(buffered);
+        }
+
+        while (!closed && !stream.closed && !c.req.raw.signal.aborted) {
+          await stream.writeSSE({
+            event: "heartbeat",
+            data: "{}",
+          });
+          await stream.sleep(HEARTBEAT_MS);
+        }
+      } finally {
+        closed = true;
+        unsubscribe();
+      }
+    });
   });
 
   app.get("/api/workspaces/:workspaceId/coworkers", async (c) => {

@@ -554,7 +554,7 @@ describe("channel and coworker API", () => {
     expect((await baseStore.getCoworker(coworker.id))?.editableConfigJson.channel_ids).toEqual([]);
   });
 
-  it("rejects cross-channel parent_message_id and preserves next_sequence on rename", async () => {
+  it("rejects cross-channel parent_message_id and bumps next_sequence on rename event", async () => {
     const { app, env, workspaceStore } = await createTestApp();
     const { session, cookie } = await login(app, env);
     const aRes = await app.request(`/api/workspaces/${env.workspaceId}/channels`, {
@@ -579,6 +579,7 @@ describe("channel and coworker API", () => {
     });
     const channelA = channelSchema.parse(withoutRequestId(await aRes.json()));
     const channelB = channelSchema.parse(withoutRequestId(await bRes.json()));
+    expect(channelA.next_sequence).toBe(1);
 
     const posted = await app.request(`/api/channels/${channelA.id}/messages`, {
       method: "POST",
@@ -592,10 +593,10 @@ describe("channel and coworker API", () => {
     });
     expect(posted.status).toBe(201);
     const message = (await posted.json()) as { message_id: string; sequence: number };
-    expect(message.sequence).toBe(0);
+    expect(message.sequence).toBe(1);
 
     const afterPost = await workspaceStore.getChannel(channelA.id);
-    expect(afterPost?.nextSequence).toBe(1);
+    expect(afterPost?.nextSequence).toBe(2);
 
     const renamed = await app.request(`/api/channels/${channelA.id}`, {
       method: "PATCH",
@@ -608,8 +609,8 @@ describe("channel and coworker API", () => {
     });
     expect(renamed.status).toBe(200);
     const renamedBody = channelSchema.parse(withoutRequestId(await renamed.json()));
-    expect(renamedBody.next_sequence).toBe(1);
-    expect((await workspaceStore.getChannel(channelA.id))?.nextSequence).toBe(1);
+    expect(renamedBody.next_sequence).toBe(3);
+    expect((await workspaceStore.getChannel(channelA.id))?.nextSequence).toBe(3);
 
     const cross = await app.request(`/api/channels/${channelB.id}/messages`, {
       method: "POST",
