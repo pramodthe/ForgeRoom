@@ -19,7 +19,6 @@ import type {
 import { channelPinSchema, channelSchema, coworkerProfileSchema } from "@forgeroom/contracts";
 import {
   buildChannelContextEnvelope,
-  envelopeDeliveredThroughSequence,
   MAX_RECENT_DELTAS,
   nextDeliveryCursor,
   type TurnCreationStatus,
@@ -57,6 +56,12 @@ export type WorkspaceServiceResult<T> =
   { ok: true; value: T } | { ok: false; error: WorkspaceServiceError };
 
 type IdempotentReloadMismatch = { mismatch: WorkspaceServiceError };
+
+type PinCommandResult = { pin: ChannelPin; sequence: number };
+
+function idempotencyMismatch(error: WorkspaceServiceError): IdempotentReloadMismatch {
+  return { mismatch: error };
+}
 
 function isIdempotentReloadMismatch<T>(
   value: T | null | IdempotentReloadMismatch,
@@ -1363,20 +1368,18 @@ export function createWorkspaceService(options?: {
           }
           return null;
         },
-        reload: async (resultId) => {
+        reload: async (resultId): Promise<PinCommandResult | null | IdempotentReloadMismatch> => {
           if (isPinCreateTargetId(resultId)) {
             if (resultId !== createTargetId) {
-              return {
-                mismatch: {
-                  code: "conflict",
-                  message: "Idempotency key is bound to a different pin target.",
-                  details: {
-                    reason: "idempotency_key_reuse",
-                    expected_result_id: createTargetId,
-                    claimed_result_id: resultId,
-                  },
+              return idempotencyMismatch({
+                code: "conflict",
+                message: "Idempotency key is bound to a different pin target.",
+                details: {
+                  reason: "idempotency_key_reuse",
+                  expected_result_id: createTargetId,
+                  claimed_result_id: resultId,
                 },
-              };
+              });
             }
             const row = await store.findActivePinBySource({
               channelId,
@@ -1398,26 +1401,22 @@ export function createWorkspaceService(options?: {
             return null;
           }
           if (row.channelId !== channelId) {
-            return {
-              mismatch: {
-                code: "conflict",
-                message: "Idempotency key is bound to a pin in a different channel.",
-                details: {
-                  reason: "idempotency_key_reuse",
-                  channel_id: channelId,
-                  bound_channel_id: row.channelId,
-                },
+            return idempotencyMismatch({
+              code: "conflict",
+              message: "Idempotency key is bound to a pin in a different channel.",
+              details: {
+                reason: "idempotency_key_reuse",
+                channel_id: channelId,
+                bound_channel_id: row.channelId,
               },
-            };
+            });
           }
           if (!pinSourceMatchesCommand(row, sourceEventId, sourceArtifactId)) {
-            return {
-              mismatch: {
-                code: "conflict",
-                message: "Idempotency key is bound to a different pin target.",
-                details: { reason: "idempotency_key_reuse" },
-              },
-            };
+            return idempotencyMismatch({
+              code: "conflict",
+              message: "Idempotency key is bound to a different pin target.",
+              details: { reason: "idempotency_key_reuse" },
+            });
           }
           if (parsed.sequence === null) {
             return null;
@@ -1553,7 +1552,7 @@ export function createWorkspaceService(options?: {
               error: {
                 code: "conflict",
                 message: "Archived channels cannot modify pins.",
-                details: { reason: "channel_archived" },
+                details: { reason: "channel_archived" } as SafeJsonObject,
               },
             };
           }
@@ -1568,7 +1567,7 @@ export function createWorkspaceService(options?: {
               error: {
                 code: "conflict",
                 message: "Pin is already removed; use the original idempotency key to replay.",
-                details: { pin_id: pinId, reason: "pin_already_removed" },
+                details: { pin_id: pinId, reason: "pin_already_removed" } as SafeJsonObject,
               },
             };
           }
