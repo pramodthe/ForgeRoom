@@ -253,6 +253,7 @@ export const workspaceCommandReceipts = pgTable("workspace_command_receipts", {
 
 export const channelAgentSessions = pgTable("channel_agent_sessions", {
   id: text("id").primaryKey(),
+  workspaceId: text("workspace_id").notNull(),
   channelId: text("channel_id").notNull(),
   agentProfileId: text("agent_profile_id").notNull(),
   logicalAguiThreadId: text("logical_agui_thread_id").notNull(),

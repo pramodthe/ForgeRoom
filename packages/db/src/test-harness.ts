@@ -188,10 +188,10 @@ export async function seedRuntime(sql: postgres.Sql): Promise<void> {
   `;
   await sql`
     INSERT INTO channel_agent_sessions (
-      id, channel_id, agent_profile_id, logical_agui_thread_id,
+      id, workspace_id, channel_id, agent_profile_id, logical_agui_thread_id,
       last_delivered_channel_sequence, state, created_at, updated_at
     )
-    VALUES ('cas_1', 'ch_1', 'cw_1', 'thread_1', 0, 'active', ${NOW}, ${NOW})
+    VALUES ('cas_1', 'ws_1', 'ch_1', 'cw_1', 'thread_1', 0, 'active', ${NOW}, ${NOW})
   `;
   await sql`
     INSERT INTO channel_agent_session_generations (
