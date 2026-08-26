@@ -1390,7 +1390,7 @@ export function createWorkspaceService(options?: {
                 },
               });
             }
-            const row = await store.findPinBySource({
+            const row = await store.findActivePinBySource({
               channelId,
               sourceEventId,
               sourceArtifactId,

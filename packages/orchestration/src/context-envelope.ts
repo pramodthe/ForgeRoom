@@ -177,16 +177,26 @@ export function buildChannelContextEnvelope(
     }
     if (envelope.roster.length === 1) {
       const entry = envelope.roster[0]!;
-      envelope = {
-        ...envelope,
-        roster: [{
-          ...entry,
-          participant_id: truncateChars(entry.participant_id, Math.max(8, Math.floor(entry.participant_id.length / 2))),
-          ...(entry.name ? { name: truncateChars(entry.name, Math.max(8, Math.floor(entry.name.length / 2))) } : {}),
-          ...(entry.handle ? { handle: truncateChars(entry.handle, Math.max(8, Math.floor(entry.handle.length / 2))) } : {}),
-        }],
+      const before = utf8Bytes(JSON.stringify(envelope));
+      const nextEntry = {
+        ...entry,
+        ...(entry.name
+          ? { name: truncateChars(entry.name, Math.max(8, Math.floor(entry.name.length / 2))) }
+          : {}),
+        ...(entry.handle
+          ? {
+              handle: truncateChars(entry.handle, Math.max(8, Math.floor(entry.handle.length / 2))),
+            }
+          : {}),
+        ...(entry.role
+          ? { role: truncateChars(entry.role, Math.max(8, Math.floor(entry.role.length / 2))) }
+          : {}),
       };
-      continue;
+      const nextEnvelope = { ...envelope, roster: [nextEntry] };
+      if (utf8Bytes(JSON.stringify(nextEnvelope)) < before) {
+        envelope = nextEnvelope;
+        continue;
+      }
     }
     // Last resort: truncate mission/name/assignment text fields.
     const mission = truncateChars(
