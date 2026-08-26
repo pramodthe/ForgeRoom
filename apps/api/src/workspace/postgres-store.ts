@@ -12,10 +12,12 @@ import {
 } from "@forgeroom/db";
 import { and, eq, isNull } from "drizzle-orm";
 import type {
+  ChannelPatch,
   ChannelRecord,
   CommandReceipt,
   CoworkerEditableConfig,
   CoworkerRecord,
+  MessageRecord,
   ParticipantRecord,
   TaskGrantRecord,
   WorkspaceCatalogStore,
@@ -131,6 +133,75 @@ function mapGrant(row: typeof taskGrants.$inferSelect): TaskGrantRecord {
   };
 }
 
+function mapMessage(row: typeof messages.$inferSelect): MessageRecord {
+  return {
+    id: row.id,
+    channelId: row.channelId,
+    eventId: row.eventId,
+    authorType: row.authorType as MessageRecord["authorType"],
+    authorId: row.authorId,
+    body: row.body,
+    parentMessageId: row.parentMessageId,
+    createdAt: asIso(row.createdAt),
+  };
+}
+
+async function upsertParticipantSql(tx: SqlClient, participant: ParticipantRecord): Promise<void> {
+  await tx`
+    INSERT INTO channel_participants (
+      channel_id, participant_type, participant_id, role, joined_at, removed_at
+    )
+    VALUES (
+      ${participant.channelId},
+      ${participant.participantType},
+      ${participant.participantId},
+      ${participant.role},
+      ${participant.joinedAt},
+      ${participant.removedAt}
+    )
+    ON CONFLICT (channel_id, participant_type, participant_id) DO UPDATE SET
+      role = EXCLUDED.role,
+      removed_at = EXCLUDED.removed_at
+  `;
+}
+
+async function replaceGrantsSql(
+  tx: SqlClient,
+  rootSql: SqlClient,
+  subjectId: string,
+  grants: TaskGrantRecord[],
+  revokedAt: string,
+): Promise<void> {
+  await tx`
+    UPDATE task_grants
+    SET revoked_at = ${revokedAt}
+    WHERE subject_id = ${subjectId} AND revoked_at IS NULL
+  `;
+  for (const grant of grants) {
+    await tx`
+      INSERT INTO task_grants (
+        id, task_id, channel_id, subject_type, subject_id,
+        allowed_operations_json, allowed_fields_json, allowed_transitions_json,
+        policy_revision, granted_by, created_at, revoked_at
+      )
+      VALUES (
+        ${grant.id},
+        ${grant.taskId},
+        ${grant.channelId},
+        ${grant.subjectType},
+        ${grant.subjectId},
+        ${rootSql.json(grant.allowedOperationsJson)},
+        ${rootSql.json(grant.allowedFieldsJson)},
+        ${rootSql.json(grant.allowedTransitionsJson)},
+        ${grant.policyRevision},
+        ${grant.grantedBy},
+        ${grant.createdAt},
+        ${grant.revokedAt}
+      )
+    `;
+  }
+}
+
 export function createPostgresWorkspaceStore(sql: SqlClient): WorkspaceCatalogStore {
   const db = createDb(sql);
 
@@ -158,19 +229,25 @@ export function createPostgresWorkspaceStore(sql: SqlClient): WorkspaceCatalogSt
         updatedAt: channel.updatedAt,
       });
     },
-    async updateChannel(channel) {
-      await db
-        .update(channels)
-        .set({
-          name: channel.name,
-          missionBrief: channel.missionBrief,
-          summary: channel.summary,
-          policyJson: channel.policyJson,
-          nextSequence: channel.nextSequence,
-          status: channel.status,
-          updatedAt: channel.updatedAt,
-        })
-        .where(eq(channels.id, channel.id));
+    async patchChannel(id, patch: ChannelPatch) {
+      const set: Record<string, unknown> = { updatedAt: patch.updatedAt };
+      if (patch.name !== undefined) {
+        set.name = patch.name;
+      }
+      if (patch.missionBrief !== undefined) {
+        set.missionBrief = patch.missionBrief;
+      }
+      if (patch.summary !== undefined) {
+        set.summary = patch.summary;
+      }
+      if (patch.policyJson !== undefined) {
+        set.policyJson = patch.policyJson;
+      }
+      if (patch.status !== undefined) {
+        set.status = patch.status;
+      }
+      const rows = await db.update(channels).set(set).where(eq(channels.id, id)).returning();
+      return rows[0] ? mapChannel(rows[0]) : null;
     },
     async listParticipants(channelId) {
       const rows = await db
@@ -194,22 +271,63 @@ export function createPostgresWorkspaceStore(sql: SqlClient): WorkspaceCatalogSt
       return rows[0] ? mapParticipant(rows[0]) : null;
     },
     async upsertParticipant(participant) {
-      await sql`
-        INSERT INTO channel_participants (
-          channel_id, participant_type, participant_id, role, joined_at, removed_at
-        )
-        VALUES (
-          ${participant.channelId},
-          ${participant.participantType},
-          ${participant.participantId},
-          ${participant.role},
-          ${participant.joinedAt},
-          ${participant.removedAt}
-        )
-        ON CONFLICT (channel_id, participant_type, participant_id) DO UPDATE SET
-          role = EXCLUDED.role,
-          removed_at = EXCLUDED.removed_at
-      `;
+      await upsertParticipantSql(sql, participant);
+    },
+    async upsertParticipantMembership(input) {
+      return sql.begin(async (tx) => {
+        const coworkerRows = await tx<
+          {
+            id: string;
+            workspace_id: string;
+            handle: string;
+            name: string;
+            title: string;
+            avatar_seed: string | null;
+            visibility: string;
+            status: string;
+            editable_config_json: unknown;
+            current_version_id: string | null;
+            config_revision: number;
+            created_at: string | Date;
+            updated_at: string | Date;
+          }[]
+        >`
+          SELECT *
+          FROM agent_profiles
+          WHERE id = ${input.coworkerId}
+          FOR UPDATE
+        `;
+        const row = coworkerRows[0];
+        if (!row) {
+          return null;
+        }
+        await upsertParticipantSql(tx as unknown as SqlClient, input.participant);
+        const config = asConfig(row.editable_config_json);
+        const nextConfig = { ...config, channel_ids: [...input.channelIds] };
+        await tx.unsafe(
+          `UPDATE agent_profiles
+           SET editable_config_json = $1::jsonb,
+               updated_at = $2
+           WHERE id = $3`,
+          [JSON.stringify(nextConfig), input.coworkerUpdatedAt, input.coworkerId],
+        );
+        return {
+          id: row.id,
+          workspaceId: row.workspace_id,
+          handle: row.handle,
+          name: row.name,
+          title: row.title,
+          avatarSeed: row.avatar_seed,
+          visibility: "workspace" as const,
+          status: row.status as CoworkerRecord["status"],
+          editableConfigJson: nextConfig,
+          currentVersionId: row.current_version_id,
+          configRevision: row.config_revision,
+          nativeSubagentsEnabled: false as const,
+          createdAt: asIso(row.created_at),
+          updatedAt: input.coworkerUpdatedAt,
+        } satisfies CoworkerRecord;
+      });
     },
     async getCoworker(id) {
       const rows = await db.select().from(agentProfiles).where(eq(agentProfiles.id, id)).limit(1);
@@ -279,6 +397,95 @@ export function createPostgresWorkspaceStore(sql: SqlClient): WorkspaceCatalogSt
         })
         .where(eq(agentProfiles.id, coworker.id));
     },
+    async commitCoworkerUpdate(input) {
+      await sql.begin(async (tx) => {
+        for (const membership of input.memberships) {
+          await upsertParticipantSql(tx as unknown as SqlClient, membership);
+        }
+        await replaceGrantsSql(
+          tx as unknown as SqlClient,
+          sql,
+          input.coworker.id,
+          input.taskGrants,
+          input.revokeGrantsAt,
+        );
+        await tx.unsafe(
+          `INSERT INTO agent_versions (
+             id, agent_profile_id, version, config_json, spec_hash, created_by, created_at
+           )
+           VALUES ($1, $2, $3, $4::jsonb, $5, $6, $7)`,
+          [
+            input.version.id,
+            input.version.agentProfileId,
+            input.version.version,
+            JSON.stringify(input.version.configJson),
+            input.version.specHash,
+            input.version.createdBy,
+            input.version.createdAt,
+          ],
+        );
+        await tx.unsafe(
+          `UPDATE agent_profiles
+           SET handle = $1,
+               name = $2,
+               title = $3,
+               status = $4,
+               editable_config_json = $5::jsonb,
+               current_version_id = $6,
+               config_revision = $7,
+               updated_at = $8
+           WHERE id = $9`,
+          [
+            input.coworker.handle,
+            input.coworker.name,
+            input.coworker.title,
+            input.coworker.status,
+            JSON.stringify(input.coworker.editableConfigJson),
+            input.coworker.currentVersionId,
+            input.coworker.configRevision,
+            input.coworker.updatedAt,
+            input.coworker.id,
+          ],
+        );
+      });
+    },
+    async disableCoworkerCleanup(input) {
+      await sql.begin(async (tx) => {
+        for (const membership of input.memberships) {
+          await upsertParticipantSql(tx as unknown as SqlClient, membership);
+        }
+        await replaceGrantsSql(
+          tx as unknown as SqlClient,
+          sql,
+          input.coworker.id,
+          [],
+          input.revokeAt,
+        );
+        await tx.unsafe(
+          `UPDATE agent_profiles
+           SET handle = $1,
+               name = $2,
+               title = $3,
+               status = $4,
+               editable_config_json = $5::jsonb,
+               current_version_id = $6,
+               config_revision = $7,
+               updated_at = $8
+           WHERE id = $9`,
+          [
+            input.coworker.handle,
+            input.coworker.name,
+            input.coworker.title,
+            input.coworker.status,
+            JSON.stringify(input.coworker.editableConfigJson),
+            input.coworker.currentVersionId,
+            input.coworker.configRevision,
+            input.coworker.updatedAt,
+            input.coworker.id,
+          ],
+        );
+      });
+    },
     async listActiveTaskGrantsForSubject(subjectId) {
       const rows = await db
         .select()
@@ -288,35 +495,12 @@ export function createPostgresWorkspaceStore(sql: SqlClient): WorkspaceCatalogSt
     },
     async replaceActiveTaskGrantsForSubject(subjectId, grants, revokedAt) {
       await sql.begin(async (tx) => {
-        await tx`
-          UPDATE task_grants
-          SET revoked_at = ${revokedAt}
-          WHERE subject_id = ${subjectId} AND revoked_at IS NULL
-        `;
-        for (const grant of grants) {
-          await tx`
-            INSERT INTO task_grants (
-              id, task_id, channel_id, subject_type, subject_id,
-              allowed_operations_json, allowed_fields_json, allowed_transitions_json,
-              policy_revision, granted_by, created_at, revoked_at
-            )
-            VALUES (
-              ${grant.id},
-              ${grant.taskId},
-              ${grant.channelId},
-              ${grant.subjectType},
-              ${grant.subjectId},
-              ${sql.json(grant.allowedOperationsJson)},
-              ${sql.json(grant.allowedFieldsJson)},
-              ${sql.json(grant.allowedTransitionsJson)},
-              ${grant.policyRevision},
-              ${grant.grantedBy},
-              ${grant.createdAt},
-              ${grant.revokedAt}
-            )
-          `;
-        }
+        await replaceGrantsSql(tx as unknown as SqlClient, sql, subjectId, grants, revokedAt);
       });
+    },
+    async getMessage(id) {
+      const rows = await db.select().from(messages).where(eq(messages.id, id)).limit(1);
+      return rows[0] ? mapMessage(rows[0]) : null;
     },
     async getCommandReceipt(workspaceId, commandKind, idempotencyKey) {
       const rows = await db

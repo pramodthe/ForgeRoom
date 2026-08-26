@@ -28,6 +28,15 @@ export type ChannelRecord = {
   updatedAt: string;
 };
 
+export type ChannelPatch = {
+  name?: string;
+  missionBrief?: string;
+  summary?: string | null;
+  policyJson?: Record<string, unknown>;
+  status?: ChannelStatus;
+  updatedAt: string;
+};
+
 export type ParticipantRecord = {
   channelId: string;
   participantType: "human" | "coworker";
@@ -115,7 +124,8 @@ export type WorkspaceCatalogStore = {
   getChannel(id: string): Promise<ChannelRecord | null>;
   listChannels(workspaceId: string): Promise<ChannelRecord[]>;
   insertChannel(channel: ChannelRecord): Promise<void>;
-  updateChannel(channel: ChannelRecord): Promise<void>;
+  /** Updates metadata only — never overwrites nextSequence. */
+  patchChannel(id: string, patch: ChannelPatch): Promise<ChannelRecord | null>;
 
   listParticipants(channelId: string): Promise<ParticipantRecord[]>;
   getParticipant(
@@ -124,11 +134,32 @@ export type WorkspaceCatalogStore = {
     participantId: string,
   ): Promise<ParticipantRecord | null>;
   upsertParticipant(participant: ParticipantRecord): Promise<void>;
+  /** Atomically writes participant row and coworker channel_ids. */
+  upsertParticipantMembership(input: {
+    participant: ParticipantRecord;
+    coworkerId: string;
+    channelIds: string[];
+    coworkerUpdatedAt: string;
+  }): Promise<CoworkerRecord | null>;
 
   getCoworker(id: string): Promise<CoworkerRecord | null>;
   listCoworkers(workspaceId: string): Promise<CoworkerRecord[]>;
   insertCoworker(coworker: CoworkerRecord, version: AgentVersionRecord): Promise<void>;
   updateCoworker(coworker: CoworkerRecord, version?: AgentVersionRecord): Promise<void>;
+  /** Atomically applies membership rows, grant replacement, and coworker profile/version. */
+  commitCoworkerUpdate(input: {
+    coworker: CoworkerRecord;
+    version: AgentVersionRecord;
+    memberships: ParticipantRecord[];
+    taskGrants: TaskGrantRecord[];
+    revokeGrantsAt: string;
+  }): Promise<void>;
+  /** Disables coworker, revokes grants, and removes channel participation atomically. */
+  disableCoworkerCleanup(input: {
+    coworker: CoworkerRecord;
+    memberships: ParticipantRecord[];
+    revokeAt: string;
+  }): Promise<void>;
 
   listActiveTaskGrantsForSubject(subjectId: string): Promise<TaskGrantRecord[]>;
   replaceActiveTaskGrantsForSubject(
@@ -136,6 +167,8 @@ export type WorkspaceCatalogStore = {
     grants: TaskGrantRecord[],
     revokedAt: string,
   ): Promise<void>;
+
+  getMessage(id: string): Promise<MessageRecord | null>;
 
   getCommandReceipt(
     workspaceId: string,
@@ -150,7 +183,6 @@ export type WorkspaceCatalogStore = {
     idempotencyKey: string,
   ): Promise<void>;
 
-  insertChannel(channel: ChannelRecord): Promise<void>;
   insertChannelWithOwner(channel: ChannelRecord, owner: ParticipantRecord): Promise<void>;
 
   appendMessage(input: {
@@ -195,6 +227,24 @@ export function createMemoryWorkspaceStore(): WorkspaceCatalogStore {
     return `${workspaceId}:${commandKind}:${idempotencyKey}`;
   }
 
+  function writeParticipant(participant: ParticipantRecord): void {
+    participants.set(
+      participantKey(participant.channelId, participant.participantType, participant.participantId),
+      structuredClone(participant),
+    );
+  }
+
+  function replaceGrants(subjectId: string, grants: TaskGrantRecord[], revokedAt: string): void {
+    for (const [id, row] of taskGrants) {
+      if (row.subjectId === subjectId && row.revokedAt === null) {
+        taskGrants.set(id, { ...row, revokedAt });
+      }
+    }
+    for (const grant of grants) {
+      taskGrants.set(grant.id, structuredClone(grant));
+    }
+  }
+
   return {
     async getChannel(id) {
       return channels.get(id) ?? null;
@@ -207,8 +257,22 @@ export function createMemoryWorkspaceStore(): WorkspaceCatalogStore {
     async insertChannel(channel) {
       channels.set(channel.id, structuredClone(channel));
     },
-    async updateChannel(channel) {
-      channels.set(channel.id, structuredClone(channel));
+    async patchChannel(id, patch) {
+      const current = channels.get(id);
+      if (!current) {
+        return null;
+      }
+      const updated: ChannelRecord = {
+        ...current,
+        name: patch.name ?? current.name,
+        missionBrief: patch.missionBrief ?? current.missionBrief,
+        summary: patch.summary !== undefined ? patch.summary : current.summary,
+        policyJson: patch.policyJson ?? current.policyJson,
+        status: patch.status ?? current.status,
+        updatedAt: patch.updatedAt,
+      };
+      channels.set(id, structuredClone(updated));
+      return structuredClone(updated);
     },
     async listParticipants(channelId) {
       return [...participants.values()].filter((row) => row.channelId === channelId);
@@ -217,14 +281,24 @@ export function createMemoryWorkspaceStore(): WorkspaceCatalogStore {
       return participants.get(participantKey(channelId, participantType, participantId)) ?? null;
     },
     async upsertParticipant(participant) {
-      participants.set(
-        participantKey(
-          participant.channelId,
-          participant.participantType,
-          participant.participantId,
-        ),
-        structuredClone(participant),
-      );
+      writeParticipant(participant);
+    },
+    async upsertParticipantMembership(input) {
+      const coworker = coworkers.get(input.coworkerId);
+      if (!coworker) {
+        return null;
+      }
+      writeParticipant(input.participant);
+      const updated: CoworkerRecord = {
+        ...coworker,
+        editableConfigJson: {
+          ...coworker.editableConfigJson,
+          channel_ids: [...input.channelIds],
+        },
+        updatedAt: input.coworkerUpdatedAt,
+      };
+      coworkers.set(updated.id, structuredClone(updated));
+      return structuredClone(updated);
     },
     async getCoworker(id) {
       return coworkers.get(id) ?? null;
@@ -244,20 +318,31 @@ export function createMemoryWorkspaceStore(): WorkspaceCatalogStore {
         versions.set(version.id, structuredClone(version));
       }
     },
+    async commitCoworkerUpdate(input) {
+      for (const membership of input.memberships) {
+        writeParticipant(membership);
+      }
+      replaceGrants(input.coworker.id, input.taskGrants, input.revokeGrantsAt);
+      coworkers.set(input.coworker.id, structuredClone(input.coworker));
+      versions.set(input.version.id, structuredClone(input.version));
+    },
+    async disableCoworkerCleanup(input) {
+      for (const membership of input.memberships) {
+        writeParticipant(membership);
+      }
+      replaceGrants(input.coworker.id, [], input.revokeAt);
+      coworkers.set(input.coworker.id, structuredClone(input.coworker));
+    },
     async listActiveTaskGrantsForSubject(subjectId) {
       return [...taskGrants.values()].filter(
         (row) => row.subjectId === subjectId && row.revokedAt === null,
       );
     },
     async replaceActiveTaskGrantsForSubject(subjectId, grants, revokedAt) {
-      for (const [id, row] of taskGrants) {
-        if (row.subjectId === subjectId && row.revokedAt === null) {
-          taskGrants.set(id, { ...row, revokedAt });
-        }
-      }
-      for (const grant of grants) {
-        taskGrants.set(grant.id, structuredClone(grant));
-      }
+      replaceGrants(subjectId, grants, revokedAt);
+    },
+    async getMessage(id) {
+      return messages.get(id) ?? null;
     },
     async getCommandReceipt(workspaceId, commandKind, idempotencyKey) {
       return receipts.get(receiptKey(workspaceId, commandKind, idempotencyKey)) ?? null;
@@ -275,10 +360,7 @@ export function createMemoryWorkspaceStore(): WorkspaceCatalogStore {
     },
     async insertChannelWithOwner(channel, owner) {
       channels.set(channel.id, structuredClone(channel));
-      participants.set(
-        participantKey(owner.channelId, owner.participantType, owner.participantId),
-        structuredClone(owner),
-      );
+      writeParticipant(owner);
     },
     async appendMessage(input) {
       const channel = channels.get(input.channelId);

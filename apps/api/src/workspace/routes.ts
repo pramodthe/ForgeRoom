@@ -1,4 +1,5 @@
 import type { Context } from "hono";
+import type { ContentfulStatusCode } from "hono/utils/http-status";
 import type { SafeJsonObject } from "@forgeroom/contracts";
 import {
   channelArchiveCommandSchema,
@@ -10,6 +11,7 @@ import {
   coworkerDisableCommandSchema,
   coworkerUpdateCommandSchema,
 } from "@forgeroom/contracts";
+import { randomOpaqueId } from "../auth/crypto";
 import type { AuthService } from "../auth/service";
 import type { ApiEnv } from "../env";
 import { errorResponse } from "../http";
@@ -30,6 +32,10 @@ function fail(c: Context, error: WorkspaceServiceError) {
     details: ("details" in error ? error.details : undefined) as SafeJsonObject | undefined,
   });
   return c.json(failure.body, failure.status);
+}
+
+function okJson(c: Context, body: object, status: ContentfulStatusCode) {
+  return c.json({ ...body, request_id: randomOpaqueId("req") }, status);
 }
 
 export function mountWorkspaceRoutes(
@@ -63,7 +69,7 @@ export function mountWorkspaceRoutes(
     if (!result.ok) {
       return fail(c, result.error);
     }
-    return c.json(result.value, 201);
+    return okJson(c, result.value, 201);
   });
 
   app.get("/api/workspaces/:workspaceId/channels", async (c) => {
@@ -79,7 +85,7 @@ export function mountWorkspaceRoutes(
     if (!result.ok) {
       return fail(c, result.error);
     }
-    return c.json({ channels: result.value }, 200);
+    return okJson(c, { channels: result.value }, 200);
   });
 
   app.get("/api/channels/:channelId", async (c) => {
@@ -95,7 +101,7 @@ export function mountWorkspaceRoutes(
     if (!result.ok) {
       return fail(c, result.error);
     }
-    return c.json(result.value, 200);
+    return okJson(c, result.value, 200);
   });
 
   app.patch("/api/channels/:channelId", async (c) => {
@@ -118,7 +124,7 @@ export function mountWorkspaceRoutes(
     if (!result.ok) {
       return fail(c, result.error);
     }
-    return c.json(result.value, 200);
+    return okJson(c, result.value, 200);
   });
 
   app.post("/api/channels/:channelId/archive", async (c) => {
@@ -141,7 +147,7 @@ export function mountWorkspaceRoutes(
     if (!result.ok) {
       return fail(c, result.error);
     }
-    return c.json(result.value, 200);
+    return okJson(c, result.value, 200);
   });
 
   app.post("/api/channels/:channelId/participants", async (c) => {
@@ -171,7 +177,7 @@ export function mountWorkspaceRoutes(
     if (!result.ok) {
       return fail(c, result.error);
     }
-    return c.json(result.value, 200);
+    return okJson(c, result.value, 200);
   });
 
   app.delete("/api/channels/:channelId/participants/:participantId", async (c) => {
@@ -187,12 +193,14 @@ export function mountWorkspaceRoutes(
     if (participantId instanceof Response) {
       return participantId;
     }
-    const parsed = channelParticipantRemoveCommandSchema.safeParse(
-      await c.req.json().catch(() => ({
-        schemaVersion: 1,
-        idempotency_key: c.req.query("idempotency_key"),
-      })),
-    );
+    const rawBody = await c.req.json().catch(() => null);
+    if (rawBody === null) {
+      const failure = errorResponse("validation_failed", "Invalid participant remove command.", {
+        status: 400,
+      });
+      return c.json(failure.body, failure.status);
+    }
+    const parsed = channelParticipantRemoveCommandSchema.safeParse(rawBody);
     if (!parsed.success) {
       const failure = errorResponse("validation_failed", "Invalid participant remove command.", {
         status: 400,
@@ -208,7 +216,7 @@ export function mountWorkspaceRoutes(
     if (!result.ok) {
       return fail(c, result.error);
     }
-    return c.json(result.value, 200);
+    return okJson(c, result.value, 200);
   });
 
   app.post("/api/channels/:channelId/messages", async (c) => {
@@ -231,7 +239,7 @@ export function mountWorkspaceRoutes(
     if (!result.ok) {
       return fail(c, result.error);
     }
-    return c.json(result.value, 201);
+    return okJson(c, result.value, 201);
   });
 
   app.get("/api/workspaces/:workspaceId/coworkers", async (c) => {
@@ -247,7 +255,7 @@ export function mountWorkspaceRoutes(
     if (!result.ok) {
       return fail(c, result.error);
     }
-    return c.json({ coworkers: result.value }, 200);
+    return okJson(c, { coworkers: result.value }, 200);
   });
 
   app.get("/api/coworkers/:coworkerId", async (c) => {
@@ -263,7 +271,7 @@ export function mountWorkspaceRoutes(
     if (!result.ok) {
       return fail(c, result.error);
     }
-    return c.json(result.value, 200);
+    return okJson(c, result.value, 200);
   });
 
   app.patch("/api/coworkers/:coworkerId", async (c) => {
@@ -286,7 +294,7 @@ export function mountWorkspaceRoutes(
     if (!result.ok) {
       return fail(c, result.error);
     }
-    return c.json(result.value, 200);
+    return okJson(c, result.value, 200);
   });
 
   app.post("/api/coworkers/:coworkerId/disable", async (c) => {
@@ -309,7 +317,7 @@ export function mountWorkspaceRoutes(
     if (!result.ok) {
       return fail(c, result.error);
     }
-    return c.json(result.value, 200);
+    return okJson(c, result.value, 200);
   });
 
   // Direct coworker create is intentionally absent; only CoworkerDraft (P0-213) provisions.

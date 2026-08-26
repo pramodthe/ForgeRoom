@@ -20,6 +20,7 @@ import {
   type ChannelRecord,
   type CoworkerEditableConfig,
   type CoworkerRecord,
+  type ParticipantRecord,
   type TaskGrantRecord,
   type WorkspaceCatalogStore,
 } from "./store";
@@ -32,6 +33,9 @@ export type WorkspaceServiceError =
 
 export type WorkspaceServiceResult<T> =
   { ok: true; value: T } | { ok: false; error: WorkspaceServiceError };
+
+/** Stale in-progress idempotency claims older than this may be reclaimed after a crash. */
+export const IDEMPOTENCY_CLAIM_LEASE_MS = 60_000;
 
 function toChannel(row: ChannelRecord): Channel {
   return channelSchema.parse({
@@ -90,6 +94,14 @@ function assertWorkspace(
     return { code: "forbidden", message: "Workspace access denied." };
   }
   return null;
+}
+
+function isStaleClaim(createdAt: string, nowMs: number): boolean {
+  const createdMs = Date.parse(createdAt);
+  if (Number.isNaN(createdMs)) {
+    return true;
+  }
+  return nowMs - createdMs >= IDEMPOTENCY_CLAIM_LEASE_MS;
 }
 
 export type WorkspaceService = {
@@ -247,15 +259,18 @@ export function createWorkspaceService(options?: {
     reload: (resultId: string) => Promise<T | null>;
     run: () => Promise<WorkspaceServiceResult<T>>;
   }): Promise<WorkspaceServiceResult<T>> {
-    const claimed = await store.tryClaimCommandReceipt({
-      workspaceId: input.workspaceId,
-      commandKind: input.commandKind,
-      idempotencyKey: input.idempotencyKey,
-      resultId: input.resultId,
-      resultJson: null,
-      createdAt: now().toISOString(),
-    });
-    if (!claimed) {
+    const tryOnce = async (): Promise<{ claimed: boolean; result?: WorkspaceServiceResult<T> }> => {
+      const claimed = await store.tryClaimCommandReceipt({
+        workspaceId: input.workspaceId,
+        commandKind: input.commandKind,
+        idempotencyKey: input.idempotencyKey,
+        resultId: input.resultId,
+        resultJson: null,
+        createdAt: now().toISOString(),
+      });
+      if (claimed) {
+        return { claimed: true };
+      }
       const existing = await reloadIdempotentResult(
         input.workspaceId,
         input.commandKind,
@@ -263,13 +278,43 @@ export function createWorkspaceService(options?: {
         input.reload,
       );
       if (existing) {
-        return existing;
+        return { claimed: false, result: existing };
+      }
+      const receipt = await store.getCommandReceipt(
+        input.workspaceId,
+        input.commandKind,
+        input.idempotencyKey,
+      );
+      if (receipt && isStaleClaim(receipt.createdAt, now().getTime())) {
+        await store.deleteCommandReceipt(
+          input.workspaceId,
+          input.commandKind,
+          input.idempotencyKey,
+        );
+        return { claimed: false };
       }
       return {
-        ok: false,
-        error: { code: "conflict", message: "Idempotent command is already in progress." },
+        claimed: false,
+        result: {
+          ok: false,
+          error: { code: "conflict", message: "Idempotent command is already in progress." },
+        },
       };
+    };
+
+    let claim = await tryOnce();
+    if (!claim.claimed && !claim.result) {
+      claim = await tryOnce();
     }
+    if (!claim.claimed) {
+      return (
+        claim.result ?? {
+          ok: false,
+          error: { code: "conflict", message: "Idempotent command is already in progress." },
+        }
+      );
+    }
+
     try {
       const result = await input.run();
       if (!result.ok) {
@@ -287,27 +332,34 @@ export function createWorkspaceService(options?: {
     }
   }
 
-  async function syncChannelMembership(input: {
+  async function validateMembershipTargets(input: {
     workspaceId: string;
     coworkerId: string;
     channelIds: string[];
-    actorId: string;
-  }): Promise<WorkspaceServiceError | null> {
+  }): Promise<
+    { ok: true; memberships: ParticipantRecord[] } | { ok: false; error: WorkspaceServiceError }
+  > {
     const uniqueIds = [...new Set(input.channelIds)];
     for (const channelId of uniqueIds) {
       const channel = await store.getChannel(channelId);
       if (!channel || channel.workspaceId !== input.workspaceId) {
         return {
-          code: "validation_failed",
-          message: "channel_ids must reference channels in the same workspace.",
-          details: { channel_id: channelId },
+          ok: false,
+          error: {
+            code: "validation_failed",
+            message: "channel_ids must reference channels in the same workspace.",
+            details: { channel_id: channelId },
+          },
         };
       }
       if (channel.status === "archived") {
         return {
-          code: "conflict",
-          message: "Cannot add coworkers to an archived channel.",
-          details: { channel_id: channelId, reason: "channel_archived" },
+          ok: false,
+          error: {
+            code: "conflict",
+            message: "Cannot add coworkers to an archived channel.",
+            details: { channel_id: channelId, reason: "channel_archived" },
+          },
         };
       }
     }
@@ -315,14 +367,13 @@ export function createWorkspaceService(options?: {
     const allChannels = await store.listChannels(input.workspaceId);
     const desired = new Set(uniqueIds);
     const joinedAt = now().toISOString();
+    const memberships: ParticipantRecord[] = [];
+
     for (const channel of allChannels) {
       const existing = await store.getParticipant(channel.id, "coworker", input.coworkerId);
       const shouldBelong = desired.has(channel.id);
       if (shouldBelong) {
-        if (channel.status === "archived") {
-          continue;
-        }
-        await store.upsertParticipant({
+        memberships.push({
           channelId: channel.id,
           participantType: "coworker",
           participantId: input.coworkerId,
@@ -331,30 +382,45 @@ export function createWorkspaceService(options?: {
           removedAt: null,
         });
       } else if (existing && existing.removedAt === null) {
-        await store.upsertParticipant({
+        if (channel.status === "archived") {
+          return {
+            ok: false,
+            error: {
+              code: "conflict",
+              message: "Cannot remove coworkers from an archived channel.",
+              details: { channel_id: channel.id, reason: "channel_archived" },
+            },
+          };
+        }
+        memberships.push({
           ...existing,
           removedAt: joinedAt,
         });
       }
     }
-    void input.actorId;
-    return null;
+
+    return { ok: true, memberships };
   }
 
-  async function replaceTaskGrants(input: {
+  async function buildTaskGrants(input: {
     coworker: CoworkerRecord;
     grants: CoworkerEditableConfig["task_record_grants"];
     grantedBy: string;
-  }): Promise<WorkspaceServiceError | null> {
+  }): Promise<
+    { ok: true; grants: TaskGrantRecord[] } | { ok: false; error: WorkspaceServiceError }
+  > {
     const createdAt = now().toISOString();
     const next: TaskGrantRecord[] = [];
     for (const grant of input.grants) {
       const channel = await store.getChannel(grant.channel_id);
       if (!channel || channel.workspaceId !== input.coworker.workspaceId) {
         return {
-          code: "validation_failed",
-          message: "task_record_grants must reference workspace channels.",
-          details: { channel_id: grant.channel_id },
+          ok: false,
+          error: {
+            code: "validation_failed",
+            message: "task_record_grants must reference workspace channels.",
+            details: { channel_id: grant.channel_id },
+          },
         };
       }
       next.push({
@@ -372,8 +438,7 @@ export function createWorkspaceService(options?: {
         revokedAt: null,
       });
     }
-    await store.replaceActiveTaskGrantsForSubject(input.coworker.id, next, createdAt);
-    return null;
+    return { ok: true, grants: next };
   }
 
   return {
@@ -462,13 +527,14 @@ export function createWorkspaceService(options?: {
           return row ? toChannel(row) : null;
         },
         run: async () => {
-          const updated: ChannelRecord = {
-            ...loaded.value,
-            name: command.name ?? loaded.value.name,
-            missionBrief: command.mission_brief ?? loaded.value.missionBrief,
+          const updated = await store.patchChannel(channelId, {
+            name: command.name,
+            missionBrief: command.mission_brief,
             updatedAt: now().toISOString(),
-          };
-          await store.updateChannel(updated);
+          });
+          if (!updated) {
+            return { ok: false, error: { code: "not_found", message: "Channel not found." } };
+          }
           return { ok: true, value: toChannel(updated) };
         },
       });
@@ -492,12 +558,13 @@ export function createWorkspaceService(options?: {
           if (loaded.value.status === "archived") {
             return { ok: true, value: toChannel(loaded.value) };
           }
-          const updated: ChannelRecord = {
-            ...loaded.value,
+          const updated = await store.patchChannel(channelId, {
             status: "archived",
             updatedAt: now().toISOString(),
-          };
-          await store.updateChannel(updated);
+          });
+          if (!updated) {
+            return { ok: false, error: { code: "not_found", message: "Channel not found." } };
+          }
           return { ok: true, value: toChannel(updated) };
         },
       });
@@ -573,26 +640,33 @@ export function createWorkspaceService(options?: {
         run: async () => {
           const joinedAt = now().toISOString();
           const existing = await store.getParticipant(channelId, "coworker", input.participant_id);
-          await store.upsertParticipant({
-            channelId,
-            participantType: "coworker",
-            participantId: input.participant_id,
-            role: "member",
-            joinedAt: existing?.joinedAt ?? joinedAt,
-            removedAt: null,
+          const channelIds = [...new Set([...coworker.editableConfigJson.channel_ids, channelId])];
+          const updated = await store.upsertParticipantMembership({
+            participant: {
+              channelId,
+              participantType: "coworker",
+              participantId: input.participant_id,
+              role: "member",
+              joinedAt: existing?.joinedAt ?? joinedAt,
+              removedAt: null,
+            },
+            coworkerId: input.participant_id,
+            channelIds,
+            coworkerUpdatedAt: joinedAt,
           });
-          const config = {
-            ...coworker.editableConfigJson,
-            channel_ids: [...new Set([...coworker.editableConfigJson.channel_ids, channelId])],
-          };
-          await store.updateCoworker({
-            ...coworker,
-            editableConfigJson: config,
-            updatedAt: joinedAt,
-          });
+          if (!updated) {
+            return {
+              ok: false,
+              error: { code: "not_found", message: "Coworker not found." },
+            };
+          }
+          const channel = await store.getChannel(channelId);
           return {
             ok: true,
-            value: { channel: toChannel(loaded.value), participant_id: input.participant_id },
+            value: {
+              channel: toChannel(channel ?? loaded.value),
+              participant_id: input.participant_id,
+            },
           };
         },
       });
@@ -613,6 +687,20 @@ export function createWorkspaceService(options?: {
           },
         };
       }
+
+      const replay = await reloadIdempotentResult(
+        loaded.value.workspaceId,
+        "channel.participant.remove",
+        idempotencyKey,
+        async () => {
+          const channel = await store.getChannel(channelId);
+          return channel ? { channel: toChannel(channel), participant_id: participantId } : null;
+        },
+      );
+      if (replay) {
+        return replay;
+      }
+
       const existing = await store.getParticipant(channelId, "coworker", participantId);
       if (!existing || existing.removedAt) {
         return {
@@ -631,23 +719,30 @@ export function createWorkspaceService(options?: {
         },
         run: async () => {
           const removedAt = now().toISOString();
-          await store.upsertParticipant({ ...existing, removedAt });
           const coworker = await store.getCoworker(participantId);
+          const channelIds = (coworker?.editableConfigJson.channel_ids ?? []).filter(
+            (id) => id !== channelId,
+          );
           if (coworker && coworker.workspaceId === loaded.value.workspaceId) {
-            await store.updateCoworker({
-              ...coworker,
-              editableConfigJson: {
-                ...coworker.editableConfigJson,
-                channel_ids: coworker.editableConfigJson.channel_ids.filter(
-                  (id) => id !== channelId,
-                ),
-              },
-              updatedAt: removedAt,
+            const updated = await store.upsertParticipantMembership({
+              participant: { ...existing, removedAt },
+              coworkerId: participantId,
+              channelIds,
+              coworkerUpdatedAt: removedAt,
             });
+            if (!updated) {
+              return { ok: false, error: { code: "not_found", message: "Coworker not found." } };
+            }
+          } else {
+            await store.upsertParticipant({ ...existing, removedAt });
           }
+          const channel = await store.getChannel(channelId);
           return {
             ok: true,
-            value: { channel: toChannel(loaded.value), participant_id: participantId },
+            value: {
+              channel: toChannel(channel ?? loaded.value),
+              participant_id: participantId,
+            },
           };
         },
       });
@@ -667,6 +762,19 @@ export function createWorkspaceService(options?: {
             details: { reason: "channel_archived" },
           },
         };
+      }
+      if (command.parent_message_id) {
+        const parent = await store.getMessage(command.parent_message_id);
+        if (!parent || parent.channelId !== channelId) {
+          return {
+            ok: false,
+            error: {
+              code: "validation_failed",
+              message: "parent_message_id must reference a message in the same channel.",
+              details: { parent_message_id: command.parent_message_id },
+            },
+          };
+        }
       }
       const participants = await store.listParticipants(channelId);
       const activeCoworkers = new Set(
@@ -791,22 +899,22 @@ export function createWorkspaceService(options?: {
           },
         };
       }
-      const membershipError = await syncChannelMembership({
-        workspaceId: loaded.value.workspaceId,
-        coworkerId,
-        channelIds: command.channel_ids,
-        actorId: session.user.id,
-      });
-      if (membershipError) {
-        return { ok: false, error: membershipError };
-      }
-      const grantError = await replaceTaskGrants({
+
+      const grantPlan = await buildTaskGrants({
         coworker: loaded.value,
         grants: command.task_record_grants,
         grantedBy: session.user.id,
       });
-      if (grantError) {
-        return { ok: false, error: grantError };
+      if (!grantPlan.ok) {
+        return grantPlan;
+      }
+      const membershipPlan = await validateMembershipTargets({
+        workspaceId: loaded.value.workspaceId,
+        coworkerId,
+        channelIds: command.channel_ids,
+      });
+      if (!membershipPlan.ok) {
+        return membershipPlan;
       }
 
       const updatedAt = now().toISOString();
@@ -839,7 +947,13 @@ export function createWorkspaceService(options?: {
         configRevision: nextRevision,
         updatedAt,
       };
-      await store.updateCoworker(updated, version);
+      await store.commitCoworkerUpdate({
+        coworker: updated,
+        version,
+        memberships: membershipPlan.memberships,
+        taskGrants: grantPlan.grants,
+        revokeGrantsAt: updatedAt,
+      });
       return {
         ok: true,
         value: {
@@ -856,6 +970,20 @@ export function createWorkspaceService(options?: {
       if (!loaded.ok) {
         return loaded;
       }
+
+      const replay = await reloadIdempotentResult(
+        loaded.value.workspaceId,
+        "coworker.disable",
+        command.idempotency_key,
+        async (id) => {
+          const row = await store.getCoworker(id);
+          return row ? toCoworker(row) : null;
+        },
+      );
+      if (replay) {
+        return replay;
+      }
+
       if (loaded.value.configRevision !== command.expected_config_revision) {
         return {
           ok: false,
@@ -883,13 +1011,30 @@ export function createWorkspaceService(options?: {
             return { ok: true, value: toCoworker(loaded.value) };
           }
           const updatedAt = now().toISOString();
+          const channels = await store.listChannels(loaded.value.workspaceId);
+          const memberships: ParticipantRecord[] = [];
+          for (const channel of channels) {
+            const existing = await store.getParticipant(channel.id, "coworker", coworkerId);
+            if (existing && existing.removedAt === null) {
+              memberships.push({ ...existing, removedAt: updatedAt });
+            }
+          }
           const updated: CoworkerRecord = {
             ...loaded.value,
             status: "disabled",
+            editableConfigJson: {
+              ...loaded.value.editableConfigJson,
+              channel_ids: [],
+              task_record_grants: [],
+            },
             configRevision: loaded.value.configRevision + 1,
             updatedAt,
           };
-          await store.updateCoworker(updated);
+          await store.disableCoworkerCleanup({
+            coworker: updated,
+            memberships,
+            revokeAt: updatedAt,
+          });
           return { ok: true, value: toCoworker(updated) };
         },
       });

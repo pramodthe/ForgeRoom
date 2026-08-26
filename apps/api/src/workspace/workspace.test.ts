@@ -13,11 +13,17 @@ import { createMemoryAuthStore } from "../auth/store";
 import { createPostgresAuthStore } from "../auth/postgres-store";
 import { createMemoryWorkspaceStore } from "./store";
 import { createPostgresWorkspaceStore } from "./postgres-store";
-import { createWorkspaceService } from "./service";
+import { createWorkspaceService, IDEMPOTENCY_CLAIM_LEASE_MS } from "./service";
 
 const PASSWORD = "correct-horse-battery";
 
-async function createTestApp() {
+function withoutRequestId(body: unknown): Record<string, unknown> {
+  const record = (body ?? {}) as Record<string, unknown>;
+  const { request_id: _requestId, ...rest } = record;
+  return rest;
+}
+
+async function createTestApp(options?: { now?: () => Date }) {
   const authStore = createMemoryAuthStore();
   const workspaceStore = createMemoryWorkspaceStore();
   const env = loadApiEnv({
@@ -34,7 +40,7 @@ async function createTestApp() {
     SESSION_TTL_SECONDS: "3600",
   });
   const auth = createAuthService({ env, store: authStore });
-  const workspace = createWorkspaceService({ store: workspaceStore });
+  const workspace = createWorkspaceService({ store: workspaceStore, now: options?.now });
   await auth.seedOwner();
   return {
     app: createApiApp({ env, auth, workspace }),
@@ -96,7 +102,10 @@ describe("channel and coworker API", () => {
       }),
     });
     expect(created.status).toBe(201);
-    const channel = channelSchema.parse(await created.json());
+    const createdBody = (await created.json()) as Record<string, unknown>;
+    expect(typeof createdBody.request_id).toBe("string");
+    expect(String(createdBody.request_id).startsWith("req_")).toBe(true);
+    const channel = channelSchema.parse(withoutRequestId(createdBody));
     expect(channel.name).toBe("Research");
     expect(channel.status).toBe("active");
 
@@ -105,6 +114,7 @@ describe("channel and coworker API", () => {
     });
     expect(listed.status).toBe(200);
     await expect(listed.json()).resolves.toMatchObject({
+      request_id: expect.stringMatching(/^req_/),
       channels: [expect.objectContaining({ id: channel.id })],
     });
 
@@ -112,7 +122,7 @@ describe("channel and coworker API", () => {
       headers: { cookie: `${env.sessionCookieName}=${cookie}` },
     });
     expect(opened.status).toBe(200);
-    expect(channelSchema.parse(await opened.json()).id).toBe(channel.id);
+    expect(channelSchema.parse(withoutRequestId(await opened.json())).id).toBe(channel.id);
 
     const renamed = await app.request(`/api/channels/${channel.id}`, {
       method: "PATCH",
@@ -124,7 +134,7 @@ describe("channel and coworker API", () => {
       }),
     });
     expect(renamed.status).toBe(200);
-    expect(channelSchema.parse(await renamed.json()).name).toBe("Research Lab");
+    expect(channelSchema.parse(withoutRequestId(await renamed.json())).name).toBe("Research Lab");
 
     const archived = await app.request(`/api/channels/${channel.id}/archive`, {
       method: "POST",
@@ -132,7 +142,7 @@ describe("channel and coworker API", () => {
       body: JSON.stringify({ schemaVersion: 1, idempotency_key: "idem_channel_archive" }),
     });
     expect(archived.status).toBe(200);
-    expect(channelSchema.parse(await archived.json()).status).toBe("archived");
+    expect(channelSchema.parse(withoutRequestId(await archived.json())).status).toBe("archived");
   });
 
   it("rejects unauthenticated reads and CSRF-failed mutations", async () => {
@@ -176,7 +186,9 @@ describe("channel and coworker API", () => {
       headers: { cookie: `${env.sessionCookieName}=${cookie}` },
     });
     expect(listed.status).toBe(200);
-    const listBody = (await listed.json()) as { coworkers: unknown[] };
+    const listBody = (await listed.json()) as { coworkers: unknown[]; request_id: string };
+    expect(typeof listBody.request_id).toBe("string");
+    expect(listBody.request_id.startsWith("req_")).toBe(true);
     expect(listBody.coworkers).toHaveLength(1);
     const coworker = coworkerProfileSchema.parse(listBody.coworkers[0]);
 
@@ -185,6 +197,7 @@ describe("channel and coworker API", () => {
     });
     expect(got.status).toBe(200);
     await expect(got.json()).resolves.toMatchObject({
+      request_id: expect.stringMatching(/^req_/),
       id: coworker.id,
       config: { tool_grants: ["PROVIDER_READ_TOOL"] },
     });
@@ -199,7 +212,7 @@ describe("channel and coworker API", () => {
         idempotency_key: "idem_ops",
       }),
     });
-    const channel = channelSchema.parse(await channelRes.json());
+    const channel = channelSchema.parse(withoutRequestId(await channelRes.json()));
 
     const edited = await app.request(`/api/coworkers/${coworker.id}`, {
       method: "PATCH",
@@ -221,6 +234,7 @@ describe("channel and coworker API", () => {
     });
     expect(edited.status).toBe(200);
     await expect(edited.json()).resolves.toMatchObject({
+      request_id: expect.stringMatching(/^req_/),
       coworker: { name: "Analyst Plus", config_revision: 2 },
       config: { tool_grants: ["PROVIDER_READ_TOOL", "PROVIDER_WRITE_TOOL"] },
     });
@@ -236,7 +250,9 @@ describe("channel and coworker API", () => {
       }),
     });
     expect(disabled.status).toBe(200);
-    expect(coworkerProfileSchema.parse(await disabled.json()).status).toBe("disabled");
+    expect(coworkerProfileSchema.parse(withoutRequestId(await disabled.json())).status).toBe(
+      "disabled",
+    );
 
     const createBlocked = await app.request(`/api/workspaces/${env.workspaceId}/coworkers`, {
       method: "POST",
@@ -260,7 +276,7 @@ describe("channel and coworker API", () => {
         idempotency_key: "idem_shared",
       }),
     });
-    const channel = channelSchema.parse(await channelRes.json());
+    const channel = channelSchema.parse(withoutRequestId(await channelRes.json()));
     const alpha = await workspace.seedCoworker({
       workspaceId: env.workspaceId,
       createdBy: env.ownerUserId,
@@ -362,7 +378,7 @@ describe("channel and coworker API", () => {
         idempotency_key: "idem_temp",
       }),
     });
-    const channel = channelSchema.parse(await channelRes.json());
+    const channel = channelSchema.parse(withoutRequestId(await channelRes.json()));
     const coworker = await workspace.seedCoworker({
       workspaceId: env.workspaceId,
       createdBy: env.ownerUserId,
@@ -404,6 +420,344 @@ describe("channel and coworker API", () => {
       }),
     });
     expect(participant.status).toBe(409);
+  });
+
+  it("rejects dropping archived channel membership via coworker PATCH", async () => {
+    const { app, env, workspace } = await createTestApp();
+    const { session, cookie } = await login(app, env);
+    const channelRes = await app.request(`/api/workspaces/${env.workspaceId}/channels`, {
+      method: "POST",
+      headers: mutationHeaders(env, cookie, session.csrf_token),
+      body: JSON.stringify({
+        schemaVersion: 1,
+        name: "Keep",
+        mission_brief: "Keep",
+        idempotency_key: "idem_keep",
+      }),
+    });
+    const channel = channelSchema.parse(withoutRequestId(await channelRes.json()));
+    const coworker = await workspace.seedCoworker({
+      workspaceId: env.workspaceId,
+      createdBy: env.ownerUserId,
+      handle: "member",
+      name: "Member",
+      title: "M",
+    });
+    const added = await app.request(`/api/channels/${channel.id}/participants`, {
+      method: "POST",
+      headers: mutationHeaders(env, cookie, session.csrf_token),
+      body: JSON.stringify({
+        schemaVersion: 1,
+        participant_type: "coworker",
+        participant_id: coworker.id,
+        role: "member",
+        idempotency_key: "idem_keep_add",
+      }),
+    });
+    expect(added.status).toBe(200);
+
+    await app.request(`/api/channels/${channel.id}/archive`, {
+      method: "POST",
+      headers: mutationHeaders(env, cookie, session.csrf_token),
+      body: JSON.stringify({ schemaVersion: 1, idempotency_key: "idem_arch_keep" }),
+    });
+
+    const dropped = await app.request(`/api/coworkers/${coworker.id}`, {
+      method: "PATCH",
+      headers: mutationHeaders(env, cookie, session.csrf_token),
+      body: JSON.stringify({
+        name: "Member",
+        handle: "member",
+        title: "M",
+        standing_instructions: "",
+        model_preset: "default",
+        native_subagents_enabled: false,
+        channel_ids: [],
+        budget: { max_turn_tokens: 1000, max_tool_calls: 5 },
+        task_record_grants: [],
+        tool_grants: [],
+        skill_version_ids: [],
+        component_version_ids: [],
+      }),
+    });
+    expect(dropped.status).toBe(409);
+    expect(errorEnvelopeSchema.parse(await dropped.json()).error.details).toMatchObject({
+      reason: "channel_archived",
+    });
+  });
+
+  it("rejects cross-channel parent_message_id and preserves next_sequence on rename", async () => {
+    const { app, env, workspaceStore } = await createTestApp();
+    const { session, cookie } = await login(app, env);
+    const aRes = await app.request(`/api/workspaces/${env.workspaceId}/channels`, {
+      method: "POST",
+      headers: mutationHeaders(env, cookie, session.csrf_token),
+      body: JSON.stringify({
+        schemaVersion: 1,
+        name: "A",
+        mission_brief: "A",
+        idempotency_key: "idem_a",
+      }),
+    });
+    const bRes = await app.request(`/api/workspaces/${env.workspaceId}/channels`, {
+      method: "POST",
+      headers: mutationHeaders(env, cookie, session.csrf_token),
+      body: JSON.stringify({
+        schemaVersion: 1,
+        name: "B",
+        mission_brief: "B",
+        idempotency_key: "idem_b",
+      }),
+    });
+    const channelA = channelSchema.parse(withoutRequestId(await aRes.json()));
+    const channelB = channelSchema.parse(withoutRequestId(await bRes.json()));
+
+    const posted = await app.request(`/api/channels/${channelA.id}/messages`, {
+      method: "POST",
+      headers: mutationHeaders(env, cookie, session.csrf_token),
+      body: JSON.stringify({
+        body: "root",
+        recipient_handles: [],
+        routing_mode: "direct",
+        parent_message_id: null,
+      }),
+    });
+    expect(posted.status).toBe(201);
+    const message = (await posted.json()) as { message_id: string; sequence: number };
+    expect(message.sequence).toBe(0);
+
+    const afterPost = await workspaceStore.getChannel(channelA.id);
+    expect(afterPost?.nextSequence).toBe(1);
+
+    const renamed = await app.request(`/api/channels/${channelA.id}`, {
+      method: "PATCH",
+      headers: mutationHeaders(env, cookie, session.csrf_token),
+      body: JSON.stringify({
+        schemaVersion: 1,
+        name: "A2",
+        idempotency_key: "idem_rename_a",
+      }),
+    });
+    expect(renamed.status).toBe(200);
+    const renamedBody = channelSchema.parse(withoutRequestId(await renamed.json()));
+    expect(renamedBody.next_sequence).toBe(1);
+    expect((await workspaceStore.getChannel(channelA.id))?.nextSequence).toBe(1);
+
+    const cross = await app.request(`/api/channels/${channelB.id}/messages`, {
+      method: "POST",
+      headers: mutationHeaders(env, cookie, session.csrf_token),
+      body: JSON.stringify({
+        body: "reply",
+        recipient_handles: [],
+        routing_mode: "direct",
+        parent_message_id: message.message_id,
+      }),
+    });
+    expect(cross.status).toBe(400);
+    expect(errorEnvelopeSchema.parse(await cross.json()).error.code).toBe("validation_failed");
+  });
+
+  it("disables coworker by revoking grants and removing channel participation", async () => {
+    const { app, env, workspace, workspaceStore } = await createTestApp();
+    const { session, cookie } = await login(app, env);
+    const channelRes = await app.request(`/api/workspaces/${env.workspaceId}/channels`, {
+      method: "POST",
+      headers: mutationHeaders(env, cookie, session.csrf_token),
+      body: JSON.stringify({
+        schemaVersion: 1,
+        name: "Ops",
+        mission_brief: "Ops",
+        idempotency_key: "idem_ops2",
+      }),
+    });
+    const channel = channelSchema.parse(withoutRequestId(await channelRes.json()));
+    const coworker = await workspace.seedCoworker({
+      workspaceId: env.workspaceId,
+      createdBy: env.ownerUserId,
+      handle: "retiree",
+      name: "Retiree",
+      title: "R",
+    });
+    await app.request(`/api/channels/${channel.id}/participants`, {
+      method: "POST",
+      headers: mutationHeaders(env, cookie, session.csrf_token),
+      body: JSON.stringify({
+        schemaVersion: 1,
+        participant_type: "coworker",
+        participant_id: coworker.id,
+        role: "member",
+        idempotency_key: "idem_add_retiree",
+      }),
+    });
+    await workspace.updateCoworker(session, coworker.id, {
+      name: "Retiree",
+      handle: "retiree",
+      title: "R",
+      standing_instructions: "",
+      model_preset: "default",
+      native_subagents_enabled: false,
+      channel_ids: [channel.id],
+      budget: { max_turn_tokens: 1000, max_tool_calls: 5 },
+      task_record_grants: [{ channel_id: channel.id, operations: ["create"] }],
+      tool_grants: [],
+      skill_version_ids: [],
+      component_version_ids: [],
+    });
+
+    const disabled = await app.request(`/api/coworkers/${coworker.id}/disable`, {
+      method: "POST",
+      headers: mutationHeaders(env, cookie, session.csrf_token),
+      body: JSON.stringify({
+        schemaVersion: 1,
+        expected_config_revision: 2,
+        reason: "done",
+        idempotency_key: "idem_disable_cleanup",
+      }),
+    });
+    expect(disabled.status).toBe(200);
+
+    const after = await workspaceStore.getCoworker(coworker.id);
+    expect(after?.status).toBe("disabled");
+    expect(after?.editableConfigJson.channel_ids).toEqual([]);
+    expect(await workspaceStore.listActiveTaskGrantsForSubject(coworker.id)).toHaveLength(0);
+    const participant = await workspaceStore.getParticipant(channel.id, "coworker", coworker.id);
+    expect(participant?.removedAt).toBeTruthy();
+  });
+
+  it("replays disable and removeParticipant via idempotency before conflict/not-found", async () => {
+    const { app, env, workspace } = await createTestApp();
+    const { session, cookie } = await login(app, env);
+    const channelRes = await app.request(`/api/workspaces/${env.workspaceId}/channels`, {
+      method: "POST",
+      headers: mutationHeaders(env, cookie, session.csrf_token),
+      body: JSON.stringify({
+        schemaVersion: 1,
+        name: "Idem",
+        mission_brief: "Idem",
+        idempotency_key: "idem_idem_ch",
+      }),
+    });
+    const channel = channelSchema.parse(withoutRequestId(await channelRes.json()));
+    const coworker = await workspace.seedCoworker({
+      workspaceId: env.workspaceId,
+      createdBy: env.ownerUserId,
+      handle: "idem",
+      name: "Idem",
+      title: "I",
+    });
+    await app.request(`/api/channels/${channel.id}/participants`, {
+      method: "POST",
+      headers: mutationHeaders(env, cookie, session.csrf_token),
+      body: JSON.stringify({
+        schemaVersion: 1,
+        participant_type: "coworker",
+        participant_id: coworker.id,
+        role: "member",
+        idempotency_key: "idem_add_idem",
+      }),
+    });
+
+    const removeBody = { schemaVersion: 1, idempotency_key: "idem_remove_replay" };
+    const removed = await app.request(`/api/channels/${channel.id}/participants/${coworker.id}`, {
+      method: "DELETE",
+      headers: mutationHeaders(env, cookie, session.csrf_token),
+      body: JSON.stringify(removeBody),
+    });
+    expect(removed.status).toBe(200);
+    const removeRetry = await app.request(
+      `/api/channels/${channel.id}/participants/${coworker.id}`,
+      {
+        method: "DELETE",
+        headers: mutationHeaders(env, cookie, session.csrf_token),
+        body: JSON.stringify(removeBody),
+      },
+    );
+    expect(removeRetry.status).toBe(200);
+
+    const disableBody = {
+      schemaVersion: 1,
+      expected_config_revision: 1,
+      reason: "done",
+      idempotency_key: "idem_disable_replay",
+    };
+    const disabled = await app.request(`/api/coworkers/${coworker.id}/disable`, {
+      method: "POST",
+      headers: mutationHeaders(env, cookie, session.csrf_token),
+      body: JSON.stringify(disableBody),
+    });
+    expect(disabled.status).toBe(200);
+    const disableRetry = await app.request(`/api/coworkers/${coworker.id}/disable`, {
+      method: "POST",
+      headers: mutationHeaders(env, cookie, session.csrf_token),
+      body: JSON.stringify(disableBody),
+    });
+    expect(disableRetry.status).toBe(200);
+    expect(coworkerProfileSchema.parse(withoutRequestId(await disableRetry.json())).status).toBe(
+      "disabled",
+    );
+  });
+
+  it("rejects malformed participant DELETE JSON bodies", async () => {
+    const { app, env, workspace } = await createTestApp();
+    const { session, cookie } = await login(app, env);
+    const channelRes = await app.request(`/api/workspaces/${env.workspaceId}/channels`, {
+      method: "POST",
+      headers: mutationHeaders(env, cookie, session.csrf_token),
+      body: JSON.stringify({
+        schemaVersion: 1,
+        name: "Del",
+        mission_brief: "Del",
+        idempotency_key: "idem_del_ch",
+      }),
+    });
+    const channel = channelSchema.parse(withoutRequestId(await channelRes.json()));
+    const coworker = await workspace.seedCoworker({
+      workspaceId: env.workspaceId,
+      createdBy: env.ownerUserId,
+      handle: "del",
+      name: "Del",
+      title: "D",
+    });
+
+    const malformed = await app.request(
+      `/api/channels/${channel.id}/participants/${coworker.id}?idempotency_key=from_query`,
+      {
+        method: "DELETE",
+        headers: mutationHeaders(env, cookie, session.csrf_token),
+        body: "{not-json",
+      },
+    );
+    expect(malformed.status).toBe(400);
+    expect(errorEnvelopeSchema.parse(await malformed.json()).error.code).toBe("validation_failed");
+  });
+
+  it("reclaims stale in-progress idempotency claims after lease expiry", async () => {
+    let clock = new Date("2026-08-26T12:00:00.000Z");
+    const { app, env, workspaceStore } = await createTestApp({ now: () => clock });
+    const { session, cookie } = await login(app, env);
+
+    await workspaceStore.tryClaimCommandReceipt({
+      workspaceId: env.workspaceId,
+      commandKind: "channel.create",
+      idempotencyKey: "idem_stale_claim",
+      resultId: "channel_orphan",
+      resultJson: null,
+      createdAt: clock.toISOString(),
+    });
+
+    clock = new Date(clock.getTime() + IDEMPOTENCY_CLAIM_LEASE_MS + 1);
+    const created = await app.request(`/api/workspaces/${env.workspaceId}/channels`, {
+      method: "POST",
+      headers: mutationHeaders(env, cookie, session.csrf_token),
+      body: JSON.stringify({
+        schemaVersion: 1,
+        name: "Recovered",
+        mission_brief: "after crash",
+        idempotency_key: "idem_stale_claim",
+      }),
+    });
+    expect(created.status).toBe(201);
+    expect(channelSchema.parse(withoutRequestId(await created.json())).name).toBe("Recovered");
   });
 
   it("rejects cross-workspace channel and coworker access", async () => {
@@ -453,7 +807,7 @@ describe("channel and coworker postgres integration", () => {
         }),
       });
       expect(created.status).toBe(201);
-      const channel = channelSchema.parse(await created.json());
+      const channel = channelSchema.parse(withoutRequestId(await created.json()));
 
       const coworker = await workspace.seedCoworker({
         workspaceId: env.workspaceId,
