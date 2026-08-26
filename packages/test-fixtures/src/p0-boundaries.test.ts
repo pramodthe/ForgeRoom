@@ -15,11 +15,15 @@ type PackageJson = {
 
 function findRepoRoot(start: string): string {
   let dir = start;
-  while (dir !== dirname(dir)) {
+  for (;;) {
     if (existsSync(join(dir, "pnpm-workspace.yaml"))) {
       return dir;
     }
-    dir = dirname(dir);
+    const parent = dirname(dir);
+    if (parent === dir) {
+      break;
+    }
+    dir = parent;
   }
   throw new Error("Could not find repository root");
 }

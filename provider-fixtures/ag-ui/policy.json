@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "status": "frozen",
+  "ownerTask": "P0-000",
+  "selectionOwner": "P0-210",
+  "requiredPath": "pure_ag_ui",
+  "optionalCopilotKit": {
+    "default": "disabled",
+    "route": "/api/copilotkit",
+    "whenDisabled": "absent_or_404",
+    "enablementPolicy": "coherent_graph_parity_only",
+    "prohibited": [
+      "caret_ranges_on_ag_ui_or_enabled_copilotkit",
+      "forced_overrides_to_untested_ag_ui",
+      "stable_canary_mixture",
+      "hidden_duplicate_ag_ui_copies",
+      "dependency_exclusions_leaving_untested_path",
+      "enabling_known_split_runtime_1_69_0"
+    ]
+  },
+  "startup": {
+    "rejectIncompatibleOrMixedProfiles": true,
+    "pinExactVersionsOnly": true
+  }
+}

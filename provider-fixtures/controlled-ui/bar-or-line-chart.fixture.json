@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "status": "candidate",
+  "ownerTask": "P0-000",
+  "decisionId": "OD-011",
+  "componentName": "BarOrLineChart",
+  "props": {
+    "title": "Synthetic record counts",
+    "description": "Bounded bar chart for the demo read path.",
+    "chart_type": "bar",
+    "x_axis_label": "Status",
+    "y_axis_label": "Count",
+    "series": [{ "key": "count", "label": "Records" }],
+    "accessible_table_caption": "Record counts by status"
+  },
+  "sampleSeriesPoints": [
+    { "status": "open", "count": 1 },
+    { "status": "ready", "count": 1 }
+  ]
+}

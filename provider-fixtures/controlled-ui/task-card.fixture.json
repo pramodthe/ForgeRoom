@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "status": "candidate",
+  "ownerTask": "P0-000",
+  "decisionId": "OD-011",
+  "componentName": "TaskCard",
+  "props": {
+    "heading": "Demo Task",
+    "show_description": true,
+    "show_assignee": true,
+    "show_due_date": false,
+    "show_history": true
+  },
+  "boundTaskFixture": "tasks/task-record.candidate.json"
+}

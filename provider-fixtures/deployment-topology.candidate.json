@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "status": "candidate",
+  "ownerTask": "P0-000",
+  "verificationOwner": "P0-505",
+  "localDevelopment": {
+    "api": "apps/api on HOST=0.0.0.0 PORT from env",
+    "worker": "embedded when FORGEROOM_EMBED_WORKER=true; optional apps/worker",
+    "web": "apps/web Vite/dev origin APP_ORIGIN",
+    "postgres": "infra/compose.yaml",
+    "artifacts": "ARTIFACT_STORAGE_DIR local directory"
+  },
+  "demoDeployment": {
+    "status": "candidate",
+    "shape": "single_web_service_plus_managed_postgres",
+    "processModel": "api_embeds_worker",
+    "bind": "0.0.0.0:$PORT",
+    "filesystem": "ephemeral; durable artifacts must use object storage or mounted disk once verified",
+    "diagramPath": null,
+    "note": "Exact host (Render or equivalent) and object-storage adapter remain candidate until preflight probe"
+  }
+}

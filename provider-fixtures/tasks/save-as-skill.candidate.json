@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "status": "candidate",
+  "ownerTask": "P0-000",
+  "decisionId": "OD-012",
+  "implementationOwners": ["P0-318", "P0-105"],
+  "successfulRun": {
+    "status": "candidate",
+    "requirements": [
+      "one completed application Run",
+      "deterministic write reconciled by read",
+      "sandbox artifact published",
+      "audit receipt available"
+    ],
+    "fixtureIds": null
+  },
+  "skillVersion": {
+    "visibility": "private",
+    "instructionOnly": true,
+    "newAuthority": false,
+    "attachTo": "originating_coworker",
+    "requiresSessionRotation": true,
+    "invocationBeginsIn": "0.2"
+  },
+  "reviewManifest": {
+    "status": "candidate",
+    "mustShow": ["exact_inputs", "tools", "output", "approval_boundary", "no_new_authority"]
+  }
+}

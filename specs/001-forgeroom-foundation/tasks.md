@@ -14,7 +14,7 @@ Each task file is authoritative for its status and evidence. Keep this index and
 
 | Done | ID | Task | Status | Depends on |
 | --- | --- | --- | --- | --- |
-| [ ] | [P0-000](./tasks/P0-000-freeze-demo-contract.md) | Freeze demo/tool contract | ready | — |
+| [ ] | [P0-000](./tasks/P0-000-freeze-demo-contract.md) | Freeze demo/tool contract | in_progress | — |
 | [x] | [P0-101](./tasks/P0-101-scaffold-monorepo.md) | Scaffold monorepo and CI | done | — |
 | [x] | [P0-102](./tasks/P0-102-shared-contracts.md) | Shared domain/API contracts | done | P0-101 |
 | [x] | [P0-103](./tasks/P0-103-database-migrations.md) | Database schema and migrations | done | P0-102 |

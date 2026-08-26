@@ -30,6 +30,16 @@ describe("unsupported P0 capabilities", () => {
     expect(interpretP0Capability("subagent.started").ok).toBe(false);
   });
 
+  it("rejects coordinator synthesis and component catalogue as unsupported in P0", () => {
+    expect(interpretP0Capability("coordinator_synthesis")).toEqual({
+      ok: false,
+      capability: "coordinator_synthesis",
+      reason: "unsupported_in_p0",
+    });
+    expect(interpretP0Capability("component_catalogue").ok).toBe(false);
+    expect(interpretP0Capability("component_catalogue_ui").ok).toBe(false);
+  });
+
   it("rejects iframe client kinds on interaction commands", () => {
     expect(
       uiInteractionTokenRequestSchema.safeParse({

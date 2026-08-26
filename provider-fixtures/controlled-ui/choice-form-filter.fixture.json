@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "status": "candidate",
+  "ownerTask": "P0-000",
+  "decisionId": "OD-011",
+  "componentName": "ChoiceForm",
+  "props": {
+    "title": "Filter synthetic records",
+    "description": "Bounded local filter only — no external mutation.",
+    "submit_label": "Apply filter",
+    "cancel_label": "Reset",
+    "fields": [
+      {
+        "id": "status_filter",
+        "label": "Status",
+        "description": "Show records with this status",
+        "required": true,
+        "kind": "single_choice",
+        "options": [
+          { "id": "open", "label": "Open", "description": null },
+          { "id": "ready", "label": "Ready", "description": null },
+          { "id": "all", "label": "All", "description": null }
+        ]
+      },
+      {
+        "id": "include_owner",
+        "label": "Show owner column",
+        "description": null,
+        "required": false,
+        "kind": "checkbox"
+      }
+    ]
+  },
+  "interaction": {
+    "mode": "local_state",
+    "persistsVisibleState": true,
+    "externalMutation": false
+  }
+}
