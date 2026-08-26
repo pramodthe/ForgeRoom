@@ -451,4 +451,226 @@ describe("P0-107 channel event log and SSE", () => {
       expect(aguiRows.every((row) => row.event_hash.startsWith("sha256:"))).toBe(true);
     });
   }, 60_000);
+
+  it("normalizes legacy message payloads and skips invalid channel JSON", async () => {
+    const { envelopeFromStoredEvent } = await import("./event-read");
+    const legacy = envelopeFromStoredEvent(
+      {
+        id: "evt_legacy",
+        channelId: "ch_1",
+        sequence: 3,
+        type: "message.created",
+        actorType: "human",
+        actorId: "user_1",
+        runId: null,
+        payloadJson: {
+          body: "old body",
+          recipient_handles: [],
+          routing_mode: "direct",
+        },
+        aguiEventType: null,
+        aguiEventJson: null,
+        logicalThreadId: null,
+        createdAt: new Date().toISOString(),
+        sourceMessageId: "msg_legacy",
+      },
+      { sourceMessageId: "msg_legacy" },
+    );
+    expect(legacy).toBeTruthy();
+    expect(agentChannelEnvelopeSchema.parse(legacy)).toMatchObject({
+      channelSequence: 3,
+      sourceMessageId: "msg_legacy",
+      actorKind: "human",
+      aguiEvent: { type: "CUSTOM", name: "message.created" },
+    });
+
+    expect(
+      envelopeFromStoredEvent({
+        id: "evt_bad",
+        channelId: "ch_1",
+        sequence: 9,
+        type: "unknown.garbage",
+        actorType: "human",
+        actorId: "user_1",
+        runId: null,
+        payloadJson: { not: "an envelope" },
+        aguiEventType: null,
+        aguiEventJson: null,
+        logicalThreadId: null,
+        createdAt: new Date().toISOString(),
+      }),
+    ).toBeNull();
+  });
+
+  it("pages listEventsAfter and reports has_more", async () => {
+    const store = createMemoryWorkspaceStore();
+    const workspace = createWorkspaceService({ store });
+    const env = loadApiEnv({
+      NODE_ENV: "test",
+      APP_ORIGIN: "http://localhost:5173",
+      OWNER_EMAIL: "owner@example.test",
+      OWNER_PASSWORD: PASSWORD,
+      OWNER_USER_ID: "user_owner",
+      OWNER_DISPLAY_NAME: "Owner",
+      WORKSPACE_ID: "workspace_1",
+      LOGIN_RATE_LIMIT_MAX: "20",
+      LOGIN_RATE_LIMIT_WINDOW_MS: "60000",
+      RECENT_AUTH_WINDOW_SECONDS: "300",
+      SESSION_TTL_SECONDS: "3600",
+    });
+    const auth = createAuthService({ env, store: createMemoryAuthStore() });
+    await auth.seedOwner();
+    const app = createApiApp({ env, auth, workspace });
+    const { session, cookie } = await login(app, env);
+    const channel = await createChannel(app, env, cookie, session.csrf_token, "Page", "idem_page");
+    for (let i = 0; i < 5; i += 1) {
+      await app.request(`/api/channels/${channel.id}/messages`, {
+        method: "POST",
+        headers: mutationHeaders(env, cookie, session.csrf_token),
+        body: JSON.stringify({
+          body: `p-${i}`,
+          recipient_handles: [],
+          routing_mode: "direct",
+          parent_message_id: null,
+        }),
+      });
+    }
+    const page = await store.listEventsAfter(channel.id, -1, { limit: 3 });
+    expect(page.events).toHaveLength(3);
+    expect(page.hasMore).toBe(true);
+    const rest = await store.listEventsAfter(channel.id, page.events.at(-1)!.sequence, {
+      limit: 10,
+    });
+    expect(rest.events).toHaveLength(3);
+    expect(rest.hasMore).toBe(false);
+  });
+
+  it("maps concurrent archive during rename to conflict", async () => {
+    const base = createMemoryWorkspaceStore();
+    const store: typeof base = {
+      ...base,
+      async appendChannelEvent(input) {
+        if (input.event.type === "channel.renamed") {
+          throw new Error("channel_archived");
+        }
+        return base.appendChannelEvent(input);
+      },
+    };
+    const { app, env } = await createTestApp({ workspaceStore: store });
+    const { session, cookie } = await login(app, env);
+    const channel = await createChannel(
+      app,
+      env,
+      cookie,
+      session.csrf_token,
+      "RaceArch",
+      "idem_race_arch",
+    );
+    const renamed = await app.request(`/api/channels/${channel.id}`, {
+      method: "PATCH",
+      headers: mutationHeaders(env, cookie, session.csrf_token),
+      body: JSON.stringify({
+        schemaVersion: 1,
+        name: "Nope",
+        idempotency_key: "idem_race_rename",
+      }),
+    });
+    expect(renamed.status).toBe(409);
+  });
+
+  it("coworker PATCH and disable append participant channel events", async () => {
+    const { app, env, workspace, workspaceStore } = await createTestApp();
+    const { session, cookie } = await login(app, env);
+    const channel = await createChannel(
+      app,
+      env,
+      cookie,
+      session.csrf_token,
+      "MemLog",
+      "idem_mem_log",
+    );
+    const coworker = await workspace.seedCoworker({
+      workspaceId: env.workspaceId,
+      createdBy: env.ownerUserId,
+      handle: "memlog",
+      name: "Mem",
+      title: "Log",
+    });
+    const patched = await app.request(`/api/coworkers/${coworker.id}`, {
+      method: "PATCH",
+      headers: mutationHeaders(env, cookie, session.csrf_token),
+      body: JSON.stringify({
+        handle: "memlog",
+        name: "Mem",
+        title: "Log",
+        standing_instructions: "",
+        model_preset: "default",
+        budget: { max_turn_tokens: 12_000, max_tool_calls: 20 },
+        channel_ids: [channel.id],
+        task_record_grants: [],
+        tool_grants: [],
+        skill_version_ids: [],
+        component_version_ids: [],
+        native_subagents_enabled: false,
+      }),
+    });
+    expect(patched.status).toBe(200);
+    const afterAdd = await workspaceStore.listEventsAfter(channel.id, -1, { limit: 50 });
+    expect(afterAdd.events.some((row) => row.type === "participant.added")).toBe(true);
+
+    const disabled = await app.request(`/api/coworkers/${coworker.id}/disable`, {
+      method: "POST",
+      headers: mutationHeaders(env, cookie, session.csrf_token),
+      body: JSON.stringify({
+        schemaVersion: 1,
+        idempotency_key: "idem_disable_mem",
+        expected_config_revision: 2,
+        reason: "test",
+      }),
+    });
+    expect(disabled.status).toBe(200);
+    const afterDisable = await workspaceStore.listEventsAfter(channel.id, -1, { limit: 50 });
+    expect(afterDisable.events.some((row) => row.type === "participant.removed")).toBe(true);
+  });
+
+  it("closes SSE after session logout on auth recheck", async () => {
+    const { app, env } = await createTestApp();
+    const { session, cookie } = await login(app, env);
+    const channel = await createChannel(
+      app,
+      env,
+      cookie,
+      session.csrf_token,
+      "AuthSSE",
+      "idem_auth_sse",
+    );
+    const controller = new AbortController();
+    const streamResponse = await app.request(`/api/channels/${channel.id}/stream`, {
+      headers: {
+        cookie: `${env.sessionCookieName}=${cookie}`,
+        accept: "text/event-stream",
+      },
+      signal: controller.signal,
+    });
+    expect(streamResponse.status).toBe(200);
+    const reader = streamResponse.body!.getReader();
+    const decoder = new TextDecoder();
+    let sawUnauth = false;
+    await app.request("/api/auth/logout", {
+      method: "POST",
+      headers: mutationHeaders(env, cookie, session.csrf_token),
+    });
+    const deadline = Date.now() + 3_000;
+    while (Date.now() < deadline && !sawUnauth) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      const chunk = decoder.decode(value, { stream: true });
+      if (chunk.includes("unauthenticated") || chunk.includes("Session expired")) {
+        sawUnauth = true;
+      }
+    }
+    expect(sawUnauth).toBe(true);
+    controller.abort();
+    await reader.cancel().catch(() => undefined);
+  });
 });

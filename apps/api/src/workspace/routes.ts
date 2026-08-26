@@ -16,7 +16,12 @@ import { randomOpaqueId } from "../auth/crypto";
 import type { AuthService } from "../auth/service";
 import type { ApiEnv } from "../env";
 import { errorResponse } from "../http";
-import { requireMutationSession, requireParam, requireSession } from "../http-guards";
+import {
+  readSessionCookie,
+  requireMutationSession,
+  requireParam,
+  requireSession,
+} from "../http-guards";
 import type { WorkspaceService, WorkspaceServiceError } from "./service";
 
 function fail(c: Context, error: WorkspaceServiceError) {
@@ -314,85 +319,198 @@ export function mountWorkspaceRoutes(
     }
     const afterSequence = parsedCursor.value;
 
-    const HEARTBEAT_MS = 15_000;
+    const HEARTBEAT_MS = env.nodeEnv === "test" ? 250 : 15_000;
+    const AUTH_RECHECK_MS = env.nodeEnv === "test" ? 150 : 30_000;
+    const DB_POLL_MS = env.nodeEnv === "test" ? 100 : 2_000;
+    const cookieValue = readSessionCookie(c, env);
 
     return streamSSE(c, async (stream) => {
-      const sent = new Set<number>();
       let lastSent = afterSequence;
       let closed = false;
       let liveEnabled = false;
-      const liveBuffer: AgentChannelEnvelope[] = [];
+      const pending = new Map<number, AgentChannelEnvelope>();
+      let writeChain: Promise<void> = Promise.resolve();
 
-      const writeEnvelope = async (envelope: AgentChannelEnvelope) => {
-        if (closed || sent.has(envelope.channelSequence)) {
+      const enqueueWrite = (task: () => Promise<void>, options?: { force?: boolean }) => {
+        writeChain = writeChain
+          .then(async () => {
+            if (closed && !options?.force) return;
+            await task();
+          })
+          .catch(() => {
+            closed = true;
+          });
+        return writeChain;
+      };
+
+      const writeEnvelopeOrdered = async (envelope: AgentChannelEnvelope) => {
+        if (closed || envelope.channelSequence <= lastSent) {
           return;
         }
+        pending.set(envelope.channelSequence, envelope);
+        while (!closed && pending.has(lastSent + 1)) {
+          const next = pending.get(lastSent + 1)!;
+          pending.delete(lastSent + 1);
+          lastSent = next.channelSequence;
+          await stream.writeSSE({
+            id: String(next.channelSequence),
+            event: "channel_event",
+            data: JSON.stringify(next),
+          });
+        }
+      };
+
+      const queueEnvelope = (envelope: AgentChannelEnvelope) => {
+        void enqueueWrite(() => writeEnvelopeOrdered(envelope));
+      };
+
+      const unsubscribe = workspace.subscribeChannelEvents(channelId, (envelope) => {
         if (envelope.channelSequence <= afterSequence) {
           return;
         }
-        sent.add(envelope.channelSequence);
-        lastSent = Math.max(lastSent, envelope.channelSequence);
-        await stream.writeSSE({
-          id: String(envelope.channelSequence),
-          event: "channel_event",
-          data: JSON.stringify(envelope),
-        });
-      };
-
-      // Subscribe first so live events during replay are buffered, then catch up.
-      const unsubscribe = workspace.subscribeChannelEvents(channelId, (envelope) => {
-        // Dedupe only by sequence already delivered — never drop an earlier
-        // not-yet-seen sequence if live publishes arrive out of order.
-        if (sent.has(envelope.channelSequence) || envelope.channelSequence <= afterSequence) {
-          return;
-        }
         if (!liveEnabled) {
-          liveBuffer.push(envelope);
+          pending.set(envelope.channelSequence, envelope);
           return;
         }
-        void writeEnvelope(envelope).catch(() => {
-          closed = true;
-        });
+        queueEnvelope(envelope);
       });
 
-      try {
-        const replay = await workspace.listEvents(authed.session, channelId, afterSequence);
-        if (!replay.ok) {
-          await stream.writeSSE({
-            event: "error",
-            data: JSON.stringify({ code: replay.error.code, message: replay.error.message }),
+      const pollFromDb = async () => {
+        let cursor = lastSent;
+        for (;;) {
+          const page = await workspace.listEvents(authed.session, channelId, cursor, {
+            limit: 200,
           });
-          return;
+          if (!page.ok) {
+            closed = true;
+            await enqueueWrite(async () => {
+              await stream.writeSSE({
+                event: "error",
+                data: JSON.stringify({ code: page.error.code, message: page.error.message }),
+              });
+            });
+            return;
+          }
+          for (const envelope of page.value.events) {
+            await writeEnvelopeOrdered(envelope);
+          }
+          cursor = page.value.next_after_sequence;
+          if (!page.value.has_more) {
+            break;
+          }
         }
-        for (const envelope of replay.value.events) {
-          await writeEnvelope(envelope);
-        }
+      };
 
-        // Catch up any rows committed between replay query and subscribe attach.
-        const catchUp = await workspace.listEvents(authed.session, channelId, lastSent);
-        if (catchUp.ok) {
-          for (const envelope of catchUp.value.events) {
-            await writeEnvelope(envelope);
+      try {
+        // Replay pages until caught up (bounded pages).
+        let cursor = afterSequence;
+        for (;;) {
+          const replay = await workspace.listEvents(authed.session, channelId, cursor);
+          if (!replay.ok) {
+            await enqueueWrite(async () => {
+              await stream.writeSSE({
+                event: "error",
+                data: JSON.stringify({
+                  code: replay.error.code,
+                  message: replay.error.message,
+                }),
+              });
+            });
+            await writeChain;
+            return;
+          }
+          await enqueueWrite(async () => {
+            for (const envelope of replay.value.events) {
+              await writeEnvelopeOrdered(envelope);
+            }
+          });
+          await writeChain;
+          cursor = replay.value.next_after_sequence;
+          if (!replay.value.has_more) {
+            break;
           }
         }
 
+        // Catch-up after subscribe attach.
+        await enqueueWrite(async () => {
+          await pollFromDb();
+          // Flush anything buffered during replay.
+          const buffered = [...pending.values()].sort(
+            (a, b) => a.channelSequence - b.channelSequence,
+          );
+          pending.clear();
+          for (const envelope of buffered) {
+            await writeEnvelopeOrdered(envelope);
+          }
+        });
+        await writeChain;
         liveEnabled = true;
-        for (const buffered of liveBuffer
-          .splice(0)
-          .sort((a, b) => a.channelSequence - b.channelSequence)) {
-          await writeEnvelope(buffered);
-        }
 
+        let lastAuthCheck = Date.now();
+        let lastDbPoll = Date.now();
         while (!closed && !stream.closed && !c.req.raw.signal.aborted) {
-          await stream.writeSSE({
-            event: "heartbeat",
-            data: "{}",
+          const nowMs = Date.now();
+          if (nowMs - lastAuthCheck >= AUTH_RECHECK_MS) {
+            lastAuthCheck = nowMs;
+            const session = await auth.readSession(cookieValue);
+            if (!session) {
+              await enqueueWrite(
+                async () => {
+                  await stream.writeSSE({
+                    event: "error",
+                    data: JSON.stringify({
+                      code: "unauthenticated",
+                      message: "Session expired or revoked.",
+                    }),
+                  });
+                },
+                { force: true },
+              );
+              await writeChain;
+              closed = true;
+              break;
+            }
+            const ownedNow = await workspace.getChannel(session, channelId);
+            if (!ownedNow.ok) {
+              await enqueueWrite(
+                async () => {
+                  await stream.writeSSE({
+                    event: "error",
+                    data: JSON.stringify({
+                      code: ownedNow.error.code,
+                      message: ownedNow.error.message,
+                    }),
+                  });
+                },
+                { force: true },
+              );
+              await writeChain;
+              closed = true;
+              break;
+            }
+          }
+
+          if (nowMs - lastDbPoll >= DB_POLL_MS) {
+            lastDbPoll = nowMs;
+            await enqueueWrite(async () => {
+              await pollFromDb();
+            });
+            await writeChain;
+          }
+
+          await enqueueWrite(async () => {
+            await stream.writeSSE({
+              event: "heartbeat",
+              data: "{}",
+            });
           });
-          await stream.sleep(HEARTBEAT_MS);
+          await writeChain;
+          await stream.sleep(Math.min(HEARTBEAT_MS, DB_POLL_MS));
         }
       } finally {
         closed = true;
         unsubscribe();
+        await writeChain.catch(() => undefined);
       }
     });
   });

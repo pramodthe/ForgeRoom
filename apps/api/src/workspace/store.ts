@@ -3,6 +3,7 @@ import type {
   P0PersistedAguiEvent,
   SessionResponse,
 } from "@forgeroom/contracts";
+import { clampEventLimit } from "./event-read";
 import { materializeChannelEvent } from "./event-persist";
 
 export type ChannelStatus = "active" | "archived";
@@ -101,12 +102,27 @@ export type ChannelEventRecord = {
   actorType: "human" | "coworker" | "system";
   actorId: string;
   runId: string | null;
-  /** Full validated AgentChannelEnvelope (authoritative durable projection). */
-  payloadJson: AgentChannelEnvelope;
+  /**
+   * Durable JSON — preferably a validated AgentChannelEnvelope.
+   * Legacy rows may store audit payloads; readers must normalize via envelopeFromStoredEvent.
+   */
+  payloadJson: unknown;
   aguiEventType: string | null;
   aguiEventJson: P0PersistedAguiEvent | null;
   logicalThreadId: string | null;
   createdAt: string;
+  /** Populated when joined from messages.event_id for legacy message.created reconstruction. */
+  sourceMessageId?: string | null;
+};
+
+export type ListEventsAfterOptions = {
+  limit?: number;
+};
+
+export type ListEventsAfterResult = {
+  events: ChannelEventRecord[];
+  /** True when more rows exist after the last returned sequence. */
+  hasMore: boolean;
 };
 
 export type ChannelEventInsert = {
@@ -258,7 +274,11 @@ export type WorkspaceCatalogStore = {
 
   getMessage(id: string): Promise<MessageRecord | null>;
 
-  listEventsAfter(channelId: string, afterSequence: number): Promise<ChannelEventRecord[]>;
+  listEventsAfter(
+    channelId: string,
+    afterSequence: number,
+    options?: ListEventsAfterOptions,
+  ): Promise<ListEventsAfterResult>;
 
   getCommandReceipt(
     workspaceId: string,
@@ -666,11 +686,22 @@ export function createMemoryWorkspaceStore(): WorkspaceCatalogStore {
     async getMessage(id) {
       return messages.get(id) ?? null;
     },
-    async listEventsAfter(channelId, afterSequence) {
-      return [...events.values()]
+    async listEventsAfter(channelId, afterSequence, options) {
+      const limit = clampEventLimit(options?.limit);
+      const rows = [...events.values()]
         .filter((row) => row.channelId === channelId && row.sequence > afterSequence)
-        .sort((a, b) => a.sequence - b.sequence)
-        .map((row) => structuredClone(row));
+        .sort((a, b) => a.sequence - b.sequence);
+      const page = rows.slice(0, limit).map((row) => {
+        const message = [...messages.values()].find((m) => m.eventId === row.id);
+        return {
+          ...structuredClone(row),
+          sourceMessageId: message?.id ?? null,
+        };
+      });
+      return {
+        events: page,
+        hasMore: rows.length > page.length,
+      };
     },
     async getCommandReceipt(workspaceId, commandKind, idempotencyKey) {
       const existing = receipts.get(receiptKey(workspaceId, commandKind, idempotencyKey));

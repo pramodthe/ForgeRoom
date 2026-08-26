@@ -1,7 +1,6 @@
 import {
   agentProfiles,
   agentVersions,
-  channelEvents,
   channelParticipants,
   channels,
   createDb,
@@ -10,8 +9,9 @@ import {
   taskGrants,
   workspaceCommandReceipts,
 } from "@forgeroom/db";
-import { and, asc, eq, gt, isNull } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { randomOpaqueId } from "../auth/crypto";
+import { clampEventLimit } from "./event-read";
 import { hashAguiEvent, materializeChannelEvent } from "./event-persist";
 import type {
   AppendChannelEventResult,
@@ -24,6 +24,7 @@ import type {
   CoworkerMutationResult,
   CoworkerRecord,
   CoworkerUpdateResult,
+  ListEventsAfterResult,
   MembershipWriteResult,
   MessageRecord,
   ParticipantRecord,
@@ -155,23 +156,6 @@ function mapMessage(row: typeof messages.$inferSelect): MessageRecord {
     authorId: row.authorId,
     body: row.body,
     parentMessageId: row.parentMessageId,
-    createdAt: asIso(row.createdAt),
-  };
-}
-
-function mapEvent(row: typeof channelEvents.$inferSelect): ChannelEventRecord {
-  return {
-    id: row.id,
-    channelId: row.channelId,
-    sequence: row.sequence,
-    type: row.type,
-    actorType: row.actorType as ChannelEventRecord["actorType"],
-    actorId: row.actorId,
-    runId: row.runId,
-    payloadJson: row.payloadJson as ChannelEventRecord["payloadJson"],
-    aguiEventType: row.aguiEventType,
-    aguiEventJson: (row.aguiEventJson ?? null) as ChannelEventRecord["aguiEventJson"],
-    logicalThreadId: row.logicalThreadId,
     createdAt: asIso(row.createdAt),
   };
 }
@@ -743,6 +727,50 @@ export function createPostgresWorkspaceStore(sql: SqlClient): WorkspaceCatalogSt
     },
     async disableCoworkerCleanup(input) {
       return sql.begin(async (tx) => {
+        // Global lock order: channels (sorted) before agent_profiles — matches
+        // commitCoworkerUpdate / upsertParticipantMembership.
+        const channelIds = [
+          ...new Set((input.removalEvents ?? []).map((row) => row.channelId)),
+        ].sort();
+        const lockedChannels = new Map<
+          string,
+          {
+            id: string;
+            workspace_id: string;
+            name: string;
+            mission_brief: string;
+            summary: string | null;
+            policy_json: unknown;
+            next_sequence: number;
+            status: string;
+            created_by: string;
+            created_at: string | Date;
+            updated_at: string | Date;
+          }
+        >();
+        for (const channelId of channelIds) {
+          const channelRows = await tx<
+            {
+              id: string;
+              workspace_id: string;
+              name: string;
+              mission_brief: string;
+              summary: string | null;
+              policy_json: unknown;
+              next_sequence: number;
+              status: string;
+              created_by: string;
+              created_at: string | Date;
+              updated_at: string | Date;
+            }[]
+          >`
+            SELECT * FROM channels WHERE id = ${channelId} FOR UPDATE
+          `;
+          if (channelRows[0]) {
+            lockedChannels.set(channelId, channelRows[0]);
+          }
+        }
+
         const locked = await tx<{ config_revision: number; status: string }[]>`
           SELECT config_revision, status
           FROM agent_profiles
@@ -777,24 +805,7 @@ export function createPostgresWorkspaceStore(sql: SqlClient): WorkspaceCatalogSt
         for (const removal of [...(input.removalEvents ?? [])].sort((a, b) =>
           a.channelId.localeCompare(b.channelId),
         )) {
-          const channelRows = await tx<
-            {
-              id: string;
-              workspace_id: string;
-              name: string;
-              mission_brief: string;
-              summary: string | null;
-              policy_json: unknown;
-              next_sequence: number;
-              status: string;
-              created_by: string;
-              created_at: string | Date;
-              updated_at: string | Date;
-            }[]
-          >`
-            SELECT * FROM channels WHERE id = ${removal.channelId} FOR UPDATE
-          `;
-          const channelRow = channelRows[0];
+          const channelRow = lockedChannels.get(removal.channelId);
           if (!channelRow) {
             continue;
           }
@@ -806,6 +817,7 @@ export function createPostgresWorkspaceStore(sql: SqlClient): WorkspaceCatalogSt
             removal.event,
           );
           const nextSequence = sequence + 1;
+          channelRow.next_sequence = nextSequence;
           await tx`
             UPDATE channels
             SET next_sequence = ${nextSequence},
@@ -891,15 +903,55 @@ export function createPostgresWorkspaceStore(sql: SqlClient): WorkspaceCatalogSt
       const rows = await db.select().from(messages).where(eq(messages.id, id)).limit(1);
       return rows[0] ? mapMessage(rows[0]) : null;
     },
-    async listEventsAfter(channelId, afterSequence) {
-      const rows = await db
-        .select()
-        .from(channelEvents)
-        .where(
-          and(eq(channelEvents.channelId, channelId), gt(channelEvents.sequence, afterSequence)),
-        )
-        .orderBy(asc(channelEvents.sequence));
-      return rows.map(mapEvent);
+    async listEventsAfter(channelId, afterSequence, options) {
+      const limit = clampEventLimit(options?.limit);
+      const rows = await sql<
+        {
+          id: string;
+          channel_id: string;
+          sequence: number;
+          type: string;
+          actor_type: string;
+          actor_id: string;
+          run_id: string | null;
+          payload_json: unknown;
+          agui_event_type: string | null;
+          agui_event_json: unknown;
+          logical_thread_id: string | null;
+          created_at: string | Date;
+          source_message_id: string | null;
+        }[]
+      >`
+        SELECT e.id, e.channel_id, e.sequence, e.type, e.actor_type, e.actor_id, e.run_id,
+               e.payload_json, e.agui_event_type, e.agui_event_json, e.logical_thread_id, e.created_at,
+               m.id AS source_message_id
+        FROM channel_events e
+        LEFT JOIN messages m ON m.event_id = e.id
+        WHERE e.channel_id = ${channelId}
+          AND e.sequence > ${afterSequence}
+        ORDER BY e.sequence ASC
+        LIMIT ${limit + 1}
+      `;
+      const hasMore = rows.length > limit;
+      const page = rows.slice(0, limit).map(
+        (row) =>
+          ({
+            id: row.id,
+            channelId: row.channel_id,
+            sequence: row.sequence,
+            type: row.type,
+            actorType: row.actor_type as ChannelEventRecord["actorType"],
+            actorId: row.actor_id,
+            runId: row.run_id,
+            payloadJson: row.payload_json,
+            aguiEventType: row.agui_event_type,
+            aguiEventJson: (row.agui_event_json ?? null) as ChannelEventRecord["aguiEventJson"],
+            logicalThreadId: row.logical_thread_id,
+            createdAt: asIso(row.created_at),
+            sourceMessageId: row.source_message_id,
+          }) satisfies ChannelEventRecord,
+      );
+      return { events: page, hasMore } satisfies ListEventsAfterResult;
     },
     async getCommandReceipt(workspaceId, commandKind, idempotencyKey) {
       const rows = await db

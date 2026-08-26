@@ -17,12 +17,12 @@ import { randomOpaqueId } from "../auth/crypto";
 import { customAguiEvent } from "./event-builders";
 import { ChannelEventPersistenceError } from "./event-guard";
 import { createChannelEventHub, type ChannelEventHub } from "./event-hub";
+import { DEFAULT_EVENT_PAGE_SIZE, envelopeFromStoredEvent } from "./event-read";
 import {
   createMemoryWorkspaceStore,
   emptyEditableConfig,
   type AgentVersionRecord,
   type ChannelEventInsert,
-  type ChannelEventRecord,
   type ChannelRecord,
   type CoworkerEditableConfig,
   type CoworkerRecord,
@@ -160,7 +160,15 @@ export type WorkspaceService = {
     session: SessionResponse,
     channelId: string,
     afterSequence: number,
-  ): Promise<WorkspaceServiceResult<{ events: AgentChannelEnvelope[]; after_sequence: number }>>;
+    options?: { limit?: number },
+  ): Promise<
+    WorkspaceServiceResult<{
+      events: AgentChannelEnvelope[];
+      after_sequence: number;
+      next_after_sequence: number;
+      has_more: boolean;
+    }>
+  >;
   /**
    * Subscribe after durable commit fan-out. Caller owns SSE lifetime (no open DB txn).
    */
@@ -661,6 +669,16 @@ export function createWorkspaceService(options?: {
             if (error instanceof Error && error.message.includes("not found")) {
               return { ok: false, error: { code: "not_found", message: "Channel not found." } };
             }
+            if (error instanceof Error && error.message.includes("channel_archived")) {
+              return {
+                ok: false,
+                error: {
+                  code: "conflict",
+                  message: "Archived channels cannot be renamed.",
+                  details: { reason: "channel_archived" },
+                },
+              };
+            }
             throw error;
           }
         },
@@ -700,6 +718,20 @@ export function createWorkspaceService(options?: {
           } catch (error) {
             if (error instanceof Error && error.message.includes("not found")) {
               return { ok: false, error: { code: "not_found", message: "Channel not found." } };
+            }
+            if (error instanceof Error && error.message.includes("channel_archived")) {
+              const latest = await store.getChannel(channelId);
+              if (latest?.status === "archived") {
+                return { ok: true, value: toChannel(latest) };
+              }
+              return {
+                ok: false,
+                error: {
+                  code: "conflict",
+                  message: "Channel was archived concurrently.",
+                  details: { reason: "channel_archived" },
+                },
+              };
             }
             throw error;
           }
@@ -1096,7 +1128,7 @@ export function createWorkspaceService(options?: {
       }
     },
 
-    async listEvents(session, channelId, afterSequence) {
+    async listEvents(session, channelId, afterSequence, options) {
       const loaded = await loadOwnedChannel(session, channelId);
       if (!loaded.ok) {
         return loaded;
@@ -1110,12 +1142,27 @@ export function createWorkspaceService(options?: {
           },
         };
       }
-      const rows = await store.listEventsAfter(channelId, afterSequence);
+      const page = await store.listEventsAfter(channelId, afterSequence, {
+        limit: options?.limit ?? DEFAULT_EVENT_PAGE_SIZE,
+      });
+      const events: AgentChannelEnvelope[] = [];
+      for (const row of page.events) {
+        const envelope = envelopeFromStoredEvent(row, {
+          sourceMessageId: row.sourceMessageId,
+        });
+        if (envelope) {
+          events.push(envelope);
+        }
+      }
+      const lastSequence =
+        page.events.length > 0 ? page.events[page.events.length - 1]!.sequence : afterSequence;
       return {
         ok: true,
         value: {
-          events: rows.map((row: ChannelEventRecord) => row.payloadJson),
+          events,
           after_sequence: afterSequence,
+          next_after_sequence: lastSequence,
+          has_more: page.hasMore,
         },
       };
     },
