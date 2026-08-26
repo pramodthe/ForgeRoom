@@ -89,7 +89,7 @@ describe("P0-000 provider fixtures", () => {
     expect(() => assertControlledUiFixturesValid()).not.toThrow();
   });
 
-  it("does not mark Composio tool slugs as verified without a probe", () => {
+  it("records verified Composio probe results after live probe", () => {
     const apps = readProviderFixtureJson<{
       verification: string;
       applications: Array<{ composioToolkitSlug: string | null; status: string }>;
@@ -101,20 +101,21 @@ describe("P0-000 provider fixtures", () => {
         preferredCandidateSlug?: string | null;
         role: string;
       }>;
-      observedDescriptorHashes: { entries: unknown[] };
+      observedDescriptorHashes: { status: string; entries: Array<{ sha256: string }> };
     }>("composio/tools.candidate.json");
 
-    expect(apps.verification).toBe("blocked-on-secrets");
+    expect(apps.verification).toBe("verified");
     expect(apps.applications[0]?.composioToolkitSlug).toBe("github");
-    expect(apps.applications[0]?.status).toBe("candidate");
-    expect(tools.verification).toBe("blocked-on-secrets");
-    expect(tools.tools.every((tool) => tool.directToolSlug === null)).toBe(true);
-    expect(tools.tools.find((tool) => tool.role === "read")?.preferredCandidateSlug).toBe(
-      "GITHUB_GET_ISSUE",
+    expect(apps.applications[0]?.status).toBe("verified");
+    expect(tools.verification).toBe("verified");
+    expect(tools.tools.find((tool) => tool.role === "read")?.directToolSlug).toBe(
+      "GITHUB_GET_AN_ISSUE",
     );
-    expect(
-      tools.tools.find((tool) => tool.role === "deterministic_write")?.preferredCandidateSlug,
-    ).toBeNull();
-    expect(tools.observedDescriptorHashes.entries).toEqual([]);
+    expect(tools.tools.find((tool) => tool.role === "deterministic_write")?.directToolSlug).toBe(
+      "GITHUB_ADD_LABELS_TO_AN_ISSUE",
+    );
+    expect(tools.observedDescriptorHashes.status).toBe("verified");
+    expect(tools.observedDescriptorHashes.entries.length).toBeGreaterThan(0);
+    expect(tools.observedDescriptorHashes.entries[0]?.sha256).toMatch(/^[a-f0-9]{64}$/);
   });
 });

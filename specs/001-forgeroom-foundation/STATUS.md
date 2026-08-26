@@ -2,11 +2,11 @@
 
 | Field | Current value |
 | --- | --- |
-| Overall | P0-101–P0-108 foundation API complete (incl. P0-205 router); P0-401/P0-210 in review; P0-000 in progress |
+| Overall | P0-101–P0-108 foundation API complete (incl. P0-205 router); P0-401/P0-210 in review; P0-000 demo/tool contract in progress (live probes partial 2026-08-26) |
 | Current phase | Phase 1 — Foundation |
 | Active task | P0-000 (in_progress); P0-401/P0-210 in review |
-| Next task | Review/merge P0-401 PR #15 and P0-210 PR #16; P0-000 PR #12; P0-105 waits on P0-000 completion |
-| P0 blockers | Live Composio tools/account/descriptor hashes, Daytona+storage probe, model presets, remaining OD-002–OD-012 verified rows, controlled-GenUI/Task/skill demo fixture, storage/deployment choices, and PD-002 before public release |
+| Next task | Review/merge P0-401 PR #15 and P0-210 PR #16; finish P0-000 TrueForge probes (PR #12); P0-105 waits on P0-000 completion |
+| P0 blockers | TrueForge model presets, Research permission preview, Save-as-skill Run binding, TrueForge→artifact path, DB fixture reset (migrations), demo durable storage — Composio/Daytona SDK/local adapter verified 2026-08-26 |
 | Last updated | 2026-08-26 |
 
 ## Milestones
@@ -22,13 +22,21 @@
 
 ## Current decisions needed
 
-Still open until live probes / P0-210 (see `decisions/OPEN.md` and `provider-fixtures/`):
+Still open until TrueForge probes / P0-210 (see `decisions/OPEN.md` and `provider-fixtures/`):
 
-- Exact Composio application slug(s), tool slugs, pinned account suffixes and descriptor hashes (blocked-on-secrets).
-- Model preset for Operator and Research coworkers (blocked-on-secrets).
-- Exact pure AG-UI lockfile selection (candidates frozen; P0-210 selects).
-- Demo durable artifact storage adapter and checked-in deployment diagram (candidates recorded).
-- Verified synthetic provider record IDs and idempotent reset command.
+- Model preset for Operator and Research coworkers (`TRUEFORGE_API_KEY`, `MODEL_PROVIDER_API_KEY`).
+- Research draft exact permission preview/denials (TrueForge harness).
+- Save-as-skill successful Run binding (TrueForge).
+- Demo durable artifact storage adapter and checked-in deployment diagram.
+- DB fixture reset (P0-105 after P0-103 migrations applied locally).
+
+Verified 2026-08-26 live probes:
+
+- Composio github toolkit, tool slugs, account suffix `nizY`, descriptor hashes.
+- Synthetic provider fixture `pramodthe/Hi-Tuto#10` with idempotent label reset.
+- Daytona sandbox SDK upload/download (partial — TrueForge→storage path blocked).
+- Local `ARTIFACT_STORAGE_DIR` adapter retain (separate probe; not yet same bytes as Daytona download).
+- Local deployment preflight (partial — TrueForge/model keys missing).
 
 Frozen without secrets:
 
