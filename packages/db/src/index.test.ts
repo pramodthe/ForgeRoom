@@ -1,11 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { describeDatabaseAdapter } from "./index";
+import { P0_MIGRATION, describeDatabaseAdapter, listForwardMigrations } from "./index";
+import { downMigrationPath } from "./migrate";
+import { existsSync } from "node:fs";
 
-describe("database adapter boundary", () => {
-  it("reserves PostgreSQL/Drizzle without shipping migrations", () => {
+describe("database adapter", () => {
+  it("ships the P0 foundation migration", () => {
     expect(describeDatabaseAdapter()).toEqual({
       adapter: "postgres-drizzle",
-      migrations: "pending-P0-103",
+      migrations: P0_MIGRATION,
     });
+    expect(listForwardMigrations()).toContain(P0_MIGRATION);
+    expect(existsSync(downMigrationPath(P0_MIGRATION))).toBe(true);
   });
 });

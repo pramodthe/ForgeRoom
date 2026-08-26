@@ -7,12 +7,19 @@
     ".": "./src/index.ts"
   },
   "scripts": {
+    "migrate": "tsx src/migrate-cli.ts",
+    "migrate:down": "tsx src/migrate-cli.ts --down",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "build": "tsc -p tsconfig.json --noEmit"
   },
+  "dependencies": {
+    "drizzle-orm": "^0.44.5",
+    "postgres": "^3.4.7"
+  },
   "devDependencies": {
     "@types/node": "catalog:",
+    "tsx": "^4.20.5",
     "typescript": "catalog:",
     "vitest": "catalog:"
   }

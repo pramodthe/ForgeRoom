@@ -2,7 +2,7 @@
 
 ForgeRoom is an open-source workspace where humans and persistent AI coworkers collaborate in channels, use connected tools, create interactive UI and artifacts, and pause for human approval before consequential actions.
 
-> Status: the 0.1 monorepo scaffold is complete. Shared domain and API contracts are next; most runtime features are not implemented yet.
+> Status: the 0.1 foundation schema and shared contracts exist; most runtime features are not implemented yet.
 
 ## Requirements
 
@@ -23,6 +23,7 @@ Optional local PostgreSQL:
 
 ```bash
 docker compose -f infra/compose.yaml up -d
+pnpm --filter @forgeroom/db migrate
 ```
 
 PostgreSQL data lives in the Docker named volume `forgeroom_pg`, not under `.data/`. To wipe the database and recreate an empty instance:
