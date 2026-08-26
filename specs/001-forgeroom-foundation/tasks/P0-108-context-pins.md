@@ -1,8 +1,9 @@
 ---
 id: P0-108
 title: Implement bounded channel context and pins
-status: blocked
-owner: unassigned
+status: in_progress
+owner: cursor-agent
+started: 2026-08-26
 depends_on: [P0-107]
 requirements: [ME-001, ME-002, ME-003]
 specs: [../runtime.md#channel-context-envelope, ../ux.md#work-panel]

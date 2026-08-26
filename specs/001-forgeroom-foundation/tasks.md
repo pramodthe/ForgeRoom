@@ -21,14 +21,14 @@ Each task file is authoritative for its status and evidence. Keep this index and
 | [x] | [P0-104](./tasks/P0-104-owner-auth.md) | Owner authentication/authorization | done | P0-103 |
 | [ ] | [P0-105](./tasks/P0-105-demo-fixtures.md) | Idempotent demo fixtures | blocked | P0-000, P0-103, P0-104 |
 | [x] | [P0-106](./tasks/P0-106-channel-coworker-api.md) | Channel and coworker API | done | P0-103, P0-104 |
-| [ ] | [P0-107](./tasks/P0-107-event-log-sse.md) | Canonical event log and SSE | in_review | P0-106 |
-| [ ] | [P0-108](./tasks/P0-108-context-pins.md) | Channel context and pins | blocked | P0-107 |
+| [x] | [P0-107](./tasks/P0-107-event-log-sse.md) | Canonical event log and SSE | done | P0-106 |
+| [ ] | [P0-108](./tasks/P0-108-context-pins.md) | Channel context and pins | in_progress | P0-107 |
 | [ ] | [P0-109](./tasks/P0-109-task-record.md) | Application-owned TaskRecord | blocked | P0-103, P0-104, P0-107, P0-203, P0-208 |
 | [ ] | [P0-201](./tasks/P0-201-trueforge-sessions.md) | TrueForge adapter and sessions | blocked | P0-000, P0-103, P0-105 |
 | [ ] | [P0-202](./tasks/P0-202-turn-queue.md) | Per-session serial turn queue | blocked | P0-103, P0-201 |
 | [ ] | [P0-203](./tasks/P0-203-turn-events.md) | Turn creation and event normalization | blocked | P0-107, P0-202 |
 | [ ] | [P0-204](./tasks/P0-204-reconnect-stop.md) | Reconnect, stop and correction | blocked | P0-203 |
-| [ ] | [P0-205](./tasks/P0-205-router.md) | Direct mention/team router | ready | P0-102, P0-106 |
+| [ ] | [P0-205](./tasks/P0-205-router.md) | Direct mention/team router | in_progress | P0-102, P0-106 |
 | [ ] | [P0-206](./tasks/P0-206-multi-agent-run.md) | Direct multi-agent Run engine | blocked | P0-202, P0-203, P0-205 |
 | [ ] | [P0-208](./tasks/P0-208-session-rotation.md) | Capability/skill intersection and rotation | blocked | P0-202, P0-302, P0-314 |
 | [ ] | [P0-210](./tasks/P0-210-agui-compatibility-spike.md) | Freeze AG-UI and prove bridge | blocked | P0-000, P0-101 |

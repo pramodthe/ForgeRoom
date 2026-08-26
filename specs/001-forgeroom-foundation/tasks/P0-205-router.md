@@ -1,8 +1,9 @@
 ---
 id: P0-205
 title: Implement mention and team router
-status: ready
-owner: unassigned
+status: in_progress
+owner: cursor-agent
+started: 2026-08-26
 depends_on: [P0-102, P0-106]
 requirements: [CH-003, CH-011, OR-002, OR-004]
 specs: [../runtime.md#routing, ../ux.md#composer-and-recipient-resolution]
