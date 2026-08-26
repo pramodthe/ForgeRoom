@@ -13,6 +13,7 @@ import type {
   SessionResponse,
 } from "@forgeroom/contracts";
 import { channelSchema, coworkerProfileSchema } from "@forgeroom/contracts";
+import { resolveMessageRecipients } from "@forgeroom/orchestration";
 import { randomOpaqueId } from "../auth/crypto";
 import { customAguiEvent } from "./event-builders";
 import { ChannelEventPersistenceError } from "./event-guard";
@@ -35,7 +36,9 @@ export type WorkspaceServiceError =
   | { code: "not_found"; message: string }
   | { code: "forbidden"; message: string; details?: SafeJsonObject }
   | { code: "validation_failed"; message: string; details?: SafeJsonObject }
-  | { code: "conflict"; message: string; details?: SafeJsonObject };
+  | { code: "conflict"; message: string; details?: SafeJsonObject }
+  | { code: "recipient_required"; message: string; details?: SafeJsonObject }
+  | { code: "recipient_unavailable"; message: string; details?: SafeJsonObject };
 
 export type WorkspaceServiceResult<T> =
   { ok: true; value: T } | { ok: false; error: WorkspaceServiceError };
@@ -155,7 +158,15 @@ export type WorkspaceService = {
     session: SessionResponse,
     channelId: string,
     command: ChannelMessageCommand,
-  ): Promise<WorkspaceServiceResult<{ message_id: string; event_id: string; sequence: number }>>;
+  ): Promise<
+    WorkspaceServiceResult<{
+      message_id: string;
+      event_id: string;
+      sequence: number;
+      recipient_handles: string[];
+      routing_mode: "direct" | "team";
+    }>
+  >;
   listEvents(
     session: SessionResponse,
     channelId: string,
@@ -1050,24 +1061,31 @@ export function createWorkspaceService(options?: {
         }
       }
       const participants = await store.listParticipants(channelId);
-      const activeCoworkers = new Set(
+      const activeMemberIds = new Set(
         participants
           .filter((row) => row.participantType === "coworker" && row.removedAt === null)
           .map((row) => row.participantId),
       );
-      for (const handle of command.recipient_handles) {
-        const coworkers = await store.listCoworkers(loaded.value.workspaceId);
-        const match = coworkers.find((row) => row.handle === handle && row.status === "active");
-        if (!match || !activeCoworkers.has(match.id)) {
-          return {
-            ok: false,
-            error: {
-              code: "validation_failed",
-              message: "Recipient must be an active channel coworker.",
-              details: { handle },
-            },
-          };
-        }
+      const coworkers = await store.listCoworkers(loaded.value.workspaceId);
+      // Authoritative recipients come from body mentions / @team rules — never trust client arrays.
+      const routing = resolveMessageRecipients({
+        body: command.body,
+        coworkers: coworkers.map((row) => ({
+          id: row.id,
+          handle: row.handle,
+          status: row.status,
+          isChannelMember: activeMemberIds.has(row.id),
+        })),
+      });
+      if (!routing.ok) {
+        return {
+          ok: false,
+          error: {
+            code: routing.code,
+            message: routing.message,
+            details: { reason: routing.reason, ...routing.details },
+          },
+        };
       }
       const createdAt = now().toISOString();
       const eventId = randomOpaqueId("evt");
@@ -1102,7 +1120,13 @@ export function createWorkspaceService(options?: {
         publish(appended);
         return {
           ok: true,
-          value: { message_id: messageId, event_id: eventId, sequence: appended.sequence },
+          value: {
+            message_id: messageId,
+            event_id: eventId,
+            sequence: appended.sequence,
+            recipient_handles: routing.recipient_handles,
+            routing_mode: routing.routing_mode,
+          },
         };
       } catch (error) {
         if (error instanceof ChannelEventPersistenceError) {

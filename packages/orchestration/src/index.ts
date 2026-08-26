@@ -19,3 +19,6 @@ export function startWorker(options: WorkerStartOptions = {}): WorkerHandle {
     },
   };
 }
+
+export { TEAM_MENTION, extractMentionTokens, resolveMessageRecipients } from "./router";
+export type { MentionRouterCoworker, ResolveMessageRecipientsInput } from "./router";

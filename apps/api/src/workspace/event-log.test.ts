@@ -120,6 +120,39 @@ async function createChannel(
   return channelSchema.parse(withoutRequestId(await created.json()));
 }
 
+/** Seed one active channel coworker so no-mention posts auto-route under P0-205. */
+async function ensureSoloMember(input: {
+  app: ReturnType<typeof createApiApp>;
+  env: ReturnType<typeof loadApiEnv>;
+  workspace: WorkspaceService;
+  cookie: string;
+  csrf: string;
+  channelId: string;
+  handle?: string;
+}) {
+  const handle = input.handle ?? "solo";
+  const coworker = await input.workspace.seedCoworker({
+    workspaceId: input.env.workspaceId,
+    createdBy: input.env.ownerUserId,
+    handle,
+    name: "Solo",
+    title: "Solo",
+  });
+  const added = await input.app.request(`/api/channels/${input.channelId}/participants`, {
+    method: "POST",
+    headers: mutationHeaders(input.env, input.cookie, input.csrf),
+    body: JSON.stringify({
+      schemaVersion: 1,
+      participant_type: "coworker",
+      participant_id: coworker.id,
+      role: "member",
+      idempotency_key: `idem_solo_${handle}_${input.channelId}`,
+    }),
+  });
+  expect(added.status).toBe(200);
+  return coworker;
+}
+
 function parseSseBlocks(chunk: string): Array<{ id?: string; event?: string; data: string }> {
   return chunk
     .split("\n\n")
@@ -211,6 +244,14 @@ describe("P0-107 channel event log and SSE", () => {
     const app = createApiApp({ env, auth, workspace });
     const { session, cookie } = await login(app, env);
     const channel = await createChannel(app, env, cookie, session.csrf_token, "Race", "idem_race");
+    await ensureSoloMember({
+      app,
+      env,
+      workspace,
+      cookie,
+      csrf: session.csrf_token,
+      channelId: channel.id,
+    });
 
     const results = await Promise.all(
       Array.from({ length: 20 }, (_, index) =>
@@ -234,7 +275,7 @@ describe("P0-107 channel event log and SSE", () => {
     )
       .map((body) => body.sequence)
       .sort((a, b) => a - b);
-    expect(sequences).toEqual(Array.from({ length: 20 }, (_, index) => index + 1));
+    expect(sequences).toEqual(Array.from({ length: 20 }, (_, index) => index + 2));
     expect(new Set(sequences).size).toBe(20);
 
     const listed = await app.request(`/api/channels/${channel.id}/events?afterSequence=-1`, {
@@ -242,10 +283,10 @@ describe("P0-107 channel event log and SSE", () => {
     });
     expect(listed.status).toBe(200);
     const body = (await listed.json()) as { events: unknown[] };
-    expect(body.events).toHaveLength(21);
+    expect(body.events).toHaveLength(22);
     const envelopes = body.events.map((event) => agentChannelEnvelopeSchema.parse(event));
     expect(envelopes.map((event) => event.channelSequence)).toEqual(
-      Array.from({ length: 21 }, (_, index) => index),
+      Array.from({ length: 22 }, (_, index) => index),
     );
     expect(envelopes[0]?.aguiEvent).toMatchObject({ type: "CUSTOM", name: "channel.created" });
     expect(envelopes.at(-1)?.aguiEvent).toMatchObject({ type: "CUSTOM", name: "message.created" });
@@ -264,6 +305,14 @@ describe("P0-107 channel event log and SSE", () => {
       "Restart",
       "idem_restart",
     );
+    await ensureSoloMember({
+      app: first.app,
+      env: first.env,
+      workspace: first.workspace,
+      cookie,
+      csrf: session.csrf_token,
+      channelId: channel.id,
+    });
     await first.app.request(`/api/channels/${channel.id}/messages`, {
       method: "POST",
       headers: mutationHeaders(first.env, cookie, session.csrf_token),
@@ -279,7 +328,7 @@ describe("P0-107 channel event log and SSE", () => {
     const restarted = await createTestApp({ workspaceStore: sharedStore });
     const relogin = await login(restarted.app, restarted.env);
     const listed = await restarted.app.request(
-      `/api/channels/${channel.id}/events?afterSequence=0`,
+      `/api/channels/${channel.id}/events?afterSequence=1`,
       {
         headers: { cookie: `${restarted.env.sessionCookieName}=${relogin.cookie}` },
       },
@@ -288,7 +337,7 @@ describe("P0-107 channel event log and SSE", () => {
     const body = (await listed.json()) as { events: unknown[] };
     expect(body.events).toHaveLength(1);
     const envelope = agentChannelEnvelopeSchema.parse(body.events[0]);
-    expect(envelope.channelSequence).toBe(1);
+    expect(envelope.channelSequence).toBe(2);
     expect(envelope.aguiEvent).toMatchObject({ type: "CUSTOM", name: "message.created" });
     expect(envelope.actorKind).toBe("human");
   });
@@ -297,6 +346,14 @@ describe("P0-107 channel event log and SSE", () => {
     const { app, env, workspace } = await createTestApp();
     const { session, cookie } = await login(app, env);
     const channel = await createChannel(app, env, cookie, session.csrf_token, "SSE", "idem_sse");
+    await ensureSoloMember({
+      app,
+      env,
+      workspace,
+      cookie,
+      csrf: session.csrf_token,
+      channelId: channel.id,
+    });
 
     await app.request(`/api/channels/${channel.id}/messages`, {
       method: "POST",
@@ -313,7 +370,7 @@ describe("P0-107 channel event log and SSE", () => {
     const streamResponse = await app.request(`/api/channels/${channel.id}/stream`, {
       headers: {
         cookie: `${env.sessionCookieName}=${cookie}`,
-        "Last-Event-ID": "0",
+        "Last-Event-ID": "1",
         accept: "text/event-stream",
       },
       signal: controller.signal,
@@ -356,9 +413,9 @@ describe("P0-107 channel event log and SSE", () => {
       }
     };
 
-    await readUntil(() => channelEvents.some((row) => row.envelope.channelSequence === 1));
-    expect(channelEvents.map((row) => row.id)).toContain("1");
-    expect(channelEvents[0]?.envelope.channelSequence).toBe(1);
+    await readUntil(() => channelEvents.some((row) => row.envelope.channelSequence === 2));
+    expect(channelEvents.map((row) => row.id)).toContain("2");
+    expect(channelEvents[0]?.envelope.channelSequence).toBe(2);
 
     // Live event after replay-to-live transition.
     const livePost = await app.request(`/api/channels/${channel.id}/messages`, {
@@ -373,13 +430,13 @@ describe("P0-107 channel event log and SSE", () => {
     });
     expect(livePost.status).toBe(201);
     const liveBody = (await livePost.json()) as { sequence: number };
-    expect(liveBody.sequence).toBe(2);
+    expect(liveBody.sequence).toBe(3);
 
-    await readUntil(() => channelEvents.some((row) => row.envelope.channelSequence === 2));
+    await readUntil(() => channelEvents.some((row) => row.envelope.channelSequence === 3));
     const sequences = channelEvents
       .map((row) => row.envelope.channelSequence)
       .sort((a, b) => a - b);
-    expect(sequences).toEqual([1, 2]);
+    expect(sequences).toEqual([2, 3]);
     expect(channelEvents.every((row) => row.id === String(row.envelope.channelSequence))).toBe(
       true,
     );
@@ -410,7 +467,7 @@ describe("P0-107 channel event log and SSE", () => {
   });
 
   it("SSE advances past unparseable sequences so later events are not stalled", async () => {
-    const { app, env } = await createTestApp({
+    const { app, env, workspace } = await createTestApp({
       wrapWorkspace: (base) => ({
         ...base,
         async listEvents(session, channelId, afterSequence, options) {
@@ -431,6 +488,14 @@ describe("P0-107 channel event log and SSE", () => {
     });
     const { session, cookie } = await login(app, env);
     const channel = await createChannel(app, env, cookie, session.csrf_token, "Skip", "idem_skip");
+    await ensureSoloMember({
+      app,
+      env,
+      workspace,
+      cookie,
+      csrf: session.csrf_token,
+      channelId: channel.id,
+    });
 
     for (const body of ["first", "second"]) {
       const posted = await app.request(`/api/channels/${channel.id}/messages`, {
@@ -463,7 +528,7 @@ describe("P0-107 channel event log and SSE", () => {
     const sequences: number[] = [];
 
     const deadline = Date.now() + 3_000;
-    while (!sequences.includes(2) && Date.now() < deadline) {
+    while (!sequences.includes(3) && Date.now() < deadline) {
       const { value, done } = await reader.read();
       if (done) break;
       buffer += decoder.decode(value, { stream: true });
@@ -484,6 +549,7 @@ describe("P0-107 channel event log and SSE", () => {
     expect(sequences).toContain(0);
     expect(sequences).not.toContain(1);
     expect(sequences).toContain(2);
+    expect(sequences).toContain(3);
 
     controller.abort();
     await reader.cancel().catch(() => undefined);
@@ -587,6 +653,14 @@ describe("P0-107 channel event log and SSE", () => {
         "PgRace",
         "idem_pg_race",
       );
+      await ensureSoloMember({
+        app,
+        env,
+        workspace,
+        cookie,
+        csrf: session.csrf_token,
+        channelId: channel.id,
+      });
 
       const posts = await Promise.all(
         Array.from({ length: 8 }, (_, index) =>
@@ -697,6 +771,14 @@ describe("P0-107 channel event log and SSE", () => {
     const app = createApiApp({ env, auth, workspace });
     const { session, cookie } = await login(app, env);
     const channel = await createChannel(app, env, cookie, session.csrf_token, "Page", "idem_page");
+    await ensureSoloMember({
+      app,
+      env,
+      workspace,
+      cookie,
+      csrf: session.csrf_token,
+      channelId: channel.id,
+    });
     for (let i = 0; i < 5; i += 1) {
       await app.request(`/api/channels/${channel.id}/messages`, {
         method: "POST",
@@ -715,7 +797,7 @@ describe("P0-107 channel event log and SSE", () => {
     const rest = await store.listEventsAfter(channel.id, page.events.at(-1)!.sequence, {
       limit: 10,
     });
-    expect(rest.events).toHaveLength(3);
+    expect(rest.events).toHaveLength(4);
     expect(rest.hasMore).toBe(false);
   });
 

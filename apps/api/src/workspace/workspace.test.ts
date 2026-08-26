@@ -555,7 +555,7 @@ describe("channel and coworker API", () => {
   });
 
   it("rejects cross-channel parent_message_id and bumps next_sequence on rename event", async () => {
-    const { app, env, workspaceStore } = await createTestApp();
+    const { app, env, workspace, workspaceStore } = await createTestApp();
     const { session, cookie } = await login(app, env);
     const aRes = await app.request(`/api/workspaces/${env.workspaceId}/channels`, {
       method: "POST",
@@ -581,6 +581,26 @@ describe("channel and coworker API", () => {
     const channelB = channelSchema.parse(withoutRequestId(await bRes.json()));
     expect(channelA.next_sequence).toBe(1);
 
+    const solo = await workspace.seedCoworker({
+      workspaceId: env.workspaceId,
+      createdBy: env.ownerUserId,
+      handle: "solo",
+      name: "Solo",
+      title: "Solo",
+    });
+    const added = await app.request(`/api/channels/${channelA.id}/participants`, {
+      method: "POST",
+      headers: mutationHeaders(env, cookie, session.csrf_token),
+      body: JSON.stringify({
+        schemaVersion: 1,
+        participant_type: "coworker",
+        participant_id: solo.id,
+        role: "member",
+        idempotency_key: "idem_a_solo",
+      }),
+    });
+    expect(added.status).toBe(200);
+
     const posted = await app.request(`/api/channels/${channelA.id}/messages`, {
       method: "POST",
       headers: mutationHeaders(env, cookie, session.csrf_token),
@@ -593,10 +613,10 @@ describe("channel and coworker API", () => {
     });
     expect(posted.status).toBe(201);
     const message = (await posted.json()) as { message_id: string; sequence: number };
-    expect(message.sequence).toBe(1);
+    expect(message.sequence).toBe(2);
 
     const afterPost = await workspaceStore.getChannel(channelA.id);
-    expect(afterPost?.nextSequence).toBe(2);
+    expect(afterPost?.nextSequence).toBe(3);
 
     const renamed = await app.request(`/api/channels/${channelA.id}`, {
       method: "PATCH",
@@ -609,8 +629,8 @@ describe("channel and coworker API", () => {
     });
     expect(renamed.status).toBe(200);
     const renamedBody = channelSchema.parse(withoutRequestId(await renamed.json()));
-    expect(renamedBody.next_sequence).toBe(3);
-    expect((await workspaceStore.getChannel(channelA.id))?.nextSequence).toBe(3);
+    expect(renamedBody.next_sequence).toBe(4);
+    expect((await workspaceStore.getChannel(channelA.id))?.nextSequence).toBe(4);
 
     const cross = await app.request(`/api/channels/${channelB.id}/messages`, {
       method: "POST",
@@ -1309,6 +1329,113 @@ describe("channel and coworker API", () => {
     const after = await workspaceStore.getCoworker(coworker.id);
     expect(after?.status).toBe("disabled");
     expect(after?.editableConfigJson.channel_ids).toEqual([]);
+  });
+
+  it("reparses mention and @team recipients instead of trusting client arrays", async () => {
+    const { app, env, workspace } = await createTestApp();
+    const { session, cookie } = await login(app, env);
+    const channelRes = await app.request(`/api/workspaces/${env.workspaceId}/channels`, {
+      method: "POST",
+      headers: mutationHeaders(env, cookie, session.csrf_token),
+      body: JSON.stringify({
+        schemaVersion: 1,
+        name: "Route",
+        mission_brief: "Route",
+        idempotency_key: "idem_route",
+      }),
+    });
+    const channel = channelSchema.parse(withoutRequestId(await channelRes.json()));
+    const analyst = await workspace.seedCoworker({
+      workspaceId: env.workspaceId,
+      createdBy: env.ownerUserId,
+      handle: "analyst",
+      name: "Analyst",
+      title: "A",
+    });
+    const builder = await workspace.seedCoworker({
+      workspaceId: env.workspaceId,
+      createdBy: env.ownerUserId,
+      handle: "builder",
+      name: "Builder",
+      title: "B",
+    });
+    for (const coworker of [analyst, builder]) {
+      const added = await app.request(`/api/channels/${channel.id}/participants`, {
+        method: "POST",
+        headers: mutationHeaders(env, cookie, session.csrf_token),
+        body: JSON.stringify({
+          schemaVersion: 1,
+          participant_type: "coworker",
+          participant_id: coworker.id,
+          role: "member",
+          idempotency_key: `idem_route_add_${coworker.handle}`,
+        }),
+      });
+      expect(added.status).toBe(200);
+    }
+
+    const missing = await app.request(`/api/channels/${channel.id}/messages`, {
+      method: "POST",
+      headers: mutationHeaders(env, cookie, session.csrf_token),
+      body: JSON.stringify({
+        body: "no mention",
+        recipient_handles: ["analyst"],
+        routing_mode: "direct",
+        parent_message_id: null,
+      }),
+    });
+    expect(missing.status).toBe(400);
+    expect(errorEnvelopeSchema.parse(await missing.json()).error).toMatchObject({
+      code: "recipient_required",
+      details: { reason: "recipient_required" },
+    });
+
+    const ignoredClient = await app.request(`/api/channels/${channel.id}/messages`, {
+      method: "POST",
+      headers: mutationHeaders(env, cookie, session.csrf_token),
+      body: JSON.stringify({
+        body: "@builder please",
+        recipient_handles: ["analyst"],
+        routing_mode: "team",
+        parent_message_id: null,
+      }),
+    });
+    expect(ignoredClient.status).toBe(201);
+    await expect(ignoredClient.json()).resolves.toMatchObject({
+      recipient_handles: ["builder"],
+      routing_mode: "direct",
+    });
+
+    const team = await app.request(`/api/channels/${channel.id}/messages`, {
+      method: "POST",
+      headers: mutationHeaders(env, cookie, session.csrf_token),
+      body: JSON.stringify({
+        body: "@team go",
+        recipient_handles: [],
+        routing_mode: "direct",
+        parent_message_id: null,
+      }),
+    });
+    expect(team.status).toBe(201);
+    await expect(team.json()).resolves.toMatchObject({
+      recipient_handles: ["analyst", "builder"],
+      routing_mode: "team",
+    });
+
+    const unknown = await app.request(`/api/channels/${channel.id}/messages`, {
+      method: "POST",
+      headers: mutationHeaders(env, cookie, session.csrf_token),
+      body: JSON.stringify({
+        body: "@ghost hi",
+        recipient_handles: [],
+        routing_mode: "direct",
+        parent_message_id: null,
+      }),
+    });
+    expect(unknown.status).toBe(400);
+    expect(errorEnvelopeSchema.parse(await unknown.json()).error.details).toMatchObject({
+      reason: "unknown_handle",
+    });
   });
 
   it("rejects cross-workspace channel and coworker access", async () => {

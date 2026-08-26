@@ -59,6 +59,22 @@ export type {
 } from "./channels";
 
 export {
+  P0_MAX_ROUTING_RECIPIENTS,
+  routingFailureReasonSchema,
+  routingFailureCodeSchema,
+  routingResolutionSuccessSchema,
+  routingResolutionFailureSchema,
+  routingResolutionSchema,
+} from "./routing";
+export type {
+  RoutingFailureReason,
+  RoutingFailureCode,
+  RoutingResolutionSuccess,
+  RoutingResolutionFailure,
+  RoutingResolution,
+} from "./routing";
+
+export {
   coworkerDraftSchema,
   coworkerDraftConfirmCommandSchema,
   coworkerDraftCreateCommandSchema,
