@@ -104,6 +104,10 @@ function isStaleClaim(createdAt: string, nowMs: number): boolean {
   return nowMs - createdMs >= IDEMPOTENCY_CLAIM_LEASE_MS;
 }
 
+function participantResultId(channelId: string, participantId: string): string {
+  return `${channelId}:${participantId}`;
+}
+
 export type WorkspaceService = {
   createChannel(
     session: SessionResponse,
@@ -257,6 +261,8 @@ export function createWorkspaceService(options?: {
     idempotencyKey: string;
     resultId: string;
     reload: (resultId: string) => Promise<T | null>;
+    /** Optional: reject when an existing claim is bound to a different target. */
+    assertReceipt?: (receipt: { resultId: string }) => WorkspaceServiceError | null;
     run: () => Promise<WorkspaceServiceResult<T>>;
   }): Promise<WorkspaceServiceResult<T>> {
     const tryOnce = async (): Promise<{ claimed: boolean; result?: WorkspaceServiceResult<T> }> => {
@@ -271,6 +277,17 @@ export function createWorkspaceService(options?: {
       if (claimed) {
         return { claimed: true };
       }
+      const receipt = await store.getCommandReceipt(
+        input.workspaceId,
+        input.commandKind,
+        input.idempotencyKey,
+      );
+      if (receipt && input.assertReceipt) {
+        const mismatch = input.assertReceipt(receipt);
+        if (mismatch) {
+          return { claimed: false, result: { ok: false, error: mismatch } };
+        }
+      }
       const existing = await reloadIdempotentResult(
         input.workspaceId,
         input.commandKind,
@@ -280,18 +297,17 @@ export function createWorkspaceService(options?: {
       if (existing) {
         return { claimed: false, result: existing };
       }
-      const receipt = await store.getCommandReceipt(
-        input.workspaceId,
-        input.commandKind,
-        input.idempotencyKey,
-      );
       if (receipt && isStaleClaim(receipt.createdAt, now().getTime())) {
-        await store.deleteCommandReceipt(
+        const cutoff = new Date(now().getTime() - IDEMPOTENCY_CLAIM_LEASE_MS).toISOString();
+        const reclaimed = await store.reclaimStaleCommandReceipt(
           input.workspaceId,
           input.commandKind,
           input.idempotencyKey,
+          cutoff,
         );
-        return { claimed: false };
+        if (reclaimed) {
+          return { claimed: false };
+        }
       }
       return {
         claimed: false,
@@ -315,6 +331,21 @@ export function createWorkspaceService(options?: {
       );
     }
 
+    const heartbeat = setInterval(
+      () => {
+        void store.touchCommandReceipt(
+          input.workspaceId,
+          input.commandKind,
+          input.idempotencyKey,
+          now().toISOString(),
+        );
+      },
+      Math.max(1_000, Math.floor(IDEMPOTENCY_CLAIM_LEASE_MS / 3)),
+    );
+    if (typeof heartbeat.unref === "function") {
+      heartbeat.unref();
+    }
+
     try {
       const result = await input.run();
       if (!result.ok) {
@@ -329,6 +360,8 @@ export function createWorkspaceService(options?: {
     } catch (error) {
       await store.deleteCommandReceipt(input.workspaceId, input.commandKind, input.idempotencyKey);
       throw error;
+    } finally {
+      clearInterval(heartbeat);
     }
   }
 
@@ -630,18 +663,37 @@ export function createWorkspaceService(options?: {
         workspaceId: loaded.value.workspaceId,
         commandKind: "channel.participant.add",
         idempotencyKey: input.idempotency_key,
-        resultId: `${channelId}:${input.participant_id}`,
-        reload: async () => {
+        resultId: participantResultId(channelId, input.participant_id),
+        assertReceipt: (receipt) => {
+          const expected = participantResultId(channelId, input.participant_id);
+          if (receipt.resultId !== expected) {
+            return {
+              code: "conflict",
+              message: "Idempotency key was already used for a different participant.",
+              details: {
+                reason: "idempotency_key_reuse",
+                expected_result_id: expected,
+                claimed_result_id: receipt.resultId,
+              },
+            };
+          }
+          return null;
+        },
+        reload: async (resultId) => {
+          if (resultId !== participantResultId(channelId, input.participant_id)) {
+            return null;
+          }
           const channel = await store.getChannel(channelId);
           return channel
             ? { channel: toChannel(channel), participant_id: input.participant_id }
             : null;
         },
-        run: async () => {
+        run: async (): Promise<
+          WorkspaceServiceResult<{ channel: Channel; participant_id: string }>
+        > => {
           const joinedAt = now().toISOString();
           const existing = await store.getParticipant(channelId, "coworker", input.participant_id);
-          const channelIds = [...new Set([...coworker.editableConfigJson.channel_ids, channelId])];
-          const updated = await store.upsertParticipantMembership({
+          const written = await store.upsertParticipantMembership({
             participant: {
               channelId,
               participantType: "coworker",
@@ -651,20 +703,39 @@ export function createWorkspaceService(options?: {
               removedAt: null,
             },
             coworkerId: input.participant_id,
-            channelIds,
             coworkerUpdatedAt: joinedAt,
+            channelOp: { type: "add", channelId },
           });
-          if (!updated) {
+          if (!written.ok) {
+            if (written.reason === "channel_archived") {
+              return {
+                ok: false,
+                error: {
+                  code: "conflict",
+                  message: "Archived channels cannot change participants.",
+                  details: { reason: "channel_archived" },
+                },
+              };
+            }
+            if (written.reason === "coworker_inactive") {
+              return {
+                ok: false,
+                error: {
+                  code: "validation_failed",
+                  message: "Only active coworkers can join a channel.",
+                  details: { participant_id: input.participant_id },
+                },
+              };
+            }
             return {
               ok: false,
-              error: { code: "not_found", message: "Coworker not found." },
+              error: { code: "not_found", message: "Coworker or channel not found." },
             };
           }
-          const channel = await store.getChannel(channelId);
           return {
             ok: true,
             value: {
-              channel: toChannel(channel ?? loaded.value),
+              channel: toChannel(written.channel),
               participant_id: input.participant_id,
             },
           };
@@ -688,11 +759,35 @@ export function createWorkspaceService(options?: {
         };
       }
 
+      const expectedResultId = participantResultId(channelId, participantId);
+      const existingReceipt = await store.getCommandReceipt(
+        loaded.value.workspaceId,
+        "channel.participant.remove",
+        idempotencyKey,
+      );
+      if (existingReceipt && existingReceipt.resultId !== expectedResultId) {
+        return {
+          ok: false,
+          error: {
+            code: "conflict",
+            message: "Idempotency key was already used for a different participant removal.",
+            details: {
+              reason: "idempotency_key_reuse",
+              expected_result_id: expectedResultId,
+              claimed_result_id: existingReceipt.resultId,
+            },
+          },
+        };
+      }
+
       const replay = await reloadIdempotentResult(
         loaded.value.workspaceId,
         "channel.participant.remove",
         idempotencyKey,
-        async () => {
+        async (resultId) => {
+          if (resultId !== expectedResultId) {
+            return null;
+          }
           const channel = await store.getChannel(channelId);
           return channel ? { channel: toChannel(channel), participant_id: participantId } : null;
         },
@@ -712,30 +807,60 @@ export function createWorkspaceService(options?: {
         workspaceId: loaded.value.workspaceId,
         commandKind: "channel.participant.remove",
         idempotencyKey,
-        resultId: `${channelId}:${participantId}`,
-        reload: async () => {
+        resultId: expectedResultId,
+        assertReceipt: (receipt) => {
+          if (receipt.resultId !== expectedResultId) {
+            return {
+              code: "conflict",
+              message: "Idempotency key was already used for a different participant removal.",
+              details: {
+                reason: "idempotency_key_reuse",
+                expected_result_id: expectedResultId,
+                claimed_result_id: receipt.resultId,
+              },
+            };
+          }
+          return null;
+        },
+        reload: async (resultId) => {
+          if (resultId !== expectedResultId) {
+            return null;
+          }
           const channel = await store.getChannel(channelId);
           return channel ? { channel: toChannel(channel), participant_id: participantId } : null;
         },
         run: async () => {
           const removedAt = now().toISOString();
           const coworker = await store.getCoworker(participantId);
-          const channelIds = (coworker?.editableConfigJson.channel_ids ?? []).filter(
-            (id) => id !== channelId,
-          );
           if (coworker && coworker.workspaceId === loaded.value.workspaceId) {
-            const updated = await store.upsertParticipantMembership({
+            const written = await store.upsertParticipantMembership({
               participant: { ...existing, removedAt },
               coworkerId: participantId,
-              channelIds,
               coworkerUpdatedAt: removedAt,
+              channelOp: { type: "remove", channelId },
             });
-            if (!updated) {
+            if (!written.ok) {
+              if (written.reason === "channel_archived") {
+                return {
+                  ok: false,
+                  error: {
+                    code: "conflict",
+                    message: "Archived channels cannot change participants.",
+                    details: { reason: "channel_archived" },
+                  },
+                };
+              }
               return { ok: false, error: { code: "not_found", message: "Coworker not found." } };
             }
-          } else {
-            await store.upsertParticipant({ ...existing, removedAt });
+            return {
+              ok: true,
+              value: {
+                channel: toChannel(written.channel),
+                participant_id: participantId,
+              },
+            };
           }
+          await store.upsertParticipant({ ...existing, removedAt });
           const channel = await store.getChannel(channelId);
           return {
             ok: true,
@@ -947,13 +1072,36 @@ export function createWorkspaceService(options?: {
         configRevision: nextRevision,
         updatedAt,
       };
-      await store.commitCoworkerUpdate({
+      const committed = await store.commitCoworkerUpdate({
         coworker: updated,
         version,
         memberships: membershipPlan.memberships,
         taskGrants: grantPlan.grants,
         revokeGrantsAt: updatedAt,
+        expectedConfigRevision: loaded.value.configRevision,
+        expectedStatus: "active",
       });
+      if (!committed.ok) {
+        if (committed.reason === "not_found") {
+          return { ok: false, error: { code: "not_found", message: "Coworker not found." } };
+        }
+        return {
+          ok: false,
+          error: {
+            code: "conflict",
+            message: "Coworker changed concurrently; refresh and retry.",
+            details: {
+              reason: "coworker_concurrent_modification",
+              ...(committed.actualRevision !== undefined
+                ? { actual_config_revision: committed.actualRevision }
+                : {}),
+              ...(committed.actualStatus !== undefined
+                ? { actual_status: committed.actualStatus }
+                : {}),
+            },
+          },
+        };
+      }
       return {
         ok: true,
         value: {
@@ -1030,11 +1178,33 @@ export function createWorkspaceService(options?: {
             configRevision: loaded.value.configRevision + 1,
             updatedAt,
           };
-          await store.disableCoworkerCleanup({
+          const disabled = await store.disableCoworkerCleanup({
             coworker: updated,
             memberships,
             revokeAt: updatedAt,
+            expectedConfigRevision: loaded.value.configRevision,
           });
+          if (!disabled.ok) {
+            if (disabled.reason === "not_found") {
+              return { ok: false, error: { code: "not_found", message: "Coworker not found." } };
+            }
+            return {
+              ok: false,
+              error: {
+                code: "conflict",
+                message: "Coworker changed concurrently; refresh and retry.",
+                details: {
+                  reason: "coworker_concurrent_modification",
+                  ...(disabled.actualRevision !== undefined
+                    ? { actual_config_revision: disabled.actualRevision }
+                    : {}),
+                  ...(disabled.actualStatus !== undefined
+                    ? { actual_status: disabled.actualStatus }
+                    : {}),
+                },
+              },
+            };
+          }
           return { ok: true, value: toCoworker(updated) };
         },
       });

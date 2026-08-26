@@ -120,6 +120,19 @@ export type CommandReceipt = {
   createdAt: string;
 };
 
+export type MembershipWriteResult =
+  | { ok: true; coworker: CoworkerRecord; channel: ChannelRecord }
+  | { ok: false; reason: "not_found" | "channel_archived" | "coworker_inactive" };
+
+export type CoworkerMutationResult =
+  | { ok: true }
+  | {
+      ok: false;
+      reason: "not_found" | "conflict";
+      actualRevision?: number;
+      actualStatus?: CoworkerStatus;
+    };
+
 export type WorkspaceCatalogStore = {
   getChannel(id: string): Promise<ChannelRecord | null>;
   listChannels(workspaceId: string): Promise<ChannelRecord[]>;
@@ -134,32 +147,44 @@ export type WorkspaceCatalogStore = {
     participantId: string,
   ): Promise<ParticipantRecord | null>;
   upsertParticipant(participant: ParticipantRecord): Promise<void>;
-  /** Atomically writes participant row and coworker channel_ids. */
+  /**
+   * Atomically locks channel+coworker, rejects archived channels, merges channel_ids
+   * from the locked coworker row, and writes the participant row.
+   */
   upsertParticipantMembership(input: {
     participant: ParticipantRecord;
     coworkerId: string;
-    channelIds: string[];
     coworkerUpdatedAt: string;
-  }): Promise<CoworkerRecord | null>;
+    channelOp: { type: "add"; channelId: string } | { type: "remove"; channelId: string };
+  }): Promise<MembershipWriteResult>;
 
   getCoworker(id: string): Promise<CoworkerRecord | null>;
   listCoworkers(workspaceId: string): Promise<CoworkerRecord[]>;
   insertCoworker(coworker: CoworkerRecord, version: AgentVersionRecord): Promise<void>;
   updateCoworker(coworker: CoworkerRecord, version?: AgentVersionRecord): Promise<void>;
-  /** Atomically applies membership rows, grant replacement, and coworker profile/version. */
+  /**
+   * Atomically locks the profile, requires expected revision+active status,
+   * then applies memberships/grants/profile/version.
+   */
   commitCoworkerUpdate(input: {
     coworker: CoworkerRecord;
     version: AgentVersionRecord;
     memberships: ParticipantRecord[];
     taskGrants: TaskGrantRecord[];
     revokeGrantsAt: string;
-  }): Promise<void>;
-  /** Disables coworker, revokes grants, and removes channel participation atomically. */
+    expectedConfigRevision: number;
+    expectedStatus: "active";
+  }): Promise<CoworkerMutationResult>;
+  /**
+   * Atomically locks the profile, requires expected revision, then disables and
+   * clears membership/grants. Wins over concurrent stale edits.
+   */
   disableCoworkerCleanup(input: {
     coworker: CoworkerRecord;
     memberships: ParticipantRecord[];
     revokeAt: string;
-  }): Promise<void>;
+    expectedConfigRevision: number;
+  }): Promise<CoworkerMutationResult>;
 
   listActiveTaskGrantsForSubject(subjectId: string): Promise<TaskGrantRecord[]>;
   replaceActiveTaskGrantsForSubject(
@@ -177,6 +202,23 @@ export type WorkspaceCatalogStore = {
   ): Promise<CommandReceipt | null>;
   /** Insert receipt; returns false if the idempotency key already exists. */
   tryClaimCommandReceipt(receipt: CommandReceipt): Promise<boolean>;
+  /** Heartbeat: refresh created_at so the claim lease stays alive while work runs. */
+  touchCommandReceipt(
+    workspaceId: string,
+    commandKind: string,
+    idempotencyKey: string,
+    touchedAt: string,
+  ): Promise<boolean>;
+  /**
+   * Delete an in-progress claim only if its created_at is strictly older than cutoff.
+   * Returns true when a row was removed (safe to reclaim).
+   */
+  reclaimStaleCommandReceipt(
+    workspaceId: string,
+    commandKind: string,
+    idempotencyKey: string,
+    olderThanIso: string,
+  ): Promise<boolean>;
   deleteCommandReceipt(
     workspaceId: string,
     commandKind: string,
@@ -245,6 +287,16 @@ export function createMemoryWorkspaceStore(): WorkspaceCatalogStore {
     }
   }
 
+  function mergeChannelIds(
+    current: string[],
+    op: { type: "add"; channelId: string } | { type: "remove"; channelId: string },
+  ): string[] {
+    if (op.type === "add") {
+      return [...new Set([...current, op.channelId])];
+    }
+    return current.filter((id) => id !== op.channelId);
+  }
+
   return {
     async getChannel(id) {
       return channels.get(id) ?? null;
@@ -284,21 +336,36 @@ export function createMemoryWorkspaceStore(): WorkspaceCatalogStore {
       writeParticipant(participant);
     },
     async upsertParticipantMembership(input) {
+      const channelId = input.channelOp.channelId;
+      const channel = channels.get(channelId);
+      if (!channel) {
+        return { ok: false, reason: "not_found" };
+      }
+      if (channel.status === "archived") {
+        return { ok: false, reason: "channel_archived" };
+      }
       const coworker = coworkers.get(input.coworkerId);
       if (!coworker) {
-        return null;
+        return { ok: false, reason: "not_found" };
+      }
+      if (input.channelOp.type === "add" && coworker.status !== "active") {
+        return { ok: false, reason: "coworker_inactive" };
       }
       writeParticipant(input.participant);
       const updated: CoworkerRecord = {
         ...coworker,
         editableConfigJson: {
           ...coworker.editableConfigJson,
-          channel_ids: [...input.channelIds],
+          channel_ids: mergeChannelIds(coworker.editableConfigJson.channel_ids, input.channelOp),
         },
         updatedAt: input.coworkerUpdatedAt,
       };
       coworkers.set(updated.id, structuredClone(updated));
-      return structuredClone(updated);
+      return {
+        ok: true,
+        coworker: structuredClone(updated),
+        channel: structuredClone(channel),
+      };
     },
     async getCoworker(id) {
       return coworkers.get(id) ?? null;
@@ -319,19 +386,61 @@ export function createMemoryWorkspaceStore(): WorkspaceCatalogStore {
       }
     },
     async commitCoworkerUpdate(input) {
+      const current = coworkers.get(input.coworker.id);
+      if (!current) {
+        return { ok: false, reason: "not_found" };
+      }
+      if (
+        current.configRevision !== input.expectedConfigRevision ||
+        current.status !== input.expectedStatus
+      ) {
+        return {
+          ok: false,
+          reason: "conflict",
+          actualRevision: current.configRevision,
+          actualStatus: current.status,
+        };
+      }
       for (const membership of input.memberships) {
         writeParticipant(membership);
       }
       replaceGrants(input.coworker.id, input.taskGrants, input.revokeGrantsAt);
       coworkers.set(input.coworker.id, structuredClone(input.coworker));
       versions.set(input.version.id, structuredClone(input.version));
+      return { ok: true };
     },
     async disableCoworkerCleanup(input) {
+      const current = coworkers.get(input.coworker.id);
+      if (!current) {
+        return { ok: false, reason: "not_found" };
+      }
+      if (current.status === "disabled") {
+        // Already disabled — treat as success when revision matches the disabled head,
+        // otherwise conflict so a stale disable cannot rewind state.
+        if (current.configRevision === input.coworker.configRevision) {
+          return { ok: true };
+        }
+        return {
+          ok: false,
+          reason: "conflict",
+          actualRevision: current.configRevision,
+          actualStatus: current.status,
+        };
+      }
+      if (current.configRevision !== input.expectedConfigRevision) {
+        return {
+          ok: false,
+          reason: "conflict",
+          actualRevision: current.configRevision,
+          actualStatus: current.status,
+        };
+      }
       for (const membership of input.memberships) {
         writeParticipant(membership);
       }
       replaceGrants(input.coworker.id, [], input.revokeAt);
       coworkers.set(input.coworker.id, structuredClone(input.coworker));
+      return { ok: true };
     },
     async listActiveTaskGrantsForSubject(subjectId) {
       return [...taskGrants.values()].filter(
@@ -353,6 +462,27 @@ export function createMemoryWorkspaceStore(): WorkspaceCatalogStore {
         return false;
       }
       receipts.set(key, structuredClone(receipt));
+      return true;
+    },
+    async touchCommandReceipt(workspaceId, commandKind, idempotencyKey, touchedAt) {
+      const key = receiptKey(workspaceId, commandKind, idempotencyKey);
+      const existing = receipts.get(key);
+      if (!existing) {
+        return false;
+      }
+      receipts.set(key, { ...existing, createdAt: touchedAt });
+      return true;
+    },
+    async reclaimStaleCommandReceipt(workspaceId, commandKind, idempotencyKey, olderThanIso) {
+      const key = receiptKey(workspaceId, commandKind, idempotencyKey);
+      const existing = receipts.get(key);
+      if (!existing) {
+        return false;
+      }
+      if (existing.createdAt >= olderThanIso) {
+        return false;
+      }
+      receipts.delete(key);
       return true;
     },
     async deleteCommandReceipt(workspaceId, commandKind, idempotencyKey) {

@@ -16,7 +16,9 @@ import type {
   ChannelRecord,
   CommandReceipt,
   CoworkerEditableConfig,
+  CoworkerMutationResult,
   CoworkerRecord,
+  MembershipWriteResult,
   MessageRecord,
   ParticipantRecord,
   TaskGrantRecord,
@@ -275,6 +277,34 @@ export function createPostgresWorkspaceStore(sql: SqlClient): WorkspaceCatalogSt
     },
     async upsertParticipantMembership(input) {
       return sql.begin(async (tx) => {
+        const channelRows = await tx<
+          {
+            id: string;
+            workspace_id: string;
+            name: string;
+            mission_brief: string;
+            summary: string | null;
+            policy_json: unknown;
+            next_sequence: number;
+            status: string;
+            created_by: string;
+            created_at: string | Date;
+            updated_at: string | Date;
+          }[]
+        >`
+          SELECT *
+          FROM channels
+          WHERE id = ${input.channelOp.channelId}
+          FOR UPDATE
+        `;
+        const channelRow = channelRows[0];
+        if (!channelRow) {
+          return { ok: false, reason: "not_found" } satisfies MembershipWriteResult;
+        }
+        if (channelRow.status === "archived") {
+          return { ok: false, reason: "channel_archived" } satisfies MembershipWriteResult;
+        }
+
         const coworkerRows = await tx<
           {
             id: string;
@@ -299,11 +329,19 @@ export function createPostgresWorkspaceStore(sql: SqlClient): WorkspaceCatalogSt
         `;
         const row = coworkerRows[0];
         if (!row) {
-          return null;
+          return { ok: false, reason: "not_found" } satisfies MembershipWriteResult;
         }
+        if (input.channelOp.type === "add" && row.status !== "active") {
+          return { ok: false, reason: "coworker_inactive" } satisfies MembershipWriteResult;
+        }
+
         await upsertParticipantSql(tx as unknown as SqlClient, input.participant);
         const config = asConfig(row.editable_config_json);
-        const nextConfig = { ...config, channel_ids: [...input.channelIds] };
+        const channelIds =
+          input.channelOp.type === "add"
+            ? [...new Set([...config.channel_ids, input.channelOp.channelId])]
+            : config.channel_ids.filter((id) => id !== input.channelOp.channelId);
+        const nextConfig = { ...config, channel_ids: channelIds };
         await tx.unsafe(
           `UPDATE agent_profiles
            SET editable_config_json = $1::jsonb,
@@ -312,21 +350,37 @@ export function createPostgresWorkspaceStore(sql: SqlClient): WorkspaceCatalogSt
           [JSON.stringify(nextConfig), input.coworkerUpdatedAt, input.coworkerId],
         );
         return {
-          id: row.id,
-          workspaceId: row.workspace_id,
-          handle: row.handle,
-          name: row.name,
-          title: row.title,
-          avatarSeed: row.avatar_seed,
-          visibility: "workspace" as const,
-          status: row.status as CoworkerRecord["status"],
-          editableConfigJson: nextConfig,
-          currentVersionId: row.current_version_id,
-          configRevision: row.config_revision,
-          nativeSubagentsEnabled: false as const,
-          createdAt: asIso(row.created_at),
-          updatedAt: input.coworkerUpdatedAt,
-        } satisfies CoworkerRecord;
+          ok: true,
+          coworker: {
+            id: row.id,
+            workspaceId: row.workspace_id,
+            handle: row.handle,
+            name: row.name,
+            title: row.title,
+            avatarSeed: row.avatar_seed,
+            visibility: "workspace" as const,
+            status: row.status as CoworkerRecord["status"],
+            editableConfigJson: nextConfig,
+            currentVersionId: row.current_version_id,
+            configRevision: row.config_revision,
+            nativeSubagentsEnabled: false as const,
+            createdAt: asIso(row.created_at),
+            updatedAt: input.coworkerUpdatedAt,
+          },
+          channel: {
+            id: channelRow.id,
+            workspaceId: channelRow.workspace_id,
+            name: channelRow.name,
+            missionBrief: channelRow.mission_brief,
+            summary: channelRow.summary,
+            policyJson: (channelRow.policy_json ?? {}) as Record<string, unknown>,
+            nextSequence: channelRow.next_sequence,
+            status: channelRow.status as ChannelRecord["status"],
+            createdBy: channelRow.created_by,
+            createdAt: asIso(channelRow.created_at),
+            updatedAt: asIso(channelRow.updated_at),
+          },
+        } satisfies MembershipWriteResult;
       });
     },
     async getCoworker(id) {
@@ -398,7 +452,29 @@ export function createPostgresWorkspaceStore(sql: SqlClient): WorkspaceCatalogSt
         .where(eq(agentProfiles.id, coworker.id));
     },
     async commitCoworkerUpdate(input) {
-      await sql.begin(async (tx) => {
+      return sql.begin(async (tx) => {
+        const locked = await tx<{ config_revision: number; status: string }[]>`
+          SELECT config_revision, status
+          FROM agent_profiles
+          WHERE id = ${input.coworker.id}
+          FOR UPDATE
+        `;
+        const current = locked[0];
+        if (!current) {
+          return { ok: false, reason: "not_found" } satisfies CoworkerMutationResult;
+        }
+        if (
+          current.config_revision !== input.expectedConfigRevision ||
+          current.status !== input.expectedStatus
+        ) {
+          return {
+            ok: false,
+            reason: "conflict",
+            actualRevision: current.config_revision,
+            actualStatus: current.status as CoworkerRecord["status"],
+          } satisfies CoworkerMutationResult;
+        }
+
         for (const membership of input.memberships) {
           await upsertParticipantSql(tx as unknown as SqlClient, membership);
         }
@@ -447,10 +523,41 @@ export function createPostgresWorkspaceStore(sql: SqlClient): WorkspaceCatalogSt
             input.coworker.id,
           ],
         );
+        return { ok: true } satisfies CoworkerMutationResult;
       });
     },
     async disableCoworkerCleanup(input) {
-      await sql.begin(async (tx) => {
+      return sql.begin(async (tx) => {
+        const locked = await tx<{ config_revision: number; status: string }[]>`
+          SELECT config_revision, status
+          FROM agent_profiles
+          WHERE id = ${input.coworker.id}
+          FOR UPDATE
+        `;
+        const current = locked[0];
+        if (!current) {
+          return { ok: false, reason: "not_found" } satisfies CoworkerMutationResult;
+        }
+        if (current.status === "disabled") {
+          if (current.config_revision === input.coworker.configRevision) {
+            return { ok: true } satisfies CoworkerMutationResult;
+          }
+          return {
+            ok: false,
+            reason: "conflict",
+            actualRevision: current.config_revision,
+            actualStatus: current.status as CoworkerRecord["status"],
+          } satisfies CoworkerMutationResult;
+        }
+        if (current.config_revision !== input.expectedConfigRevision) {
+          return {
+            ok: false,
+            reason: "conflict",
+            actualRevision: current.config_revision,
+            actualStatus: current.status as CoworkerRecord["status"],
+          } satisfies CoworkerMutationResult;
+        }
+
         for (const membership of input.memberships) {
           await upsertParticipantSql(tx as unknown as SqlClient, membership);
         }
@@ -484,6 +591,7 @@ export function createPostgresWorkspaceStore(sql: SqlClient): WorkspaceCatalogSt
             input.coworker.id,
           ],
         );
+        return { ok: true } satisfies CoworkerMutationResult;
       });
     },
     async listActiveTaskGrantsForSubject(subjectId) {
@@ -543,6 +651,28 @@ export function createPostgresWorkspaceStore(sql: SqlClient): WorkspaceCatalogSt
         RETURNING result_id
       `;
       return inserted.length > 0;
+    },
+    async touchCommandReceipt(workspaceId, commandKind, idempotencyKey, touchedAt) {
+      const updated = await sql`
+        UPDATE workspace_command_receipts
+        SET created_at = ${touchedAt}
+        WHERE workspace_id = ${workspaceId}
+          AND command_kind = ${commandKind}
+          AND idempotency_key = ${idempotencyKey}
+        RETURNING result_id
+      `;
+      return updated.length > 0;
+    },
+    async reclaimStaleCommandReceipt(workspaceId, commandKind, idempotencyKey, olderThanIso) {
+      const deleted = await sql`
+        DELETE FROM workspace_command_receipts
+        WHERE workspace_id = ${workspaceId}
+          AND command_kind = ${commandKind}
+          AND idempotency_key = ${idempotencyKey}
+          AND created_at < ${olderThanIso}
+        RETURNING result_id
+      `;
+      return deleted.length > 0;
     },
     async deleteCommandReceipt(workspaceId, commandKind, idempotencyKey) {
       await db

@@ -760,6 +760,281 @@ describe("channel and coworker API", () => {
     expect(channelSchema.parse(withoutRequestId(await created.json())).name).toBe("Recovered");
   });
 
+  it("keeps heartbeating claims from being reclaimed while still running", async () => {
+    let clock = new Date("2026-08-26T12:00:00.000Z");
+    const { workspaceStore } = await createTestApp({ now: () => clock });
+    await workspaceStore.tryClaimCommandReceipt({
+      workspaceId: "workspace_1",
+      commandKind: "channel.create",
+      idempotencyKey: "idem_alive",
+      resultId: "channel_alive",
+      resultJson: null,
+      createdAt: clock.toISOString(),
+    });
+    clock = new Date(clock.getTime() + IDEMPOTENCY_CLAIM_LEASE_MS - 1_000);
+    await workspaceStore.touchCommandReceipt(
+      "workspace_1",
+      "channel.create",
+      "idem_alive",
+      clock.toISOString(),
+    );
+    clock = new Date(clock.getTime() + IDEMPOTENCY_CLAIM_LEASE_MS);
+    const cutoff = new Date(clock.getTime() - IDEMPOTENCY_CLAIM_LEASE_MS).toISOString();
+    const reclaimed = await workspaceStore.reclaimStaleCommandReceipt(
+      "workspace_1",
+      "channel.create",
+      "idem_alive",
+      cutoff,
+    );
+    expect(reclaimed).toBe(false);
+    const stillHeld = await workspaceStore.getCommandReceipt(
+      "workspace_1",
+      "channel.create",
+      "idem_alive",
+    );
+    expect(stillHeld).toBeTruthy();
+  });
+
+  it("rejects removeParticipant idempotency key reuse for a different target", async () => {
+    const { app, env, workspace } = await createTestApp();
+    const { session, cookie } = await login(app, env);
+    const channelRes = await app.request(`/api/workspaces/${env.workspaceId}/channels`, {
+      method: "POST",
+      headers: mutationHeaders(env, cookie, session.csrf_token),
+      body: JSON.stringify({
+        schemaVersion: 1,
+        name: "Reuse",
+        mission_brief: "Reuse",
+        idempotency_key: "idem_reuse_ch",
+      }),
+    });
+    const channel = channelSchema.parse(withoutRequestId(await channelRes.json()));
+    const alpha = await workspace.seedCoworker({
+      workspaceId: env.workspaceId,
+      createdBy: env.ownerUserId,
+      handle: "reuse_a",
+      name: "A",
+      title: "A",
+    });
+    const beta = await workspace.seedCoworker({
+      workspaceId: env.workspaceId,
+      createdBy: env.ownerUserId,
+      handle: "reuse_b",
+      name: "B",
+      title: "B",
+    });
+    for (const coworker of [alpha, beta]) {
+      const added = await app.request(`/api/channels/${channel.id}/participants`, {
+        method: "POST",
+        headers: mutationHeaders(env, cookie, session.csrf_token),
+        body: JSON.stringify({
+          schemaVersion: 1,
+          participant_type: "coworker",
+          participant_id: coworker.id,
+          role: "member",
+          idempotency_key: `idem_add_${coworker.handle}`,
+        }),
+      });
+      expect(added.status).toBe(200);
+    }
+
+    const removeKey = "idem_remove_shared";
+    const removed = await app.request(`/api/channels/${channel.id}/participants/${alpha.id}`, {
+      method: "DELETE",
+      headers: mutationHeaders(env, cookie, session.csrf_token),
+      body: JSON.stringify({ schemaVersion: 1, idempotency_key: removeKey }),
+    });
+    expect(removed.status).toBe(200);
+
+    const reused = await app.request(`/api/channels/${channel.id}/participants/${beta.id}`, {
+      method: "DELETE",
+      headers: mutationHeaders(env, cookie, session.csrf_token),
+      body: JSON.stringify({ schemaVersion: 1, idempotency_key: removeKey }),
+    });
+    expect(reused.status).toBe(409);
+    expect(errorEnvelopeSchema.parse(await reused.json()).error.details).toMatchObject({
+      reason: "idempotency_key_reuse",
+    });
+    const stillMember = await app.request(`/api/coworkers/${beta.id}`, {
+      headers: { cookie: `${env.sessionCookieName}=${cookie}` },
+    });
+    expect(stillMember.status).toBe(200);
+    await expect(stillMember.json()).resolves.toMatchObject({
+      config: { channel_ids: [channel.id] },
+    });
+  });
+
+  it("merges channel_ids under lock and rejects archived membership writes", async () => {
+    const { app, env, workspace, workspaceStore } = await createTestApp();
+    const { session, cookie } = await login(app, env);
+    const aRes = await app.request(`/api/workspaces/${env.workspaceId}/channels`, {
+      method: "POST",
+      headers: mutationHeaders(env, cookie, session.csrf_token),
+      body: JSON.stringify({
+        schemaVersion: 1,
+        name: "CA",
+        mission_brief: "A",
+        idempotency_key: "idem_ca",
+      }),
+    });
+    const bRes = await app.request(`/api/workspaces/${env.workspaceId}/channels`, {
+      method: "POST",
+      headers: mutationHeaders(env, cookie, session.csrf_token),
+      body: JSON.stringify({
+        schemaVersion: 1,
+        name: "CB",
+        mission_brief: "B",
+        idempotency_key: "idem_cb",
+      }),
+    });
+    const channelA = channelSchema.parse(withoutRequestId(await aRes.json()));
+    const channelB = channelSchema.parse(withoutRequestId(await bRes.json()));
+    const coworker = await workspace.seedCoworker({
+      workspaceId: env.workspaceId,
+      createdBy: env.ownerUserId,
+      handle: "merge",
+      name: "Merge",
+      title: "M",
+    });
+
+    const addA = await app.request(`/api/channels/${channelA.id}/participants`, {
+      method: "POST",
+      headers: mutationHeaders(env, cookie, session.csrf_token),
+      body: JSON.stringify({
+        schemaVersion: 1,
+        participant_type: "coworker",
+        participant_id: coworker.id,
+        role: "member",
+        idempotency_key: "idem_merge_a",
+      }),
+    });
+    expect(addA.status).toBe(200);
+
+    // Simulate a concurrent writer that already recorded channel A on the coworker.
+    const locked = await workspaceStore.getCoworker(coworker.id);
+    expect(locked?.editableConfigJson.channel_ids).toEqual([channelA.id]);
+
+    const addB = await workspaceStore.upsertParticipantMembership({
+      participant: {
+        channelId: channelB.id,
+        participantType: "coworker",
+        participantId: coworker.id,
+        role: "member",
+        joinedAt: new Date().toISOString(),
+        removedAt: null,
+      },
+      coworkerId: coworker.id,
+      coworkerUpdatedAt: new Date().toISOString(),
+      channelOp: { type: "add", channelId: channelB.id },
+    });
+    expect(addB.ok).toBe(true);
+    if (addB.ok) {
+      expect(addB.coworker.editableConfigJson.channel_ids.sort()).toEqual(
+        [channelA.id, channelB.id].sort(),
+      );
+    }
+
+    await app.request(`/api/channels/${channelB.id}/archive`, {
+      method: "POST",
+      headers: mutationHeaders(env, cookie, session.csrf_token),
+      body: JSON.stringify({ schemaVersion: 1, idempotency_key: "idem_arch_b" }),
+    });
+    const archivedWrite = await workspaceStore.upsertParticipantMembership({
+      participant: {
+        channelId: channelB.id,
+        participantType: "coworker",
+        participantId: coworker.id,
+        role: "member",
+        joinedAt: new Date().toISOString(),
+        removedAt: null,
+      },
+      coworkerId: coworker.id,
+      coworkerUpdatedAt: new Date().toISOString(),
+      channelOp: { type: "add", channelId: channelB.id },
+    });
+    expect(archivedWrite).toEqual({ ok: false, reason: "channel_archived" });
+  });
+
+  it("prevents stale coworker edits from resurrecting a disabled coworker", async () => {
+    const { app, env, workspace, workspaceStore } = await createTestApp();
+    const { session, cookie } = await login(app, env);
+    const channelRes = await app.request(`/api/workspaces/${env.workspaceId}/channels`, {
+      method: "POST",
+      headers: mutationHeaders(env, cookie, session.csrf_token),
+      body: JSON.stringify({
+        schemaVersion: 1,
+        name: "Race",
+        mission_brief: "Race",
+        idempotency_key: "idem_race_ch",
+      }),
+    });
+    const channel = channelSchema.parse(withoutRequestId(await channelRes.json()));
+    const coworker = await workspace.seedCoworker({
+      workspaceId: env.workspaceId,
+      createdBy: env.ownerUserId,
+      handle: "race",
+      name: "Race",
+      title: "R",
+    });
+
+    const disabled = await app.request(`/api/coworkers/${coworker.id}/disable`, {
+      method: "POST",
+      headers: mutationHeaders(env, cookie, session.csrf_token),
+      body: JSON.stringify({
+        schemaVersion: 1,
+        expected_config_revision: 1,
+        reason: "done",
+        idempotency_key: "idem_race_disable",
+      }),
+    });
+    expect(disabled.status).toBe(200);
+
+    const resurrect = await workspaceStore.commitCoworkerUpdate({
+      coworker: {
+        ...coworker,
+        status: "active",
+        name: "Resurrected",
+        configRevision: 2,
+        editableConfigJson: {
+          ...coworker.editableConfigJson,
+          channel_ids: [channel.id],
+        },
+        updatedAt: new Date().toISOString(),
+      },
+      version: {
+        id: "av_stale",
+        agentProfileId: coworker.id,
+        version: 2,
+        configJson: { name: "Resurrected" },
+        specHash: "sha256:stale",
+        createdBy: env.ownerUserId,
+        createdAt: new Date().toISOString(),
+      },
+      memberships: [
+        {
+          channelId: channel.id,
+          participantType: "coworker",
+          participantId: coworker.id,
+          role: "member",
+          joinedAt: new Date().toISOString(),
+          removedAt: null,
+        },
+      ],
+      taskGrants: [],
+      revokeGrantsAt: new Date().toISOString(),
+      expectedConfigRevision: 1,
+      expectedStatus: "active",
+    });
+    expect(resurrect.ok).toBe(false);
+    if (!resurrect.ok) {
+      expect(resurrect.reason).toBe("conflict");
+      expect(resurrect.actualStatus).toBe("disabled");
+    }
+    const after = await workspaceStore.getCoworker(coworker.id);
+    expect(after?.status).toBe("disabled");
+    expect(after?.editableConfigJson.channel_ids).toEqual([]);
+  });
+
   it("rejects cross-workspace channel and coworker access", async () => {
     const { app, env, workspace } = await createTestApp();
     const { cookie } = await login(app, env);
