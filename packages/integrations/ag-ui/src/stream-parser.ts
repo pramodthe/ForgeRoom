@@ -52,7 +52,9 @@ export function assertTrueForgeFixtureShape(
     throw new Error(`expected ${fixture.expectedEventTypes.length} events, parsed ${types.length}`);
   for (let i = 0; i < fixture.expectedEventTypes.length; i += 1) {
     if (types[i] !== fixture.expectedEventTypes[i])
-      throw new Error(`event ${i + 1} expected ${fixture.expectedEventTypes[i]} but parsed ${types[i]}`);
+      throw new Error(
+        `event ${i + 1} expected ${fixture.expectedEventTypes[i]} but parsed ${types[i]}`,
+      );
   }
 
   const started = events.find((event) => event.type === EventType.RUN_STARTED);

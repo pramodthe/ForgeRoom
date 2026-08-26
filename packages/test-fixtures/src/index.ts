@@ -12,10 +12,7 @@ import {
 
 const AG_UI_ALLOWED_PACKAGES = new Set(["@forgeroom/ag-ui"]);
 
-export const FORBIDDEN_P0_101_DEPENDENCY_PATTERNS = [
-  /^@copilotkit\//,
-  /copilotkit/i,
-] as const;
+export const FORBIDDEN_P0_101_DEPENDENCY_PATTERNS = [/^@copilotkit\//, /copilotkit/i] as const;
 
 export function isForbiddenP0101Dependency(name: string, packageName?: string): boolean {
   if (/^@ag-ui\//.test(name)) {
@@ -24,7 +21,7 @@ export function isForbiddenP0101Dependency(name: string, packageName?: string): 
   return FORBIDDEN_P0_101_DEPENDENCY_PATTERNS.some((pattern) => pattern.test(name));
 }
 
-function findRepoRoot(start: string): string {
+function walkUpForRepoRoot(start: string): string | null {
   let dir = start;
   for (;;) {
     try {
@@ -33,20 +30,46 @@ function findRepoRoot(start: string): string {
     } catch {
       const parent = dirname(dir);
       if (parent === dir) {
-        break;
+        return null;
       }
       dir = parent;
+    }
+  }
+}
+
+export type RepoRootOptions = {
+  from?: string;
+  env?: NodeJS.ProcessEnv;
+};
+
+export function findRepoRoot(options?: RepoRootOptions): string {
+  const env = options?.env ?? process.env;
+  const starts: string[] = [];
+
+  if (env.FORGEROOM_REPO_ROOT && env.FORGEROOM_REPO_ROOT.length > 0) {
+    starts.push(env.FORGEROOM_REPO_ROOT);
+  }
+  starts.push(process.cwd());
+  starts.push(options?.from ?? dirname(fileURLToPath(import.meta.url)));
+
+  for (const start of starts) {
+    const root = walkUpForRepoRoot(start);
+    if (root) {
+      return root;
     }
   }
   throw new Error("Could not find repository root");
 }
 
-export function providerFixturesRoot(from = dirname(fileURLToPath(import.meta.url))): string {
-  return join(findRepoRoot(from), "provider-fixtures");
+export function providerFixturesRoot(options?: RepoRootOptions): string {
+  return join(findRepoRoot(options), "provider-fixtures");
 }
 
-export function readProviderFixtureJson<T = unknown>(relativePath: string): T {
-  const absolute = join(providerFixturesRoot(), relativePath);
+export function readProviderFixtureJson<T = unknown>(
+  relativePath: string,
+  options?: RepoRootOptions,
+): T {
+  const absolute = join(providerFixturesRoot(options), relativePath);
   return JSON.parse(readFileSync(absolute, "utf8")) as T;
 }
 

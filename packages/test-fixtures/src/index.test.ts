@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   assertControlledUiFixturesValid,
   assertP0FeatureProfileFrozen,
+  findRepoRoot,
   isForbiddenP0101Dependency,
   loadP0FeatureProfile,
   readProviderFixtureJson,
@@ -15,6 +16,24 @@ describe("isForbiddenP0101Dependency", () => {
     expect(isForbiddenP0101Dependency("@ag-ui/core", "@forgeroom/api")).toBe(true);
     expect(isForbiddenP0101Dependency("@copilotkit/runtime")).toBe(true);
     expect(isForbiddenP0101Dependency("zod")).toBe(false);
+  });
+});
+
+describe("findRepoRoot", () => {
+  it("resolves the repository from FORGEROOM_REPO_ROOT when module path is outside checkout", () => {
+    const actualRoot = findRepoRoot();
+    expect(
+      findRepoRoot({
+        from: "/tmp/forgeroom-bundle/dist",
+        env: { FORGEROOM_REPO_ROOT: actualRoot },
+      }),
+    ).toBe(actualRoot);
+    expect(() =>
+      readProviderFixtureJson("p0-feature-profile.json", {
+        from: "/tmp/forgeroom-bundle/dist",
+        env: { FORGEROOM_REPO_ROOT: actualRoot },
+      }),
+    ).not.toThrow();
   });
 });
 

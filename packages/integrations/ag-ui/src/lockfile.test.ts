@@ -45,4 +45,36 @@ packages:
     expect(inspection.ok).toBe(false);
     expect(inspection.violations.join(" ")).toMatch(/canary/);
   });
+
+  it("rejects transitive CopilotKit packages in the lockfile closure", () => {
+    const lockfileContent = `
+packages:
+  '@ag-ui/core@0.0.57':
+    resolution: {integrity: sha512-core}
+  '@ag-ui/client@0.0.57':
+    resolution: {integrity: sha512-client}
+  '@copilotkit/runtime@1.69.0':
+    resolution: {integrity: sha512-copilot}
+`;
+    const inspection = inspectAgUiLockfile({ root: repoRoot(), lockfileContent });
+    expect(inspection.ok).toBe(false);
+    expect(inspection.violations.join(" ")).toMatch(/CopilotKit/);
+  });
+
+  it("rejects duplicate auxiliary AG-UI package versions", () => {
+    const lockfileContent = `
+packages:
+  '@ag-ui/core@0.0.57':
+    resolution: {integrity: sha512-core}
+  '@ag-ui/client@0.0.57':
+    resolution: {integrity: sha512-client}
+  '@ag-ui/encoder@0.0.57':
+    resolution: {integrity: sha512-encoder-a}
+  '@ag-ui/encoder@0.0.54':
+    resolution: {integrity: sha512-encoder-b}
+`;
+    const inspection = inspectAgUiLockfile({ root: repoRoot(), lockfileContent });
+    expect(inspection.ok).toBe(false);
+    expect(inspection.violations.join(" ")).toMatch(/duplicate @ag-ui\/encoder/);
+  });
 });

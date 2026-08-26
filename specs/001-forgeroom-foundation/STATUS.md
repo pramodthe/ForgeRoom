@@ -2,10 +2,10 @@
 
 | Field | Current value |
 | --- | --- |
-| Overall | P0-101–P0-108 foundation API complete (incl. P0-205 router); P0-401/P0-210 in review; P0-000 in progress |
+| Overall | P0-101–P0-108 foundation API complete (incl. P0-205 router); P0-210 done; P0-401 in review; P0-000 in progress |
 | Current phase | Phase 1 — Foundation |
-| Active task | P0-000 (in_progress); P0-401/P0-210 in review |
-| Next task | Review/merge P0-401 PR #15 and P0-210 PR #16; P0-000 PR #12; P0-105 waits on P0-000 completion |
+| Active task | P0-000 (in_progress); P0-401 in review |
+| Next task | Review/merge P0-401 PR #15; P0-000 PR #12; P0-105 waits on P0-000 completion |
 | P0 blockers | Live Composio tools/account/descriptor hashes, Daytona+storage probe, model presets, remaining OD-002–OD-012 verified rows, controlled-GenUI/Task/skill demo fixture, storage/deployment choices, and PD-002 before public release |
 | Last updated | 2026-08-26 |
 

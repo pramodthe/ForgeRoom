@@ -1,7 +1,7 @@
 ---
 id: P0-210
 title: Freeze pure AG-UI versions, evaluate optional CopilotKit, and prove the TrueForge bridge
-status: in_review
+status: done
 owner: cursor-agent
 started: 2026-08-26
 depends_on: [P0-000, P0-101]

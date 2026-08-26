@@ -1,8 +1,5 @@
 export type UnsupportedP0Capability =
-  | "iframe_v1"
-  | "generate_open_ui"
-  | "native_subagent"
-  | "copilotkit_gateway";
+  "iframe_v1" | "generate_open_ui" | "native_subagent" | "copilotkit_gateway";
 
 export type UnsupportedCapabilityResult = {
   ok: false;
