@@ -72,8 +72,11 @@ export async function startApiProcess(env: NodeJS.ProcessEnv = process.env) {
       } catch (error) {
         errors.push(error);
       }
-      if (errors.length > 0) {
+      if (errors.length === 1) {
         throw errors[0];
+      }
+      if (errors.length > 1) {
+        throw new AggregateError(errors, "API process stop failed");
       }
     },
   };
