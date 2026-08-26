@@ -47,8 +47,12 @@ export function AppHeader({ workspaceId }: AppHeaderProps) {
   }
 
   async function onLogout() {
-    await logout();
-    await navigate({ to: loginPath() });
+    try {
+      await logout();
+      await navigate({ to: loginPath() });
+    } catch {
+      // Keep the authenticated shell when logout cannot revoke the session.
+    }
   }
 
   return (

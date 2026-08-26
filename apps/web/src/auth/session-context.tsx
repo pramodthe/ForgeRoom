@@ -24,8 +24,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   });
 
   const clearSession = useCallback(async () => {
-    await queryClient.setQueryData(["session"], null);
-    await queryClient.invalidateQueries({ queryKey: ["session"] });
+    queryClient.setQueryData(["session"], null);
   }, [queryClient]);
 
   const refreshSession = useCallback(async () => {
@@ -33,15 +32,24 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   }, [queryClient]);
 
   const logout = useCallback(async () => {
-    const session = liveSession(sessionQuery.data);
-    try {
-      if (session) {
-        await logoutRequest(session.csrf_token);
-      }
-    } catch {
-      // Expired or revoked sessions may reject logout; still clear local state.
-    } finally {
+    const cachedSession = sessionQuery.data;
+    const session = liveSession(cachedSession);
+    const alreadyExpired = Boolean(cachedSession && !session);
+
+    if (!cachedSession) {
       await clearSession();
+      return;
+    }
+
+    try {
+      await logoutRequest((session ?? cachedSession).csrf_token);
+      await clearSession();
+    } catch {
+      if (alreadyExpired) {
+        await clearSession();
+        return;
+      }
+      throw new Error("Logout failed. Please try again.");
     }
   }, [clearSession, sessionQuery.data]);
 

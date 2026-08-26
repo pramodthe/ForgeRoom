@@ -22,7 +22,7 @@ Each task file is authoritative for its status and evidence. Keep this index and
 | [ ] | [P0-105](./tasks/P0-105-demo-fixtures.md) | Idempotent demo fixtures | blocked | P0-000, P0-103, P0-104 |
 | [x] | [P0-106](./tasks/P0-106-channel-coworker-api.md) | Channel and coworker API | done | P0-103, P0-104 |
 | [x] | [P0-107](./tasks/P0-107-event-log-sse.md) | Canonical event log and SSE | done | P0-106 |
-| [ ] | [P0-108](./tasks/P0-108-context-pins.md) | Channel context and pins | in_progress | P0-107 |
+| [ ] | [P0-108](./tasks/P0-108-context-pins.md) | Channel context and pins | in_review | P0-107 |
 | [ ] | [P0-109](./tasks/P0-109-task-record.md) | Application-owned TaskRecord | blocked | P0-103, P0-104, P0-107, P0-203, P0-208 |
 | [ ] | [P0-201](./tasks/P0-201-trueforge-sessions.md) | TrueForge adapter and sessions | blocked | P0-000, P0-103, P0-105 |
 | [ ] | [P0-202](./tasks/P0-202-turn-queue.md) | Per-session serial turn queue | blocked | P0-103, P0-201 |
@@ -52,7 +52,7 @@ Each task file is authoritative for its status and evidence. Keep this index and
 | [ ] | [P0-315](./tasks/P0-315-component-tool-interaction-gateway.md) | Component/interaction gateway | blocked | P0-201, P0-208, P0-211, P0-212, P0-314 |
 | [ ] | [P0-316](./tasks/P0-316-controlled-component-library.md) | Small controlled component library | blocked | P0-312, P0-314, P0-401 |
 | [ ] | [P0-318](./tasks/P0-318-save-run-as-skill.md) | Save successful Run as skill | blocked | P0-104, P0-106, P0-206, P0-208, P0-403 |
-| [ ] | [P0-401](./tasks/P0-401-app-shell.md) | Authenticated three-pane shell | in_review | P0-102, P0-104 |
+| [x] | [P0-401](./tasks/P0-401-app-shell.md) | Authenticated three-pane shell | done | P0-102, P0-104 |
 | [ ] | [P0-402](./tasks/P0-402-composer-roster.md) | Channel composer and roster | blocked | P0-106, P0-107, P0-205, P0-401 |
 | [ ] | [P0-403](./tasks/P0-403-activity-cards.md) | Run/Task activity cards | blocked | P0-109, P0-203, P0-206, P0-401 |
 | [ ] | [P0-404](./tasks/P0-404-approval-run-drawer.md) | Approval/question UI and Run drawer | blocked | P0-307, P0-308, P0-403 |

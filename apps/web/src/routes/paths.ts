@@ -1,6 +1,6 @@
 /** P0 route paths and helpers aligned with specs/001-forgeroom-foundation/ux.md */
 
-export const DEMO_WORKSPACE_ID = "ws_demo_001";
+export const DEMO_WORKSPACE_ID = "workspace_1";
 
 export const P0_ROUTES = {
   login: "/login",
@@ -59,7 +59,14 @@ const WORKSPACE_PREFIX = /^\/w\/([^/]+)/;
 
 export function parseWorkspaceIdFromPath(pathname: string): string | null {
   const match = WORKSPACE_PREFIX.exec(pathname);
-  return match?.[1] ? decodeURIComponent(match[1]) : null;
+  if (!match?.[1]) {
+    return null;
+  }
+  try {
+    return decodeURIComponent(match[1]);
+  } catch {
+    return null;
+  }
 }
 
 export function isWorkspaceRoute(pathname: string): boolean {
@@ -90,7 +97,7 @@ export function postLoginDestination(
 ): string {
   if (redirect && isSafePostLoginRedirect(redirect)) {
     const redirectWorkspaceId = parseWorkspaceIdFromPath(redirect);
-    if (redirectWorkspaceId && redirectWorkspaceId !== sessionWorkspaceId) {
+    if (!redirectWorkspaceId || redirectWorkspaceId !== sessionWorkspaceId) {
       return workspaceChannelPath(sessionWorkspaceId, defaultChannelId);
     }
     return redirect;

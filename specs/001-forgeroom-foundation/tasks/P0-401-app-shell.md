@@ -1,7 +1,7 @@
 ---
 id: P0-401
 title: Build authenticated three-pane application shell
-status: in_review
+status: done
 owner: cursor-agent
 depends_on: [P0-102, P0-104]
 requirements: [CH-006]

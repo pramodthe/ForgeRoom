@@ -24,6 +24,10 @@ export function SkillsPage() {
     return <LoadingState title="Loading skills…" />;
   }
 
+  if (draftsQuery.error || versionsQuery.error) {
+    return <RouteErrorState title="Unable to load skills" />;
+  }
+
   const drafts = draftsQuery.data ?? [];
   const versions = versionsQuery.data ?? [];
   if (drafts.length === 0 && versions.length === 0) {
@@ -76,6 +80,19 @@ export function SkillDetailPage() {
 
   if (draftQuery.isLoading || versionQuery.isLoading) {
     return <LoadingState title="Loading skill…" />;
+  }
+
+  if (draftQuery.error || versionQuery.error) {
+    return (
+      <RouteErrorState
+        title="Unable to load skill"
+        action={
+          <Link to={workspaceSkillsPath(workspaceId)} className="text-sm text-zinc-700 underline">
+            Back to skills
+          </Link>
+        }
+      />
+    );
   }
 
   const draft = draftQuery.data;

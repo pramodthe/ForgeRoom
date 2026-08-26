@@ -136,3 +136,6 @@ export type ChannelUpdateCommand = z.infer<typeof channelUpdateCommandSchema>;
 export type ChannelArchiveCommand = z.infer<typeof channelArchiveCommandSchema>;
 export type ChannelParticipantAddCommand = z.infer<typeof channelParticipantAddCommandSchema>;
 export type ChannelParticipantRemoveCommand = z.infer<typeof channelParticipantRemoveCommandSchema>;
+export type ChannelPin = z.infer<typeof channelPinSchema>;
+export type ChannelPinCreateCommand = z.infer<typeof channelPinCreateCommandSchema>;
+export type ChannelPinRemoveCommand = z.infer<typeof channelPinRemoveCommandSchema>;

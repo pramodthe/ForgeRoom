@@ -32,9 +32,9 @@ describe("P0 route contract", () => {
 
   it("builds stable workspace paths", () => {
     expect(workspaceChannelPath(MOCK_WORKSPACE_ID, "ch_general_001")).toBe(
-      "/w/ws_demo_001/channels/ch_general_001",
+      "/w/workspace_1/channels/ch_general_001",
     );
-    expect(workspaceTasksPath(MOCK_WORKSPACE_ID)).toBe("/w/ws_demo_001/tasks");
+    expect(workspaceTasksPath(MOCK_WORKSPACE_ID)).toBe("/w/workspace_1/tasks");
   });
 
   it("encodes reserved characters in dynamic path segments", () => {
@@ -93,18 +93,26 @@ describe("session helpers", () => {
 
 describe("postLoginDestination", () => {
   it("accepts safe workspace redirects", () => {
-    expect(isSafePostLoginRedirect("/w/ws_demo_001/tasks")).toBe(true);
-    expect(postLoginDestination("/w/ws_demo_001/tasks", MOCK_WORKSPACE_ID, "ch_general_001")).toBe(
-      "/w/ws_demo_001/tasks",
+    expect(isSafePostLoginRedirect("/w/workspace_1/tasks")).toBe(true);
+    expect(postLoginDestination("/w/workspace_1/tasks", MOCK_WORKSPACE_ID, "ch_general_001")).toBe(
+      "/w/workspace_1/tasks",
     );
   });
 
   it("rejects unsafe redirects", () => {
     expect(isSafePostLoginRedirect("//evil.test")).toBe(false);
     expect(isSafePostLoginRedirect("/login")).toBe(false);
-    expect(isSafePostLoginRedirect("https://evil.test/w/ws_demo_001/tasks")).toBe(false);
+    expect(isSafePostLoginRedirect("https://evil.test/w/workspace_1/tasks")).toBe(false);
     expect(postLoginDestination("//evil.test", MOCK_WORKSPACE_ID, "ch_general_001")).toBe(
-      "/w/ws_demo_001/channels/ch_general_001",
+      "/w/workspace_1/channels/ch_general_001",
     );
+  });
+
+
+  it("falls back when redirect workspace id is malformed", () => {
+    expect(parseWorkspaceIdFromPath("/w/%E0%A4%A/tasks")).toBeNull();
+    expect(
+      postLoginDestination("/w/%E0%A4%A/tasks", MOCK_WORKSPACE_ID, "ch_general_001"),
+    ).toBe("/w/workspace_1/channels/ch_general_001");
   });
 });
