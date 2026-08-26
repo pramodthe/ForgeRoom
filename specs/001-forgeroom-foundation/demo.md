@@ -2,40 +2,46 @@
 
 | Field | Value |
 | --- | --- |
-| Status | Blocked until P0-000 freezes candidates and P0-210 selects the AG-UI package graph |
+| Status | P0-000 freezing in progress — safe/frozen rows below; live Composio/Daytona/TrueForge rows remain blocked-on-secrets until probes; P0-210 still selects the exact AG-UI lockfile |
 | Duration | Three minutes maximum |
 | Product framing | General AI coworker channel; scenario is only a fixture |
+| Fixture root | `provider-fixtures/` |
 
 ## Phase 0 decisions
 
-P0-000 replaces provider/demo TBDs and freezes package candidates/fixtures. P0-210 replaces the exact pure AG-UI rows after compatibility evidence and records optional CopilotKit as disabled unless parity-proven.
+P0-000 replaces provider/demo TBDs with frozen choices or explicitly labeled candidates. P0-210 replaces the exact pure AG-UI package rows after compatibility evidence and records optional CopilotKit as disabled unless parity-proven.
 
-| Decision | Locked value |
-| --- | --- |
-| Product name | TBD |
-| Demo task | TBD |
-| Seeded coworker name/role/model | TBD |
-| Conversationally created coworker prompt/expected role/model | `Create a Research coworker that can read GitHub and web data but cannot modify anything.`; exact preview TBD |
-| Exact `@ag-ui/*` package versions | TBD; one compatible stable version across packages |
-| Optional CopilotKit runtime/React versions | Disabled by default; fill only after a coherent-graph parity pass |
-| Controlled component demo | TBD DataTable + bar/line chart + TaskCard + ArtifactCard + ChoiceForm/filter schema |
-| Task fixture | One fixed TaskRecord with source/status transition and reset values TBD |
-| Save-as-skill fixture | One completed Run → reviewed instruction-only SkillVersion → originating coworker attachment/session rotation TBD; invocation begins in 0.2 |
-| Composio application 1 | TBD |
-| Composio application 2 | none or TBD |
-| Read tool slug | TBD |
-| Deterministic write tool slug | TBD |
-| Reconciliation read tool slug | TBD |
-| Pinned connected-account IDs | Stored only in secret configuration; record redacted suffixes here |
-| Observed descriptor hashes | TBD |
-| Synthetic provider fixture | TBD |
-| Fixture reset command | TBD |
-| Artifact storage | TBD |
-| Deployment topology | TBD |
-| Run wall-time limit | TBD |
-| Token/cost limit | TBD |
-| Tool-call limit | TBD |
-| Sandbox-time limit | TBD |
+Verification labels: `frozen` (must honor), `candidate` (preferred pending probe/selection), `blocked-on-secrets` (needs live credentials), `verified` (probe evidence attached — none yet for provider rows).
+
+| Decision | Locked value | Status |
+| --- | --- | --- |
+| Product name | ForgeRoom | frozen |
+| Demo task | Reconcile the synthetic demo record and publish a sandbox summary | candidate |
+| Seeded coworker name/role/model | Operator / demo operator coworker / model preset pending probe | candidate (model blocked-on-secrets) |
+| Conversationally created coworker prompt/expected role/model | Prompt frozen: `Create a Research coworker that can read GitHub and web data but cannot modify anything.`; expected handle `research`; read-only denials candidate; model preset blocked-on-secrets | prompt frozen; preview candidate |
+| Exact `@ag-ui/*` package versions | Candidate baseline `@ag-ui/core@0.0.57` + `@ag-ui/client@0.0.57`; P0-210 selects after fixtures | candidate |
+| Optional CopilotKit runtime/React versions | Disabled by default; no canary; no forced overrides; enable `/api/copilotkit` only after coherent-graph parity | frozen policy |
+| Controlled component demo | DataTable + bar chart + TaskCard + ArtifactCard + ChoiceForm/filter fixtures under `provider-fixtures/controlled-ui/` | candidate |
+| Task fixture | One TaskRecord title/transition in `provider-fixtures/tasks/task-record.candidate.json` | candidate |
+| Save-as-skill fixture | Instruction-only private SkillVersion from one successful Run; attachment rotates session; invocation begins in 0.2 | candidate |
+| Composio application 1 | Preferred candidate `github` (public docs); exact account availability blocked-on-secrets | candidate |
+| Composio application 2 | none (default) unless primary cannot cover read+write+reconcile | candidate |
+| Read tool slug | Preferred candidate `GITHUB_GET_ISSUE`; freeze only after descriptor export | candidate |
+| Deterministic write tool slug | TBD — must be update-on-existing synthetic issue field, not create/send | blocked-on-secrets |
+| Reconciliation read tool slug | Preferred candidate `GITHUB_GET_ISSUE` (may equal read) | candidate |
+| Pinned connected-account IDs | Stored only in secret configuration; record redacted suffixes in fixtures after probe | blocked-on-secrets |
+| Observed descriptor hashes | Empty until live export into `provider-fixtures/composio/descriptors/` | blocked-on-secrets |
+| Synthetic provider fixture | Structure ready; record IDs pending selected toolkit | candidate / blocked-on-secrets |
+| Fixture reset command | TBD — owned by P0-105 once synthetic IDs verified | blocked-on-secrets |
+| Artifact storage | Local directory via `ARTIFACT_STORAGE_DIR` for development (frozen); demo durable adapter candidate | frozen local; demo candidate |
+| Deployment topology | Local compose + embedded worker; demo = single web service + managed Postgres candidate | candidate |
+| Run wall-time limit | 180 seconds | candidate |
+| Token/cost limit | `max_turn_tokens` 12000; USD soft ceiling deferred until cost meter | candidate |
+| Tool-call limit | 20 | candidate |
+| Sandbox-time limit | 60 seconds | candidate |
+| P0 feature profile disables | Native subagents, coordinator synthesis, component catalogue expansion, `iframe_v1` disabled and rejected as unsupported; CopilotKit gateway disabled-unless-parity | frozen |
+
+Canonical machine-readable copies live under `provider-fixtures/` (see that README).
 
 ## Tool selection rules
 

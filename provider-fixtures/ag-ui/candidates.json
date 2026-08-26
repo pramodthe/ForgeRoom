@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "status": "candidate",
+  "ownerTask": "P0-000",
+  "selectionOwner": "P0-210",
+  "source": "specs/001-forgeroom-foundation/contracts/ag-ui.md#version-profile",
+  "requiredPureBaseline": {
+    "status": "candidate",
+    "packages": {
+      "@ag-ui/core": "0.0.57",
+      "@ag-ui/client": "0.0.57"
+    },
+    "serverGraph": "application Hono/SSE endpoint; no @copilotkit/runtime",
+    "browserPath": "official @ag-ui/client + application-owned React reducers/renderers",
+    "gate": "official-client interrupt/activity/state/tool fixtures, CSRF and lockfile checks"
+  },
+  "knownSplitNegativeControl": {
+    "status": "frozen",
+    "packages": {
+      "@copilotkit/runtime": "1.69.0"
+    },
+    "problem": "direct AG-UI 0.0.57 request vs @ag-ui/mcp-middleware@0.0.1 → @ag-ui/client@0.0.54",
+    "policy": "reproduce and reject; never rationalize as unreachable; do not block pure baseline"
+  },
+  "optionalCopilotKitTarget": {
+    "status": "candidate",
+    "enabled": false,
+    "packages": null,
+    "enableOnlyWhen": "full transitive closure resolves exactly the selected stable AG-UI line and parity fixtures pass without overrides"
+  }
+}

@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 1,
+  "status": "candidate",
+  "ownerTask": "P0-000",
+  "verification": "blocked-on-secrets",
+  "decisionId": "OD-002",
+  "preference": {
+    "applicationCount": "one_preferred_two_max",
+    "pattern": "issue_or_record_field_with_deterministic_update",
+    "narrativeFit": "Research coworker read-only GitHub/web-style data; Operator coworker may own the deterministic write path on a synthetic record"
+  },
+  "applications": [
+    {
+      "slot": 1,
+      "role": "primary_demo_toolkit",
+      "composioToolkitSlug": "github",
+      "status": "candidate",
+      "preferredBecause": "Public Composio docs document a github toolkit with direct tools such as GITHUB_GET_ISSUE / GITHUB_CREATE_ISSUE (SCREAMING_SNAKE_CASE). Exact connected-account availability and descriptor hashes remain blocked-on-secrets.",
+      "sources": [
+        "https://docs.composio.dev/docs/sessions-vs-direct-execution",
+        "https://docs.composio.dev/docs/configuring-sessions"
+      ],
+      "note": "Promote to verified only after COMPOSIO_API_KEY lists this toolkit on the pinned demo account"
+    },
+    {
+      "slot": 2,
+      "role": "optional_second_toolkit",
+      "composioToolkitSlug": null,
+      "status": "candidate",
+      "default": "none",
+      "note": "Leave none unless primary toolkit cannot supply read + write + reconcile"
+    }
+  ]
+}

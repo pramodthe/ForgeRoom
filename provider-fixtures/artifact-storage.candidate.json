@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "status": "candidate",
+  "ownerTask": "P0-000",
+  "verificationOwner": "P0-310",
+  "localDevelopment": {
+    "adapter": "local_directory",
+    "env": "ARTIFACT_STORAGE_DIR",
+    "status": "frozen_for_local_dev"
+  },
+  "demoDeployment": {
+    "adapter": "pending_live_probe",
+    "candidates": ["local_directory_with_persistent_disk", "s3_compatible_object_storage"],
+    "status": "candidate",
+    "note": "Do not claim durable demo storage until upload/download probe passes"
+  }
+}

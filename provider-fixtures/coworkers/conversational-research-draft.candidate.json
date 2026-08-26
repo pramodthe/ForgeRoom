@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "status": "candidate",
+  "ownerTask": "P0-000",
+  "decisionId": "OD-012",
+  "implementationOwners": ["P0-213", "P0-105"],
+  "prompt": "Create a Research coworker that can read GitHub and web data but cannot modify anything.",
+  "expectedProposal": {
+    "name": "Research",
+    "handle": "research",
+    "title": "Read-only research coworker",
+    "native_subagents_enabled": false,
+    "model_preset": null,
+    "model_preset_status": "blocked-on-secrets",
+    "budget": {
+      "max_turn_tokens": 12000,
+      "max_tool_calls": 20
+    },
+    "sandbox": false,
+    "tool_grants_status": "blocked-on-secrets",
+    "tool_grants_constraint": "read-only catalogue IDs only; zero write/destructive grants; no new account connection"
+  },
+  "expectedPermissionPreview": {
+    "status": "candidate",
+    "mustIncludeDenials": [
+      "write_tools",
+      "destructive_tools",
+      "new_account_connection",
+      "native_subagents",
+      "knowledge_memory_workflow_unsupported_in_p0"
+    ],
+    "exactDiff": null,
+    "note": "Exact resolved denials/tools filled after catalogue + live Composio grants exist"
+  }
+}

@@ -5,3 +5,5 @@ pnpm-lock.yaml
 specs
 .data
 *.tsbuildinfo
+.agents/
+.claude/
