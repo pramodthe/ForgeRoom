@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import type {
+  AgentChannelEnvelope,
   Channel,
   ChannelArchiveCommand,
   ChannelCreateCommand,
@@ -13,10 +14,15 @@ import type {
 } from "@forgeroom/contracts";
 import { channelSchema, coworkerProfileSchema } from "@forgeroom/contracts";
 import { randomOpaqueId } from "../auth/crypto";
+import { customAguiEvent } from "./event-builders";
+import { ChannelEventPersistenceError } from "./event-guard";
+import { createChannelEventHub, type ChannelEventHub } from "./event-hub";
+import { DEFAULT_EVENT_PAGE_SIZE, envelopeFromStoredEvent } from "./event-read";
 import {
   createMemoryWorkspaceStore,
   emptyEditableConfig,
   type AgentVersionRecord,
+  type ChannelEventInsert,
   type ChannelRecord,
   type CoworkerEditableConfig,
   type CoworkerRecord,
@@ -150,6 +156,26 @@ export type WorkspaceService = {
     channelId: string,
     command: ChannelMessageCommand,
   ): Promise<WorkspaceServiceResult<{ message_id: string; event_id: string; sequence: number }>>;
+  listEvents(
+    session: SessionResponse,
+    channelId: string,
+    afterSequence: number,
+    options?: { limit?: number },
+  ): Promise<
+    WorkspaceServiceResult<{
+      events: AgentChannelEnvelope[];
+      after_sequence: number;
+      next_after_sequence: number;
+      has_more: boolean;
+    }>
+  >;
+  /**
+   * Subscribe after durable commit fan-out. Caller owns SSE lifetime (no open DB txn).
+   */
+  subscribeChannelEvents(
+    channelId: string,
+    listener: (envelope: AgentChannelEnvelope) => void,
+  ): () => void;
   listCoworkers(
     session: SessionResponse,
     workspaceId: string,
@@ -191,9 +217,52 @@ export type WorkspaceService = {
 export function createWorkspaceService(options?: {
   store?: WorkspaceCatalogStore;
   now?: () => Date;
+  eventHub?: ChannelEventHub;
 }): WorkspaceService {
   const store = options?.store ?? createMemoryWorkspaceStore();
   const now = options?.now ?? (() => new Date());
+  const eventHub = options?.eventHub ?? createChannelEventHub();
+
+  function publish(result: { envelope: AgentChannelEnvelope }): void {
+    eventHub.publish(result.envelope);
+  }
+
+  function systemCustomEvent(
+    _channelId: string,
+    type: "channel.created" | "channel.renamed" | "channel.archived",
+    actorId: string,
+    createdAt: string,
+  ): ChannelEventInsert {
+    return {
+      id: randomOpaqueId("evt"),
+      type,
+      actorType: "system",
+      actorId,
+      createdAt,
+      draft: {
+        actorKind: "system",
+        aguiEvent: customAguiEvent(type),
+      },
+    };
+  }
+
+  function participantEvent(
+    type: "participant.added" | "participant.removed",
+    actorId: string,
+    createdAt: string,
+  ): ChannelEventInsert {
+    return {
+      id: randomOpaqueId("evt"),
+      type,
+      actorType: "system",
+      actorId,
+      createdAt,
+      draft: {
+        actorKind: "system",
+        aguiEvent: customAguiEvent(type),
+      },
+    };
+  }
 
   async function loadOwnedChannel(
     session: SessionResponse,
@@ -508,21 +577,26 @@ export function createWorkspaceService(options?: {
             missionBrief: command.mission_brief,
             summary: null,
             policyJson: {},
-            nextSequence: 0,
+            nextSequence: 1,
             status: "active",
             createdBy: session.user.id,
             createdAt,
             updatedAt: createdAt,
           };
-          await store.insertChannelWithOwner(channel, {
-            channelId: channel.id,
-            participantType: "human",
-            participantId: session.user.id,
-            role: "owner",
-            joinedAt: createdAt,
-            removedAt: null,
-          });
-          return { ok: true, value: toChannel(channel) };
+          const created = await store.insertChannelWithOwner(
+            channel,
+            {
+              channelId: channel.id,
+              participantType: "human",
+              participantId: session.user.id,
+              role: "owner",
+              joinedAt: createdAt,
+              removedAt: null,
+            },
+            systemCustomEvent(channel.id, "channel.created", session.user.id, createdAt),
+          );
+          publish(created);
+          return { ok: true, value: toChannel(created.channel) };
         },
       });
     },
@@ -569,15 +643,44 @@ export function createWorkspaceService(options?: {
           return row ? toChannel(row) : null;
         },
         run: async () => {
-          const updated = await store.patchChannel(channelId, {
-            name: command.name,
-            missionBrief: command.mission_brief,
-            updatedAt: now().toISOString(),
-          });
-          if (!updated) {
-            return { ok: false, error: { code: "not_found", message: "Channel not found." } };
+          const updatedAt = now().toISOString();
+          try {
+            const appended = await store.appendChannelEvent({
+              channelId,
+              event: systemCustomEvent(channelId, "channel.renamed", session.user.id, updatedAt),
+              channelPatch: {
+                name: command.name,
+                missionBrief: command.mission_brief,
+                updatedAt,
+              },
+            });
+            publish(appended);
+            return { ok: true, value: toChannel(appended.channel) };
+          } catch (error) {
+            if (error instanceof ChannelEventPersistenceError) {
+              return {
+                ok: false,
+                error: {
+                  code: "validation_failed",
+                  message: error.message,
+                },
+              };
+            }
+            if (error instanceof Error && error.message.includes("not found")) {
+              return { ok: false, error: { code: "not_found", message: "Channel not found." } };
+            }
+            if (error instanceof Error && error.message.includes("channel_archived")) {
+              return {
+                ok: false,
+                error: {
+                  code: "conflict",
+                  message: "Archived channels cannot be renamed.",
+                  details: { reason: "channel_archived" },
+                },
+              };
+            }
+            throw error;
           }
-          return { ok: true, value: toChannel(updated) };
         },
       });
     },
@@ -600,14 +703,38 @@ export function createWorkspaceService(options?: {
           if (loaded.value.status === "archived") {
             return { ok: true, value: toChannel(loaded.value) };
           }
-          const updated = await store.patchChannel(channelId, {
-            status: "archived",
-            updatedAt: now().toISOString(),
-          });
-          if (!updated) {
-            return { ok: false, error: { code: "not_found", message: "Channel not found." } };
+          const updatedAt = now().toISOString();
+          try {
+            const appended = await store.appendChannelEvent({
+              channelId,
+              event: systemCustomEvent(channelId, "channel.archived", session.user.id, updatedAt),
+              channelPatch: {
+                status: "archived",
+                updatedAt,
+              },
+            });
+            publish(appended);
+            return { ok: true, value: toChannel(appended.channel) };
+          } catch (error) {
+            if (error instanceof Error && error.message.includes("not found")) {
+              return { ok: false, error: { code: "not_found", message: "Channel not found." } };
+            }
+            if (error instanceof Error && error.message.includes("channel_archived")) {
+              const latest = await store.getChannel(channelId);
+              if (latest?.status === "archived") {
+                return { ok: true, value: toChannel(latest) };
+              }
+              return {
+                ok: false,
+                error: {
+                  code: "conflict",
+                  message: "Channel was archived concurrently.",
+                  details: { reason: "channel_archived" },
+                },
+              };
+            }
+            throw error;
           }
-          return { ok: true, value: toChannel(updated) };
         },
       });
     },
@@ -714,6 +841,7 @@ export function createWorkspaceService(options?: {
             coworkerId: input.participant_id,
             coworkerUpdatedAt: joinedAt,
             channelOp: { type: "add", channelId },
+            event: participantEvent("participant.added", session.user.id, joinedAt),
           });
           if (!written.ok) {
             if (written.reason === "channel_archived") {
@@ -740,6 +868,9 @@ export function createWorkspaceService(options?: {
               ok: false,
               error: { code: "not_found", message: "Coworker or channel not found." },
             };
+          }
+          if (written.event) {
+            publish(written.event);
           }
           return {
             ok: true,
@@ -847,6 +978,7 @@ export function createWorkspaceService(options?: {
               coworkerId: participantId,
               coworkerUpdatedAt: removedAt,
               channelOp: { type: "remove", channelId },
+              event: participantEvent("participant.removed", session.user.id, removedAt),
             });
             if (!written.ok) {
               if (written.reason === "channel_archived") {
@@ -861,6 +993,9 @@ export function createWorkspaceService(options?: {
               }
               return { ok: false, error: { code: "not_found", message: "Coworker not found." } };
             }
+            if (written.event) {
+              publish(written.event);
+            }
             return {
               ok: true,
               value: {
@@ -869,12 +1004,16 @@ export function createWorkspaceService(options?: {
               },
             };
           }
-          await store.upsertParticipant({ ...existing, removedAt });
-          const channel = await store.getChannel(channelId);
+          const appended = await store.appendChannelEvent({
+            channelId,
+            event: participantEvent("participant.removed", session.user.id, removedAt),
+            participantUpsert: { ...existing, removedAt },
+          });
+          publish(appended);
           return {
             ok: true,
             value: {
-              channel: toChannel(channel ?? loaded.value),
+              channel: toChannel(appended.channel),
               participant_id: participantId,
             },
           };
@@ -938,17 +1077,16 @@ export function createWorkspaceService(options?: {
           channelId,
           event: {
             id: eventId,
-            channelId,
             type: "message.created",
             actorType: "human",
             actorId: session.user.id,
             runId: null,
-            payloadJson: {
-              body: command.body,
-              recipient_handles: command.recipient_handles,
-              routing_mode: command.routing_mode,
-            },
             createdAt,
+            draft: {
+              actorKind: "human",
+              sourceMessageId: messageId,
+              aguiEvent: customAguiEvent("message.created"),
+            },
           },
           message: {
             id: messageId,
@@ -961,11 +1099,21 @@ export function createWorkspaceService(options?: {
             createdAt,
           },
         });
+        publish(appended);
         return {
           ok: true,
           value: { message_id: messageId, event_id: eventId, sequence: appended.sequence },
         };
       } catch (error) {
+        if (error instanceof ChannelEventPersistenceError) {
+          return {
+            ok: false,
+            error: {
+              code: "validation_failed",
+              message: error.message,
+            },
+          };
+        }
         if (error instanceof Error && error.message.includes("channel_archived")) {
           return {
             ok: false,
@@ -978,6 +1126,49 @@ export function createWorkspaceService(options?: {
         }
         throw error;
       }
+    },
+
+    async listEvents(session, channelId, afterSequence, options) {
+      const loaded = await loadOwnedChannel(session, channelId);
+      if (!loaded.ok) {
+        return loaded;
+      }
+      if (!Number.isInteger(afterSequence) || afterSequence < -1) {
+        return {
+          ok: false,
+          error: {
+            code: "validation_failed",
+            message: "afterSequence must be an integer >= -1.",
+          },
+        };
+      }
+      const page = await store.listEventsAfter(channelId, afterSequence, {
+        limit: options?.limit ?? DEFAULT_EVENT_PAGE_SIZE,
+      });
+      const events: AgentChannelEnvelope[] = [];
+      for (const row of page.events) {
+        const envelope = envelopeFromStoredEvent(row, {
+          sourceMessageId: row.sourceMessageId,
+        });
+        if (envelope) {
+          events.push(envelope);
+        }
+      }
+      const lastSequence =
+        page.events.length > 0 ? page.events[page.events.length - 1]!.sequence : afterSequence;
+      return {
+        ok: true,
+        value: {
+          events,
+          after_sequence: afterSequence,
+          next_after_sequence: lastSequence,
+          has_more: page.hasMore,
+        },
+      };
+    },
+
+    subscribeChannelEvents(channelId, listener) {
+      return eventHub.subscribe(channelId, listener);
     },
 
     async listCoworkers(session, workspaceId) {
@@ -1052,6 +1243,22 @@ export function createWorkspaceService(options?: {
       }
 
       const updatedAt = now().toISOString();
+      const membershipEvents: Array<{ channelId: string; event: ChannelEventInsert }> = [];
+      for (const membership of membershipPlan.memberships) {
+        const prior = await store.getParticipant(membership.channelId, "coworker", coworkerId);
+        if (membership.removedAt === null && (!prior || prior.removedAt !== null)) {
+          membershipEvents.push({
+            channelId: membership.channelId,
+            event: participantEvent("participant.added", session.user.id, updatedAt),
+          });
+        } else if (membership.removedAt !== null && prior && prior.removedAt === null) {
+          membershipEvents.push({
+            channelId: membership.channelId,
+            event: participantEvent("participant.removed", session.user.id, updatedAt),
+          });
+        }
+      }
+
       const config = configFromUpdate(command);
       const nextRevision = loaded.value.configRevision + 1;
       const versionId = randomOpaqueId("av");
@@ -1085,6 +1292,7 @@ export function createWorkspaceService(options?: {
         coworker: updated,
         version,
         memberships: membershipPlan.memberships,
+        membershipEvents,
         taskGrants: grantPlan.grants,
         revokeGrantsAt: updatedAt,
         expectedConfigRevision: loaded.value.configRevision,
@@ -1120,6 +1328,9 @@ export function createWorkspaceService(options?: {
             },
           },
         };
+      }
+      for (const appended of committed.events ?? []) {
+        publish(appended);
       }
       return {
         ok: true,
@@ -1178,6 +1389,17 @@ export function createWorkspaceService(options?: {
             return { ok: true, value: toCoworker(loaded.value) };
           }
           const updatedAt = now().toISOString();
+          const allChannels = await store.listChannels(loaded.value.workspaceId);
+          const removalEvents: Array<{ channelId: string; event: ChannelEventInsert }> = [];
+          for (const channel of allChannels) {
+            const membership = await store.getParticipant(channel.id, "coworker", coworkerId);
+            if (membership && membership.removedAt === null) {
+              removalEvents.push({
+                channelId: channel.id,
+                event: participantEvent("participant.removed", session.user.id, updatedAt),
+              });
+            }
+          }
           const updated: CoworkerRecord = {
             ...loaded.value,
             status: "disabled",
@@ -1193,6 +1415,7 @@ export function createWorkspaceService(options?: {
             coworker: updated,
             revokeAt: updatedAt,
             expectedConfigRevision: loaded.value.configRevision,
+            removalEvents,
           });
           if (!disabled.ok) {
             if (disabled.reason === "not_found") {
@@ -1214,6 +1437,9 @@ export function createWorkspaceService(options?: {
                 },
               },
             };
+          }
+          for (const appended of disabled.events ?? []) {
+            publish(appended);
           }
           return { ok: true, value: toCoworker(updated) };
         },

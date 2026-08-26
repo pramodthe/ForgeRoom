@@ -1,7 +1,6 @@
 import {
   agentProfiles,
   agentVersions,
-  channelEvents,
   channelParticipants,
   channels,
   createDb,
@@ -11,7 +10,13 @@ import {
   workspaceCommandReceipts,
 } from "@forgeroom/db";
 import { and, eq, isNull } from "drizzle-orm";
+import { randomOpaqueId } from "../auth/crypto";
+import { clampEventLimit } from "./event-read";
+import { hashAguiEvent, materializeChannelEvent } from "./event-persist";
 import type {
+  AppendChannelEventResult,
+  ChannelEventInsert,
+  ChannelEventRecord,
   ChannelPatch,
   ChannelRecord,
   CommandReceipt,
@@ -19,6 +24,7 @@ import type {
   CoworkerMutationResult,
   CoworkerRecord,
   CoworkerUpdateResult,
+  ListEventsAfterResult,
   MembershipWriteResult,
   MessageRecord,
   ParticipantRecord,
@@ -152,6 +158,64 @@ function mapMessage(row: typeof messages.$inferSelect): MessageRecord {
     parentMessageId: row.parentMessageId,
     createdAt: asIso(row.createdAt),
   };
+}
+
+async function insertDurableEventSql(
+  tx: SqlClient,
+  channelId: string,
+  sequence: number,
+  insert: ChannelEventInsert,
+): Promise<{ envelope: AppendChannelEventResult["envelope"]; event: ChannelEventRecord }> {
+  const { envelope, event } = materializeChannelEvent(channelId, sequence, insert);
+  await tx.unsafe(
+    `INSERT INTO channel_events (
+      id, channel_id, sequence, type, actor_type, actor_id, run_id,
+      payload_json, agui_event_type, agui_event_json, logical_thread_id, created_at
+    ) VALUES (
+      $1, $2, $3, $4, $5, $6, $7,
+      $8::jsonb, $9, $10::jsonb, $11, $12
+    )`,
+    [
+      event.id,
+      event.channelId,
+      event.sequence,
+      event.type,
+      event.actorType,
+      event.actorId,
+      event.runId,
+      JSON.stringify(event.payloadJson),
+      event.aguiEventType,
+      event.aguiEventJson ? JSON.stringify(event.aguiEventJson) : null,
+      event.logicalThreadId,
+      event.createdAt,
+    ],
+  );
+  await tx.unsafe(
+    `INSERT INTO agui_event_records (
+      id, channel_event_id, agent_turn_id, logical_thread_id, agui_run_id,
+      event_type, message_or_activity_id, storage_kind, event_json,
+      schema_profile, event_hash, created_at
+    ) VALUES (
+      $1, $2, $3, $4, $5,
+      $6, $7, $8, $9::jsonb,
+      $10, $11, $12
+    )`,
+    [
+      randomOpaqueId("agui"),
+      event.id,
+      envelope.agentTurnId ?? null,
+      envelope.logicalThreadId ?? null,
+      null,
+      envelope.aguiEvent.type,
+      envelope.sourceMessageId ?? null,
+      "full_event",
+      JSON.stringify(envelope.aguiEvent),
+      "p0_persisted_agui",
+      hashAguiEvent(envelope.aguiEvent),
+      event.createdAt,
+    ],
+  );
+  return { envelope, event };
 }
 
 async function upsertParticipantSql(tx: SqlClient, participant: ParticipantRecord): Promise<void> {
@@ -357,6 +421,46 @@ export function createPostgresWorkspaceStore(sql: SqlClient): WorkspaceCatalogSt
            WHERE id = $4`,
           [JSON.stringify(nextConfig), nextRevision, input.coworkerUpdatedAt, input.coworkerId],
         );
+
+        let appended: AppendChannelEventResult | undefined;
+        let nextSequence = channelRow.next_sequence;
+        let channelUpdatedAt = asIso(channelRow.updated_at);
+        if (input.event) {
+          const sequence = channelRow.next_sequence;
+          const written = await insertDurableEventSql(
+            tx as unknown as SqlClient,
+            channelRow.id,
+            sequence,
+            input.event,
+          );
+          nextSequence = sequence + 1;
+          channelUpdatedAt = input.event.createdAt;
+          await tx`
+            UPDATE channels
+            SET next_sequence = ${nextSequence},
+                updated_at = ${channelUpdatedAt}
+            WHERE id = ${channelRow.id}
+          `;
+          appended = {
+            sequence,
+            channel: {
+              id: channelRow.id,
+              workspaceId: channelRow.workspace_id,
+              name: channelRow.name,
+              missionBrief: channelRow.mission_brief,
+              summary: channelRow.summary,
+              policyJson: (channelRow.policy_json ?? {}) as Record<string, unknown>,
+              nextSequence,
+              status: channelRow.status as ChannelRecord["status"],
+              createdBy: channelRow.created_by,
+              createdAt: asIso(channelRow.created_at),
+              updatedAt: channelUpdatedAt,
+            },
+            envelope: written.envelope,
+            event: written.event,
+          };
+        }
+
         return {
           ok: true,
           coworker: {
@@ -382,12 +486,13 @@ export function createPostgresWorkspaceStore(sql: SqlClient): WorkspaceCatalogSt
             missionBrief: channelRow.mission_brief,
             summary: channelRow.summary,
             policyJson: (channelRow.policy_json ?? {}) as Record<string, unknown>,
-            nextSequence: channelRow.next_sequence,
+            nextSequence,
             status: channelRow.status as ChannelRecord["status"],
             createdBy: channelRow.created_by,
             createdAt: asIso(channelRow.created_at),
-            updatedAt: asIso(channelRow.updated_at),
+            updatedAt: channelUpdatedAt,
           },
+          ...(appended ? { event: appended } : {}),
         } satisfies MembershipWriteResult;
       });
     },
@@ -462,7 +567,10 @@ export function createPostgresWorkspaceStore(sql: SqlClient): WorkspaceCatalogSt
     async commitCoworkerUpdate(input) {
       return sql.begin(async (tx) => {
         const affectedChannelIds = [
-          ...new Set(input.memberships.map((membership) => membership.channelId)),
+          ...new Set([
+            ...input.memberships.map((membership) => membership.channelId),
+            ...(input.membershipEvents ?? []).map((row) => row.channelId),
+          ]),
         ].sort();
         for (const channelId of affectedChannelIds) {
           const channelRows = await tx<{ workspace_id: string; status: string }[]>`
@@ -504,6 +612,63 @@ export function createPostgresWorkspaceStore(sql: SqlClient): WorkspaceCatalogSt
             actualRevision: current.config_revision,
             actualStatus: current.status as CoworkerRecord["status"],
           } satisfies CoworkerUpdateResult;
+        }
+
+        const appended: AppendChannelEventResult[] = [];
+        for (const membershipEvent of input.membershipEvents ?? []) {
+          const channelRows = await tx<
+            {
+              id: string;
+              workspace_id: string;
+              name: string;
+              mission_brief: string;
+              summary: string | null;
+              policy_json: unknown;
+              next_sequence: number;
+              status: string;
+              created_by: string;
+              created_at: string | Date;
+              updated_at: string | Date;
+            }[]
+          >`
+            SELECT * FROM channels WHERE id = ${membershipEvent.channelId} FOR UPDATE
+          `;
+          const channelRow = channelRows[0];
+          if (!channelRow) {
+            return { ok: false, reason: "conflict" } satisfies CoworkerUpdateResult;
+          }
+          const sequence = channelRow.next_sequence;
+          const written = await insertDurableEventSql(
+            tx as unknown as SqlClient,
+            membershipEvent.channelId,
+            sequence,
+            membershipEvent.event,
+          );
+          const nextSequence = sequence + 1;
+          await tx`
+            UPDATE channels
+            SET next_sequence = ${nextSequence},
+                updated_at = ${membershipEvent.event.createdAt}
+            WHERE id = ${membershipEvent.channelId}
+          `;
+          appended.push({
+            sequence,
+            channel: {
+              id: channelRow.id,
+              workspaceId: channelRow.workspace_id,
+              name: channelRow.name,
+              missionBrief: channelRow.mission_brief,
+              summary: channelRow.summary,
+              policyJson: (channelRow.policy_json ?? {}) as Record<string, unknown>,
+              nextSequence,
+              status: channelRow.status as ChannelRecord["status"],
+              createdBy: channelRow.created_by,
+              createdAt: asIso(channelRow.created_at),
+              updatedAt: membershipEvent.event.createdAt,
+            },
+            envelope: written.envelope,
+            event: written.event,
+          });
         }
 
         for (const membership of input.memberships) {
@@ -554,11 +719,58 @@ export function createPostgresWorkspaceStore(sql: SqlClient): WorkspaceCatalogSt
             input.coworker.id,
           ],
         );
-        return { ok: true } satisfies CoworkerUpdateResult;
+        return {
+          ok: true,
+          ...(appended.length > 0 ? { events: appended } : {}),
+        } satisfies CoworkerUpdateResult & { events?: AppendChannelEventResult[] };
       });
     },
     async disableCoworkerCleanup(input) {
       return sql.begin(async (tx) => {
+        // Global lock order: channels (sorted) before agent_profiles — matches
+        // commitCoworkerUpdate / upsertParticipantMembership.
+        const channelIds = [
+          ...new Set((input.removalEvents ?? []).map((row) => row.channelId)),
+        ].sort();
+        const lockedChannels = new Map<
+          string,
+          {
+            id: string;
+            workspace_id: string;
+            name: string;
+            mission_brief: string;
+            summary: string | null;
+            policy_json: unknown;
+            next_sequence: number;
+            status: string;
+            created_by: string;
+            created_at: string | Date;
+            updated_at: string | Date;
+          }
+        >();
+        for (const channelId of channelIds) {
+          const channelRows = await tx<
+            {
+              id: string;
+              workspace_id: string;
+              name: string;
+              mission_brief: string;
+              summary: string | null;
+              policy_json: unknown;
+              next_sequence: number;
+              status: string;
+              created_by: string;
+              created_at: string | Date;
+              updated_at: string | Date;
+            }[]
+          >`
+            SELECT * FROM channels WHERE id = ${channelId} FOR UPDATE
+          `;
+          if (channelRows[0]) {
+            lockedChannels.set(channelId, channelRows[0]);
+          }
+        }
+
         const locked = await tx<{ config_revision: number; status: string }[]>`
           SELECT config_revision, status
           FROM agent_profiles
@@ -587,6 +799,49 @@ export function createPostgresWorkspaceStore(sql: SqlClient): WorkspaceCatalogSt
             actualRevision: current.config_revision,
             actualStatus: current.status as CoworkerRecord["status"],
           } satisfies CoworkerMutationResult;
+        }
+
+        const appended: AppendChannelEventResult[] = [];
+        for (const removal of [...(input.removalEvents ?? [])].sort((a, b) =>
+          a.channelId.localeCompare(b.channelId),
+        )) {
+          const channelRow = lockedChannels.get(removal.channelId);
+          if (!channelRow) {
+            continue;
+          }
+          const sequence = channelRow.next_sequence;
+          const written = await insertDurableEventSql(
+            tx as unknown as SqlClient,
+            removal.channelId,
+            sequence,
+            removal.event,
+          );
+          const nextSequence = sequence + 1;
+          channelRow.next_sequence = nextSequence;
+          await tx`
+            UPDATE channels
+            SET next_sequence = ${nextSequence},
+                updated_at = ${removal.event.createdAt}
+            WHERE id = ${removal.channelId}
+          `;
+          appended.push({
+            sequence,
+            channel: {
+              id: channelRow.id,
+              workspaceId: channelRow.workspace_id,
+              name: channelRow.name,
+              missionBrief: channelRow.mission_brief,
+              summary: channelRow.summary,
+              policyJson: (channelRow.policy_json ?? {}) as Record<string, unknown>,
+              nextSequence,
+              status: channelRow.status as ChannelRecord["status"],
+              createdBy: channelRow.created_by,
+              createdAt: asIso(channelRow.created_at),
+              updatedAt: removal.event.createdAt,
+            },
+            envelope: written.envelope,
+            event: written.event,
+          });
         }
 
         await tx`
@@ -626,7 +881,10 @@ export function createPostgresWorkspaceStore(sql: SqlClient): WorkspaceCatalogSt
             input.coworker.id,
           ],
         );
-        return { ok: true } satisfies CoworkerMutationResult;
+        return {
+          ok: true,
+          ...(appended.length > 0 ? { events: appended } : {}),
+        } satisfies CoworkerMutationResult & { events?: AppendChannelEventResult[] };
       });
     },
     async listActiveTaskGrantsForSubject(subjectId) {
@@ -644,6 +902,56 @@ export function createPostgresWorkspaceStore(sql: SqlClient): WorkspaceCatalogSt
     async getMessage(id) {
       const rows = await db.select().from(messages).where(eq(messages.id, id)).limit(1);
       return rows[0] ? mapMessage(rows[0]) : null;
+    },
+    async listEventsAfter(channelId, afterSequence, options) {
+      const limit = clampEventLimit(options?.limit);
+      const rows = await sql<
+        {
+          id: string;
+          channel_id: string;
+          sequence: number;
+          type: string;
+          actor_type: string;
+          actor_id: string;
+          run_id: string | null;
+          payload_json: unknown;
+          agui_event_type: string | null;
+          agui_event_json: unknown;
+          logical_thread_id: string | null;
+          created_at: string | Date;
+          source_message_id: string | null;
+        }[]
+      >`
+        SELECT e.id, e.channel_id, e.sequence, e.type, e.actor_type, e.actor_id, e.run_id,
+               e.payload_json, e.agui_event_type, e.agui_event_json, e.logical_thread_id, e.created_at,
+               m.id AS source_message_id
+        FROM channel_events e
+        LEFT JOIN messages m ON m.event_id = e.id
+        WHERE e.channel_id = ${channelId}
+          AND e.sequence > ${afterSequence}
+        ORDER BY e.sequence ASC
+        LIMIT ${limit + 1}
+      `;
+      const hasMore = rows.length > limit;
+      const page = rows.slice(0, limit).map(
+        (row) =>
+          ({
+            id: row.id,
+            channelId: row.channel_id,
+            sequence: row.sequence,
+            type: row.type,
+            actorType: row.actor_type as ChannelEventRecord["actorType"],
+            actorId: row.actor_id,
+            runId: row.run_id,
+            payloadJson: row.payload_json,
+            aguiEventType: row.agui_event_type,
+            aguiEventJson: (row.agui_event_json ?? null) as ChannelEventRecord["aguiEventJson"],
+            logicalThreadId: row.logical_thread_id,
+            createdAt: asIso(row.created_at),
+            sourceMessageId: row.source_message_id,
+          }) satisfies ChannelEventRecord,
+      );
+      return { events: page, hasMore } satisfies ListEventsAfterResult;
     },
     async getCommandReceipt(workspaceId, commandKind, idempotencyKey) {
       const rows = await db
@@ -721,81 +1029,168 @@ export function createPostgresWorkspaceStore(sql: SqlClient): WorkspaceCatalogSt
           AND result_id LIKE ${"%\u001f" + leaseOwner}
       `;
     },
-    async insertChannelWithOwner(channel, owner) {
-      await db.transaction(async (tx) => {
-        await tx.insert(channels).values({
-          id: channel.id,
-          workspaceId: channel.workspaceId,
-          name: channel.name,
-          missionBrief: channel.missionBrief,
-          summary: channel.summary,
-          policyJson: channel.policyJson,
-          nextSequence: channel.nextSequence,
-          status: channel.status,
-          createdBy: channel.createdBy,
-          createdAt: channel.createdAt,
-          updatedAt: channel.updatedAt,
-        });
-        await tx.insert(channelParticipants).values({
-          channelId: owner.channelId,
-          participantType: owner.participantType,
-          participantId: owner.participantId,
-          role: owner.role,
-          joinedAt: owner.joinedAt,
-          removedAt: owner.removedAt,
-        });
+    async insertChannelWithOwner(channel, owner, createdEvent) {
+      return sql.begin(async (tx) => {
+        if (channel.nextSequence !== 1) {
+          throw new Error("channel create must seed nextSequence=1 after sequence 0 create event");
+        }
+        await tx.unsafe(
+          `INSERT INTO channels (
+            id, workspace_id, name, mission_brief, summary, policy_json,
+            next_sequence, status, created_by, created_at, updated_at
+          ) VALUES (
+            $1, $2, $3, $4, $5, $6::jsonb,
+            $7, $8, $9, $10, $11
+          )`,
+          [
+            channel.id,
+            channel.workspaceId,
+            channel.name,
+            channel.missionBrief,
+            channel.summary,
+            JSON.stringify(channel.policyJson ?? {}),
+            0,
+            channel.status,
+            channel.createdBy,
+            channel.createdAt,
+            channel.updatedAt,
+          ],
+        );
+        await upsertParticipantSql(tx as unknown as SqlClient, owner);
+        const written = await insertDurableEventSql(
+          tx as unknown as SqlClient,
+          channel.id,
+          0,
+          createdEvent,
+        );
+        await tx`
+          UPDATE channels
+          SET next_sequence = ${1},
+              updated_at = ${createdEvent.createdAt}
+          WHERE id = ${channel.id}
+        `;
+        return {
+          sequence: 0,
+          channel: {
+            ...channel,
+            nextSequence: 1,
+            updatedAt: createdEvent.createdAt,
+          },
+          envelope: written.envelope,
+          event: written.event,
+        } satisfies AppendChannelEventResult;
       });
     },
-    async appendMessage(input) {
-      return db.transaction(async (tx) => {
-        const locked = await tx
-          .select()
-          .from(channels)
-          .where(eq(channels.id, input.channelId))
-          .for("update")
-          .limit(1);
+    async appendChannelEvent(input) {
+      return sql.begin(async (tx) => {
+        const locked = await tx<
+          {
+            id: string;
+            workspace_id: string;
+            name: string;
+            mission_brief: string;
+            summary: string | null;
+            policy_json: unknown;
+            next_sequence: number;
+            status: string;
+            created_by: string;
+            created_at: string | Date;
+            updated_at: string | Date;
+          }[]
+        >`
+          SELECT *
+          FROM channels
+          WHERE id = ${input.channelId}
+          FOR UPDATE
+        `;
         const current = locked[0];
-        if (!current || current.status !== "active") {
-          throw new Error("channel_archived_or_missing");
+        if (!current) {
+          throw new Error(`channel ${input.channelId} not found`);
         }
-        const sequence = current.nextSequence;
-        const updatedAt = input.event.createdAt;
-        await tx
-          .update(channels)
-          .set({ nextSequence: sequence + 1, updatedAt })
-          .where(eq(channels.id, input.channelId));
-        await tx.insert(channelEvents).values({
-          id: input.event.id,
-          channelId: input.event.channelId,
+        if (current.status === "archived" && !input.allowArchived) {
+          throw new Error("channel_archived");
+        }
+        const sequence = current.next_sequence;
+        const written = await insertDurableEventSql(
+          tx as unknown as SqlClient,
+          input.channelId,
           sequence,
-          type: input.event.type,
-          actorType: input.event.actorType,
-          actorId: input.event.actorId,
-          runId: input.event.runId,
-          payloadJson: input.event.payloadJson,
-          aguiEventType: null,
-          aguiEventJson: null,
-          logicalThreadId: null,
-          createdAt: input.event.createdAt,
-        });
-        await tx.insert(messages).values({
-          id: input.message.id,
-          channelId: input.message.channelId,
-          eventId: input.message.eventId,
-          authorType: input.message.authorType,
-          authorId: input.message.authorId,
-          body: input.message.body,
-          parentMessageId: input.message.parentMessageId,
-          createdAt: input.message.createdAt,
-        });
+          input.event,
+        );
+        const nextSequence = sequence + 1;
+        const patch = input.channelPatch;
+        const updatedAt = patch?.updatedAt ?? input.event.createdAt;
+        const nextName = patch?.name ?? current.name;
+        const nextBrief = patch?.missionBrief ?? current.mission_brief;
+        const nextSummary = patch?.summary !== undefined ? patch.summary : current.summary;
+        const nextPolicy = patch?.policyJson ?? current.policy_json ?? {};
+        const nextStatus = patch?.status ?? current.status;
+        await tx.unsafe(
+          `UPDATE channels
+           SET next_sequence = $1,
+               name = $2,
+               mission_brief = $3,
+               summary = $4,
+               policy_json = $5::jsonb,
+               status = $6,
+               updated_at = $7
+           WHERE id = $8`,
+          [
+            nextSequence,
+            nextName,
+            nextBrief,
+            nextSummary,
+            JSON.stringify(nextPolicy),
+            nextStatus,
+            updatedAt,
+            input.channelId,
+          ],
+        );
+        if (input.message) {
+          await tx`
+            INSERT INTO messages (
+              id, channel_id, event_id, author_type, author_id, body, parent_message_id, created_at
+            )
+            VALUES (
+              ${input.message.id},
+              ${input.message.channelId},
+              ${input.message.eventId},
+              ${input.message.authorType},
+              ${input.message.authorId},
+              ${input.message.body},
+              ${input.message.parentMessageId},
+              ${input.message.createdAt}
+            )
+          `;
+        }
+        if (input.participantUpsert) {
+          await upsertParticipantSql(tx as unknown as SqlClient, input.participantUpsert);
+        }
         return {
           sequence,
           channel: {
-            ...mapChannel(current),
-            nextSequence: sequence + 1,
+            id: current.id,
+            workspaceId: current.workspace_id,
+            name: nextName,
+            missionBrief: nextBrief,
+            summary: nextSummary,
+            policyJson: nextPolicy as Record<string, unknown>,
+            nextSequence,
+            status: nextStatus as ChannelRecord["status"],
+            createdBy: current.created_by,
+            createdAt: asIso(current.created_at),
             updatedAt,
           },
-        };
+          envelope: written.envelope,
+          event: written.event,
+        } satisfies AppendChannelEventResult;
+      });
+    },
+    async appendMessage(input) {
+      return this.appendChannelEvent({
+        channelId: input.channelId,
+        event: input.event,
+        message: input.message,
       });
     },
   };
