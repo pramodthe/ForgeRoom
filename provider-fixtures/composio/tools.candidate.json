@@ -8,22 +8,26 @@
     {
       "role": "read",
       "directToolSlug": null,
+      "preferredCandidateSlug": "GITHUB_GET_ISSUE",
       "riskClass": "read",
-      "status": "blocked-on-secrets"
+      "status": "candidate",
+      "note": "Public Composio session docs cite GITHUB_GET_ISSUE. Confirm slug + schema via live descriptor export before freezing."
     },
     {
       "role": "deterministic_write",
       "directToolSlug": null,
+      "preferredCandidateSlug": null,
       "riskClass": "write",
-      "idempotency": "verified",
+      "idempotency": "required",
       "status": "blocked-on-secrets",
-      "constraint": "Must set a uniquely identifiable synthetic field to a known value"
+      "constraint": "Must set a uniquely identifiable synthetic field to a known value. Do not use GITHUB_CREATE_ISSUE or message/email creation to claim exactly-once behavior. Prefer an update-on-existing-issue tool discovered live (e.g. label/state/body field)."
     },
     {
       "role": "reconciliation_read",
       "directToolSlug": null,
+      "preferredCandidateSlug": "GITHUB_GET_ISSUE",
       "riskClass": "read",
-      "status": "blocked-on-secrets",
+      "status": "candidate",
       "note": "May equal the primary read slug when one tool can distinguish expected vs failed state"
     }
   ],
@@ -34,10 +38,13 @@
   },
   "syntheticProviderFixture": {
     "status": "candidate",
-    "recordKind": "pending_selected_toolkit",
+    "recordKind": "github_issue_in_dedicated_demo_repo",
+    "owner": null,
+    "repo": null,
+    "issueNumber": null,
     "resetCommand": null,
     "resetIdempotent": true,
     "productionImpact": "forbidden",
-    "note": "P0-105 implements reset once slug + synthetic record IDs are verified"
+    "note": "P0-105 implements reset once slug + synthetic record IDs are verified against a non-production demo repository"
   }
 }

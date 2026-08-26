@@ -44,19 +44,17 @@ Run redacted live probes for Composio read/write/read-back, fixture reset, a man
   - `packages/test-fixtures` (fixture loaders + validation tests; depends on `@forgeroom/contracts`)
   - `packages/integrations/artifacts` (local-directory adapter freeze)
   - `.env.example`, `.gitignore`
-- Redacted live probes: blocked-on-secrets (see work log)
+- Redacted live probes: blocked-on-secrets (no `.env` / provider keys in agent environment)
 - Descriptor exports/hashes: none yet
 - Fixture reset evidence: blocked pending verified synthetic IDs + P0-105
-- Open risks: P0-104 not yet on `main`; live Composio/Daytona/TrueForge credentials unavailable in this agent environment
+- Open risks: live Composio/Daytona/TrueForge credentials required to finish remaining acceptance criteria
 
 ## Work log
 
-- 2026-08-26 — Claimed by cursor-agent on branch `codex/p0-000-freeze-demo-contract` from latest `origin/main` (`d7b6273`). Note: P0-104 is still open / in_review and not merged to `main`.
+- 2026-08-26 — Claimed by cursor-agent on branch `codex/p0-000-freeze-demo-contract`.
   - Outcome: Replace provider/demo TBDs with frozen safe choices or explicitly labeled candidates; never invent verified live-probe success.
-  - Expected changes: `demo.md`, `OPEN.md`, `STATUS.md`, `provider-fixtures/`, feature-profile/unsupported capability wiring, artifact boundary, tests.
   - Requirements: AG-010, TR-001, SK-001, AGUI-009, GUI-003, TL-001, TL-003, TL-004, AP-004, SB-001.
-  - Non-goals: inventing Composio slugs/hashes; enabling CopilotKit; implementing P0-105 seed/reset; selecting final AG-UI lockfile (P0-210); opening a PR before live probes if the slice stays partial; committing secrets.
-  - Verification: unit tests for feature profile + controlled-UI props; inventory of remaining blocked-on-secrets criteria; human checklist in `provider-fixtures/LIVE_PROBE_CHECKLIST.md`.
+  - Non-goals: inventing verified Composio hashes; enabling CopilotKit; implementing P0-105; selecting final AG-UI lockfile (P0-210); committing secrets.
 
 - 2026-08-26 — Frozen without secrets:
   - P0 feature profile disables native subagents, coordinator synthesis, component catalogue expansion, `iframe_v1`; CopilotKit disabled-unless-parity.
@@ -64,18 +62,26 @@ Run redacted live probes for Composio read/write/read-back, fixture reset, a man
   - Seeded Operator + Research prompt/draft fixture; Task + Save-as-skill candidates; controlled-UI fixtures; run limits; local/dev artifact storage; deployment topology candidates.
   - Extended `P0_UNSUPPORTED_CAPABILITIES` with coordinator/catalogue names.
 
-- 2026-08-26 — **blocked-on-secrets** acceptance criteria (human checklist):
-  - [ ] Exact Composio apps/slugs (`OD-002`/`OD-003`)
-  - [ ] Pinned account redacted suffixes (`OD-004`) — needs `COMPOSIO_API_KEY`, `COMPOSIO_CONNECTED_ACCOUNT_ID`
+- 2026-08-26 — Rebased onto `origin/main` after P0-104 merge (`aec014c`). Recorded preferred Composio candidates from public docs only: toolkit `github`, read/reconcile `GITHUB_GET_ISSUE`; write slug intentionally unset until live discovery. Unit tests green for contracts + test-fixtures.
+
+- 2026-08-26 — **blocked-on-secrets** acceptance criteria (human checklist in `provider-fixtures/LIVE_PROBE_CHECKLIST.md`):
+  - [ ] Exact Composio apps/slugs confirmed on pinned account (`OD-002`/`OD-003`)
+  - [ ] Pinned account redacted suffixes (`OD-004`)
   - [ ] Descriptor hash exports
   - [ ] Deterministic write + reconciliation read on synthetic data
-  - [ ] Fixture reset twice (`OD-009` provider IDs) — also needs `DATABASE_URL`
-  - [ ] Model presets for Operator/Research (`OD-005`) — needs `TRUEFORGE_*`, `MODEL_PROVIDER_API_KEY`
-  - [ ] Daytona sample file + durable storage retain — needs `DAYTONA_API_KEY`, artifact storage env
-  - Env var list and steps: `provider-fixtures/LIVE_PROBE_CHECKLIST.md`
+  - [ ] Fixture reset twice (`OD-009`)
+  - [ ] Model presets for Operator/Research (`OD-005`)
+  - [ ] Daytona sample file + durable storage retain
 
 ## Handoff (partial — do not mark done)
 
-- Outcome: Safe/demo contract structure and P0 feature/AG-UI policies frozen; live provider verification still blocked on secrets.
-- Next: human live probes → fill verified rows → then move task to `in_review`.
-- Next unblocked when secrets land: continue P0-000 evidence; P0-105 remains blocked on P0-000 + P0-104.
+~~~text
+Task: P0-000
+Outcome: Safe/demo contract structure and P0 feature/AG-UI policies frozen; preferred github toolkit candidates recorded; live provider verification still blocked on secrets.
+Requirements: AG-010, TR-001, SK-001, AGUI-009, GUI-003, TL-001, TL-003, TL-004, AP-004, SB-001
+Changed: provider-fixtures/**, demo.md, OPEN.md, STATUS.md, contracts unsupported, test-fixtures, artifacts adapter, .env.example
+Verified: pnpm --filter @forgeroom/test-fixtures test; pnpm --filter @forgeroom/contracts test
+Evidence: provider-fixtures/; LIVE_PROBE_CHECKLIST.md
+Open risks: COMPOSIO_*/TRUEFORGE_*/DAYTONA_*/MODEL_PROVIDER_API_KEY/DATABASE_URL required for remaining criteria
+Next unblocked tasks: none until live probes complete; P0-106 can proceed in parallel on auth
+~~~

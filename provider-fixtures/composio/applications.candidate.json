@@ -13,9 +13,14 @@
     {
       "slot": 1,
       "role": "primary_demo_toolkit",
-      "composioToolkitSlug": null,
-      "status": "blocked-on-secrets",
-      "note": "Fill only after COMPOSIO_API_KEY session lists available toolkits"
+      "composioToolkitSlug": "github",
+      "status": "candidate",
+      "preferredBecause": "Public Composio docs document a github toolkit with direct tools such as GITHUB_GET_ISSUE / GITHUB_CREATE_ISSUE (SCREAMING_SNAKE_CASE). Exact connected-account availability and descriptor hashes remain blocked-on-secrets.",
+      "sources": [
+        "https://docs.composio.dev/docs/sessions-vs-direct-execution",
+        "https://docs.composio.dev/docs/configuring-sessions"
+      ],
+      "note": "Promote to verified only after COMPOSIO_API_KEY lists this toolkit on the pinned demo account"
     },
     {
       "slot": 2,

@@ -24,11 +24,11 @@ Verification labels: `frozen` (must honor), `candidate` (preferred pending probe
 | Controlled component demo | DataTable + bar chart + TaskCard + ArtifactCard + ChoiceForm/filter fixtures under `provider-fixtures/controlled-ui/` | candidate |
 | Task fixture | One TaskRecord title/transition in `provider-fixtures/tasks/task-record.candidate.json` | candidate |
 | Save-as-skill fixture | Instruction-only private SkillVersion from one successful Run; attachment rotates session; invocation begins in 0.2 | candidate |
-| Composio application 1 | TBD exact slug — prefer one issue/record toolkit with deterministic field update | blocked-on-secrets |
+| Composio application 1 | Preferred candidate `github` (public docs); exact account availability blocked-on-secrets | candidate |
 | Composio application 2 | none (default) unless primary cannot cover read+write+reconcile | candidate |
-| Read tool slug | TBD | blocked-on-secrets |
-| Deterministic write tool slug | TBD | blocked-on-secrets |
-| Reconciliation read tool slug | TBD (may equal read) | blocked-on-secrets |
+| Read tool slug | Preferred candidate `GITHUB_GET_ISSUE`; freeze only after descriptor export | candidate |
+| Deterministic write tool slug | TBD — must be update-on-existing synthetic issue field, not create/send | blocked-on-secrets |
+| Reconciliation read tool slug | Preferred candidate `GITHUB_GET_ISSUE` (may equal read) | candidate |
 | Pinned connected-account IDs | Stored only in secret configuration; record redacted suffixes in fixtures after probe | blocked-on-secrets |
 | Observed descriptor hashes | Empty until live export into `provider-fixtures/composio/descriptors/` | blocked-on-secrets |
 | Synthetic provider fixture | Structure ready; record IDs pending selected toolkit | candidate / blocked-on-secrets |

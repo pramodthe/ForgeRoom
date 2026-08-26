@@ -4,8 +4,8 @@ Only unresolved choices that can change implementation belong here. P0-000 freez
 
 | ID | Decision | Blocks | Status after P0-000 | Resolution evidence |
 | --- | --- | --- | --- | --- |
-| OD-002 | One or two Composio apps | P0-301 onward | candidate pattern frozen; exact slug blocked-on-secrets | Live session/tool probe |
-| OD-003 | Exact read, deterministic update and reconciliation slugs | P0-303 onward | roles structured; slugs blocked-on-secrets | Descriptor export and live safe fixture test |
+| OD-002 | One or two Composio apps | P0-301 onward | preferred candidate `github`; live account/toolkit confirmation blocked-on-secrets | Live session/tool probe |
+| OD-003 | Exact read, deterministic update and reconciliation slugs | P0-303 onward | read/reconcile preferred `GITHUB_GET_ISSUE`; write slug still blocked-on-secrets | Descriptor export and live safe fixture test |
 | OD-004 | Pinned account IDs | P0-301 onward | redacted template ready; IDs blocked-on-secrets | Redacted account suffix and status probe |
 | OD-005 | Model preset per coworker | P0-201, P0-213 | Operator/Research fixture roles candidate; presets blocked-on-secrets | Reliable seeded and conversational-provisioning fixture runs with native subagents disabled |
 | OD-006 | Artifact storage for demo deployment | P0-310 onward | local directory frozen for dev; demo adapter candidate | Upload/download persistence probe |

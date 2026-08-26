@@ -51,13 +51,32 @@ describe("P0-000 provider fixtures", () => {
   });
 
   it("does not mark Composio tool slugs as verified without a probe", () => {
+    const apps = readProviderFixtureJson<{
+      verification: string;
+      applications: Array<{ composioToolkitSlug: string | null; status: string }>;
+    }>("composio/applications.candidate.json");
     const tools = readProviderFixtureJson<{
       verification: string;
-      tools: Array<{ directToolSlug: string | null }>;
+      tools: Array<{
+        directToolSlug: string | null;
+        preferredCandidateSlug?: string | null;
+        role: string;
+      }>;
       observedDescriptorHashes: { entries: unknown[] };
     }>("composio/tools.candidate.json");
+
+    expect(apps.verification).toBe("blocked-on-secrets");
+    expect(apps.applications[0]?.composioToolkitSlug).toBe("github");
+    expect(apps.applications[0]?.status).toBe("candidate");
     expect(tools.verification).toBe("blocked-on-secrets");
     expect(tools.tools.every((tool) => tool.directToolSlug === null)).toBe(true);
+    expect(
+      tools.tools.find((tool) => tool.role === "read")?.preferredCandidateSlug,
+    ).toBe("GITHUB_GET_ISSUE");
+    expect(
+      tools.tools.find((tool) => tool.role === "deterministic_write")
+        ?.preferredCandidateSlug,
+    ).toBeNull();
     expect(tools.observedDescriptorHashes.entries).toEqual([]);
   });
 });
