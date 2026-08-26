@@ -44,4 +44,54 @@ describe("P0 runtime export surface", () => {
       reason: "owned_by_P0-211",
     });
   });
+
+  it("exports the complete shared P0 command and authority boundary", () => {
+    const exportedNames = new Set(Object.keys(runtime));
+    const requiredExports = [
+      "channelCreateCommandSchema",
+      "channelUpdateCommandSchema",
+      "channelArchiveCommandSchema",
+      "channelParticipantAddCommandSchema",
+      "channelParticipantRemoveCommandSchema",
+      "channelMessageCommandSchema",
+      "channelPinCreateCommandSchema",
+      "channelPinRemoveCommandSchema",
+      "coworkerDraftCreateCommandSchema",
+      "coworkerDraftReviseCommandSchema",
+      "coworkerDraftConfirmCommandSchema",
+      "coworkerDraftRejectCommandSchema",
+      "coworkerUpdateCommandSchema",
+      "coworkerDisableCommandSchema",
+      "runCancelCommandSchema",
+      "runSteerCommandSchema",
+      "runStepCancelCommandSchema",
+      "taskCreateCommandSchema",
+      "taskUpdateCommandSchema",
+      "skillDraftCreateCommandSchema",
+      "skillDraftReviseCommandSchema",
+      "skillDraftPublishCommandSchema",
+      "skillBindingCreateCommandSchema",
+      "skillBindingDeleteCommandSchema",
+      "approvalDecisionCommandSchema",
+      "questionAnswerCommandSchema",
+      "connectionTestCommandSchema",
+      "connectionReconnectCommandSchema",
+      "uiInteractionTokenRequestSchema",
+      "uiInteractionCommitCommandSchema",
+      "componentGrantCommandSchema",
+      "uiDataFunctionCommandSchema",
+      "internalWorkerCommandSchema",
+      "pauseResumeSchema",
+      "actingIdentitySchema",
+      "renderGrantSchema",
+      "dataGrantSchema",
+      "actionGrantSchema",
+      "interpretP0ActionGrant",
+      "uiInstanceReplayResponseSchema",
+    ];
+
+    for (const exportName of requiredExports) {
+      expect(exportedNames.has(exportName), exportName).toBe(true);
+    }
+  });
 });

@@ -1,5 +1,10 @@
 import { z } from "zod";
-import { nonNegativeIntSchema, opaqueIdSchema, schemaVersion1 } from "./primitives";
+import {
+  nonNegativeIntSchema,
+  opaqueIdSchema,
+  safeRecordSchema,
+  schemaVersion1,
+} from "./primitives";
 import { runActivityCountersSchema, runLifecycleSchema } from "./runs";
 import { p0AgentToolComponentNameSchema, uiInstanceStatusSchema } from "./components";
 import { taskStatusSchema } from "./tasks";
@@ -28,7 +33,58 @@ export const channelUiInstanceProjectionSchema = z
     renderRevision: z.number().int().nonnegative().nullable(),
     stateRevision: z.number().int().nonnegative().nullable(),
   })
+  .strict()
+  .superRefine((value, ctx) => {
+    if (
+      value.status === "building" &&
+      (value.renderRevision !== null || value.stateRevision !== null)
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "building UI projections cannot carry committed revisions",
+      });
+    }
+    if (value.status === "ready" && value.renderRevision === null) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "ready UI projections require a committed render revision",
+        path: ["renderRevision"],
+      });
+    }
+  });
+
+export const channelArtifactProjectionSchema = z
+  .object({
+    revision: z.number().int().positive(),
+    mimeType: z.string().min(1),
+    title: z.string().min(1),
+  })
   .strict();
+
+export const channelTaskProjectionSchema = z
+  .object({
+    revision: z.number().int().positive(),
+    status: taskStatusSchema,
+    title: z.string().min(1),
+    assigneeId: opaqueIdSchema.optional(),
+  })
+  .strict();
+
+export const pendingHumanActionProjectionSchema = z
+  .object({
+    id: opaqueIdSchema,
+    kind: z.enum(["approval", "question", "ui_input", "component_input"]),
+  })
+  .strict();
+
+export const threadPhaseSchema = z.enum([
+  "idle",
+  "queued",
+  "running",
+  "interrupted",
+  "failed",
+  "finished",
+]);
 
 export const channelUIStateV1Schema = z
   .object({
@@ -42,38 +98,12 @@ export const channelUIStateV1Schema = z
         archived: z.boolean(),
       })
       .strict(),
-    coworkers: z.record(z.string(), channelCoworkerProjectionSchema),
-    runs: z.record(z.string(), channelRunProjectionSchema),
-    artifacts: z.record(
-      z.string(),
-      z
-        .object({
-          revision: z.number().int().positive(),
-          mimeType: z.string().min(1),
-          title: z.string().min(1),
-        })
-        .strict(),
-    ),
-    tasks: z.record(
-      z.string(),
-      z
-        .object({
-          revision: z.number().int().positive(),
-          status: taskStatusSchema,
-          title: z.string().min(1),
-          assigneeId: opaqueIdSchema.optional(),
-        })
-        .strict(),
-    ),
-    uiInstances: z.record(z.string(), channelUiInstanceProjectionSchema),
-    pendingHumanActions: z.array(
-      z
-        .object({
-          id: opaqueIdSchema,
-          kind: z.enum(["approval", "question", "ui_input", "component_input"]),
-        })
-        .strict(),
-    ),
+    coworkers: safeRecordSchema(channelCoworkerProjectionSchema),
+    runs: safeRecordSchema(channelRunProjectionSchema),
+    artifacts: safeRecordSchema(channelArtifactProjectionSchema),
+    tasks: safeRecordSchema(channelTaskProjectionSchema),
+    uiInstances: safeRecordSchema(channelUiInstanceProjectionSchema),
+    pendingHumanActions: z.array(pendingHumanActionProjectionSchema),
   })
   .strict();
 
@@ -84,7 +114,7 @@ export const threadUIStateV1Schema = z
     revision: nonNegativeIntSchema,
     coworkerId: opaqueIdSchema,
     logicalThreadId: opaqueIdSchema,
-    phase: z.enum(["idle", "queued", "running", "interrupted", "failed", "finished"]),
+    phase: threadPhaseSchema,
     activeAguiRunId: opaqueIdSchema.optional(),
     activeRunStepIds: z.array(opaqueIdSchema),
     surfaceIds: z.array(opaqueIdSchema),

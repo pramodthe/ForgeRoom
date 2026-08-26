@@ -139,6 +139,9 @@ importers:
 
   apps/worker:
     dependencies:
+      '@forgeroom/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
       '@forgeroom/orchestration':
         specifier: workspace:*
         version: link:../../packages/orchestration

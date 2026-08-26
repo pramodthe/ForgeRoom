@@ -87,9 +87,48 @@ export const runSchema = z
     started_at: isoDateTimeSchema.nullable(),
     completed_at: isoDateTimeSchema.nullable(),
   })
+  .strict()
+  .superRefine((value, ctx) => {
+    value.steps.forEach((step, index) => {
+      if (step.run_id !== value.id) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "nested RunStep must belong to the containing Run",
+          path: ["steps", index, "run_id"],
+        });
+      }
+    });
+  });
+
+export const runCancelCommandSchema = z
+  .object({
+    schemaVersion: schemaVersion1,
+    expected_lifecycle: runLifecycleSchema,
+    reason: z.string().min(1),
+    idempotency_key: z.string().min(1),
+  })
+  .strict();
+
+export const runSteerCommandSchema = z
+  .object({
+    schemaVersion: schemaVersion1,
+    instruction: z.string().min(1),
+    idempotency_key: z.string().min(1),
+  })
+  .strict();
+
+export const runStepCancelCommandSchema = z
+  .object({
+    schemaVersion: schemaVersion1,
+    expected_state: runStepStateSchema,
+    reason: z.string().min(1),
+    idempotency_key: z.string().min(1),
+  })
   .strict();
 
 export type Run = z.infer<typeof runSchema>;
 export type RunStep = z.infer<typeof runStepSchema>;
 export type RunStepState = z.infer<typeof runStepStateSchema>;
 export type AgentTurnState = z.infer<typeof agentTurnStateSchema>;
+export type RunCancelCommand = z.infer<typeof runCancelCommandSchema>;
+export type RunSteerCommand = z.infer<typeof runSteerCommandSchema>;

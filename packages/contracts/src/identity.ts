@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { isoDateTimeSchema, opaqueIdSchema } from "./primitives";
+import { isoDateTimeSchema, opaqueIdSchema, schemaVersion1 } from "./primitives";
 
 export const actorKindSchema = z.enum(["human", "coworker", "native_subagent", "system"]);
 export type ActorKind = z.infer<typeof actorKindSchema>;
@@ -29,6 +29,12 @@ export const loginRequestSchema = z
   .object({
     email: z.string().email(),
     password: z.string().min(1),
+  })
+  .strict();
+
+export const logoutCommandSchema = z
+  .object({
+    schemaVersion: schemaVersion1,
   })
   .strict();
 

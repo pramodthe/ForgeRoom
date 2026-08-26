@@ -6,6 +6,7 @@ import {
   schemaVersion1,
   sha256Schema,
 } from "./primitives";
+import { taskRecordOperationSchema } from "./tasks";
 
 export const coworkerDraftStateSchema = z.enum([
   "draft",
@@ -20,8 +21,6 @@ export const coworkerDraftStateSchema = z.enum([
 ]);
 
 export type CoworkerDraftState = z.infer<typeof coworkerDraftStateSchema>;
-
-export const taskRecordOperationSchema = z.enum(["create", "update_status", "update_fields"]);
 
 export const coworkerBudgetSchema = z
   .object({
@@ -90,10 +89,50 @@ export const coworkerDraftSchema = z
 
 export const coworkerDraftConfirmCommandSchema = z
   .object({
+    schemaVersion: schemaVersion1,
     draft_revision: z.number().int().positive(),
     draft_hash: sha256Schema,
     policy_revision: nonNegativeIntSchema,
     catalog_revision: nonNegativeIntSchema,
+    idempotency_key: z.string().min(1),
+  })
+  .strict();
+
+export const coworkerDraftCreateCommandSchema = z
+  .object({
+    schemaVersion: schemaVersion1,
+    request: z.string().min(1),
+    idempotency_key: z.string().min(1),
+  })
+  .strict();
+
+export const coworkerDraftReviseCommandSchema = z
+  .object({
+    schemaVersion: schemaVersion1,
+    draft_revision: z.number().int().positive(),
+    draft_hash: sha256Schema,
+    revision_request: z.string().min(1),
+    idempotency_key: z.string().min(1),
+  })
+  .strict();
+
+export const coworkerDraftRejectCommandSchema = z
+  .object({
+    schemaVersion: schemaVersion1,
+    draft_revision: z.number().int().positive(),
+    draft_hash: sha256Schema,
+    reason: z.string().min(1),
+    idempotency_key: z.string().min(1),
+  })
+  .strict();
+
+export const coworkerUpdateCommandSchema = coworkerProposalSchema.omit({ schemaVersion: true });
+
+export const coworkerDisableCommandSchema = z
+  .object({
+    schemaVersion: schemaVersion1,
+    expected_config_revision: nonNegativeIntSchema,
+    reason: z.string().min(1),
     idempotency_key: z.string().min(1),
   })
   .strict();
@@ -115,3 +154,5 @@ export const coworkerProfileSchema = z
 
 export type CoworkerDraft = z.infer<typeof coworkerDraftSchema>;
 export type CoworkerProposal = z.infer<typeof coworkerProposalSchema>;
+export type CoworkerDraftCreateCommand = z.infer<typeof coworkerDraftCreateCommandSchema>;
+export type CoworkerDraftReviseCommand = z.infer<typeof coworkerDraftReviseCommandSchema>;

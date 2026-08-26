@@ -4,6 +4,7 @@ import {
   nonNegativeIntSchema,
   opaqueIdSchema,
   safeJsonValueSchema,
+  safeRecordSchema,
   schemaVersion1,
   sha256Schema,
 } from "./primitives";
@@ -39,7 +40,7 @@ export const auditReceiptSchema = z
     artifact_id: opaqueIdSchema.nullable(),
     skill_version_id: opaqueIdSchema.nullable(),
     approval_ids: z.array(opaqueIdSchema),
-    hashes: z.record(z.string(), sha256Schema),
+    hashes: safeRecordSchema(sha256Schema),
     lineage: safeJsonValueSchema,
     created_at: isoDateTimeSchema,
   })

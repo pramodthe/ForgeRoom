@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { opaqueIdSchema, safeJsonValueSchema } from "./primitives";
+import { opaqueIdSchema, safeJsonObjectSchema } from "./primitives";
 
 export const errorCodeSchema = z.enum([
   "unauthenticated",
@@ -44,7 +44,7 @@ export const errorEnvelopeSchema = z
         message: z.string().min(1),
         request_id: opaqueIdSchema,
         retryable: z.boolean(),
-        details: z.record(z.string(), safeJsonValueSchema).default({}),
+        details: safeJsonObjectSchema.default({}),
       })
       .strict(),
   })
