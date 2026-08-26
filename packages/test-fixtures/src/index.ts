@@ -10,13 +10,17 @@ import {
   taskCardPropsSchema,
 } from "@forgeroom/contracts";
 
+const AG_UI_ALLOWED_PACKAGES = new Set(["@forgeroom/ag-ui"]);
+
 export const FORBIDDEN_P0_101_DEPENDENCY_PATTERNS = [
-  /^@ag-ui\//,
   /^@copilotkit\//,
   /copilotkit/i,
 ] as const;
 
-export function isForbiddenP0101Dependency(name: string): boolean {
+export function isForbiddenP0101Dependency(name: string, packageName?: string): boolean {
+  if (/^@ag-ui\//.test(name)) {
+    return !packageName || !AG_UI_ALLOWED_PACKAGES.has(packageName);
+  }
   return FORBIDDEN_P0_101_DEPENDENCY_PATTERNS.some((pattern) => pattern.test(name));
 }
 

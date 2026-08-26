@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
-  "status": "candidate",
+  "status": "selected",
   "ownerTask": "P0-000",
   "selectionOwner": "P0-210",
   "source": "specs/001-forgeroom-foundation/contracts/ag-ui.md#version-profile",
   "requiredPureBaseline": {
-    "status": "candidate",
+    "status": "selected",
     "packages": {
       "@ag-ui/core": "0.0.57",
       "@ag-ui/client": "0.0.57"

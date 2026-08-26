@@ -34,6 +34,12 @@ export function createApiApp(options?: {
     });
     return c.json(failure.body, failure.status);
   });
+  app.all("/api/copilotkit", (c) => {
+    const failure = errorResponse("not_found", "CopilotKit gateway is disabled in P0.", {
+      status: 404,
+    });
+    return c.json(failure.body, failure.status);
+  });
 
   if (env && auth) {
     mountAuthRoutes(app, { env, auth });

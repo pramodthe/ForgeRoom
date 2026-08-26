@@ -59,19 +59,17 @@ function dependencyNames(pkg: PackageJson): string[] {
 }
 
 describe("P0-101 package boundaries", () => {
-  it("does not pin AG-UI or CopilotKit packages before P0-210", () => {
+  it("allows AG-UI only in @forgeroom/ag-ui and forbids CopilotKit everywhere", () => {
     const root = findRepoRoot(dirname(fileURLToPath(import.meta.url)));
     const violations: string[] = [];
-
     for (const file of packageJsonFiles(root)) {
       const pkg = JSON.parse(readFileSync(file, "utf8")) as PackageJson;
       for (const name of dependencyNames(pkg)) {
-        if (isForbiddenP0101Dependency(name)) {
+        if (isForbiddenP0101Dependency(name, pkg.name)) {
           violations.push(`${pkg.name ?? file}: ${name}`);
         }
       }
     }
-
     expect(violations).toEqual([]);
   });
 });
