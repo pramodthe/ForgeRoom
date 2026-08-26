@@ -5,6 +5,8 @@ import { loadApiEnv } from "./env";
 import { createApiApp } from "./server";
 import { createAuthService } from "./auth/service";
 import { createDefaultAuthStore } from "./auth/postgres-store";
+import { createDefaultWorkspaceStore } from "./workspace/postgres-store";
+import { createWorkspaceService } from "./workspace/service";
 
 export async function startApiProcess(env: NodeJS.ProcessEnv = process.env) {
   const config = loadApiEnv(env);
@@ -13,7 +15,9 @@ export async function startApiProcess(env: NodeJS.ProcessEnv = process.env) {
     databaseUrl: env.DATABASE_URL && env.DATABASE_URL.length > 0 ? env.DATABASE_URL : undefined,
   });
   const auth = createAuthService({ env: config, store });
-  const app = createApiApp({ env: config, auth });
+  const workspaceStore = createDefaultWorkspaceStore({ authStore: config.authStore, sql });
+  const workspace = createWorkspaceService({ store: workspaceStore });
+  const app = createApiApp({ env: config, auth, workspace });
   let worker: ReturnType<typeof startWorker> | undefined;
   let server: ReturnType<typeof serve> | undefined;
 

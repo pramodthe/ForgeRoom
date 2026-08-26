@@ -156,3 +156,6 @@ export type CoworkerDraft = z.infer<typeof coworkerDraftSchema>;
 export type CoworkerProposal = z.infer<typeof coworkerProposalSchema>;
 export type CoworkerDraftCreateCommand = z.infer<typeof coworkerDraftCreateCommandSchema>;
 export type CoworkerDraftReviseCommand = z.infer<typeof coworkerDraftReviseCommandSchema>;
+export type CoworkerUpdateCommand = z.infer<typeof coworkerUpdateCommandSchema>;
+export type CoworkerDisableCommand = z.infer<typeof coworkerDisableCommandSchema>;
+export type CoworkerProfile = z.infer<typeof coworkerProfileSchema>;

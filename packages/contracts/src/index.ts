@@ -52,7 +52,10 @@ export type {
   Channel,
   ChannelCreateCommand,
   ChannelUpdateCommand,
+  ChannelArchiveCommand,
   ChannelMessageCommand,
+  ChannelParticipantAddCommand,
+  ChannelParticipantRemoveCommand,
 } from "./channels";
 
 export {
@@ -74,6 +77,9 @@ export type {
   CoworkerProposal,
   CoworkerDraftCreateCommand,
   CoworkerDraftReviseCommand,
+  CoworkerUpdateCommand,
+  CoworkerDisableCommand,
+  CoworkerProfile,
 } from "./coworkers";
 
 export {

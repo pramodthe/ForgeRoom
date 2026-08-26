@@ -1,7 +1,7 @@
 ---
 id: P0-205
 title: Implement mention and team router
-status: blocked
+status: ready
 owner: unassigned
 depends_on: [P0-102, P0-106]
 requirements: [CH-003, CH-011, OR-002, OR-004]
