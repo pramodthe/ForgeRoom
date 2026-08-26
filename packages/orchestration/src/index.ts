@@ -33,6 +33,7 @@ export {
   buildChannelContextEnvelope,
   renderChannelContextText,
   nextDeliveryCursor,
+  envelopeDeliveredThroughSequence,
   measureChannelContextBytes,
 } from "./context-envelope";
 export type {

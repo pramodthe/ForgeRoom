@@ -990,8 +990,11 @@ export function createPostgresWorkspaceStore(sql: SqlClient): WorkspaceCatalogSt
       const rows = await db.select().from(artifacts).where(eq(artifacts.id, id)).limit(1);
       return rows[0] ? mapSafeArtifact(rows[0]) : null;
     },
-    async listSafeArtifacts(channelId) {
-      const rows = await db.select().from(artifacts).where(eq(artifacts.channelId, channelId));
+    async listSafeArtifacts(channelId, workspaceId) {
+      const rows = await db
+        .select()
+        .from(artifacts)
+        .where(and(eq(artifacts.channelId, channelId), eq(artifacts.workspaceId, workspaceId)));
       return rows.map(mapSafeArtifact).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
     },
     async insertArtifact(artifact) {

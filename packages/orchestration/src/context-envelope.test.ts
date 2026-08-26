@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildChannelContextEnvelope,
+  envelopeDeliveredThroughSequence,
   MAX_CHANNEL_CONTEXT_BYTES,
   measureChannelContextBytes,
   nextDeliveryCursor,
@@ -206,5 +207,33 @@ describe("delivery cursor", () => {
       next_sequence: 9,
       reason: "sequence_not_forward",
     });
+  });
+
+  it("reports the highest sequence included in an envelope", () => {
+    const envelope = buildChannelContextEnvelope({
+      channel: {
+        id: "channel_1",
+        name: "Test",
+        mission_brief: "Brief",
+        expected_channel_id: "channel_1",
+      },
+      roster: [],
+      assignment: null,
+      pins: [],
+      artifacts: [],
+      recent_deltas: [
+        { sequence: 3, type: "message.created", summary: "a" },
+        { sequence: 5, type: "pin.created", summary: "b" },
+      ],
+      human_request: "Hi",
+      last_delivered_channel_sequence: 2,
+    });
+    expect(envelopeDeliveredThroughSequence(envelope)).toBe(5);
+    expect(
+      envelopeDeliveredThroughSequence({
+        ...envelope,
+        recent_deltas: [],
+      }),
+    ).toBe(2);
   });
 });

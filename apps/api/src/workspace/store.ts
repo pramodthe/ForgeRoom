@@ -256,6 +256,27 @@ export function parsePinReceiptResultId(resultId: string): {
   return { pinId: resultId.slice(0, index), sequence: Number(raw) };
 }
 
+/** Stable idempotency target for pin create — binds workspace key to channel + source. */
+export const PIN_CREATE_TARGET_PREFIX = "pin-create:";
+
+export function pinCreateTargetId(
+  channelId: string,
+  sourceMessageId: string | null,
+  sourceArtifactId: string | null,
+): string {
+  if (sourceMessageId) {
+    return `${PIN_CREATE_TARGET_PREFIX}${channelId}:message:${sourceMessageId}`;
+  }
+  if (sourceArtifactId) {
+    return `${PIN_CREATE_TARGET_PREFIX}${channelId}:artifact:${sourceArtifactId}`;
+  }
+  throw new Error("pin create requires exactly one source");
+}
+
+export function isPinCreateTargetId(resultId: string): boolean {
+  return resultId.startsWith(PIN_CREATE_TARGET_PREFIX);
+}
+
 export type MembershipWriteResult =
   | { ok: true; coworker: CoworkerRecord; channel: ChannelRecord; event?: AppendChannelEventResult }
   | { ok: false; reason: "not_found" | "channel_archived" | "coworker_inactive" };
@@ -347,7 +368,7 @@ export type WorkspaceCatalogStore = {
   }): Promise<PinRecord | null>;
 
   getArtifact(id: string): Promise<SafeArtifactRecord | null>;
-  listSafeArtifacts(channelId: string): Promise<SafeArtifactRecord[]>;
+  listSafeArtifacts(channelId: string, workspaceId: string): Promise<SafeArtifactRecord[]>;
   /** Test/fixture helper — artifact storage pipeline is owned by later tasks. */
   insertArtifact(artifact: SafeArtifactRecord): Promise<void>;
 
@@ -838,9 +859,9 @@ export function createMemoryWorkspaceStore(): WorkspaceCatalogStore {
       const row = artifacts.get(id);
       return row ? structuredClone(row) : null;
     },
-    async listSafeArtifacts(channelId) {
+    async listSafeArtifacts(channelId, workspaceId) {
       return [...artifacts.values()]
-        .filter((row) => row.channelId === channelId)
+        .filter((row) => row.channelId === channelId && row.workspaceId === workspaceId)
         .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
         .map((row) => structuredClone(row));
     },

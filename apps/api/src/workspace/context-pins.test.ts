@@ -11,6 +11,7 @@ import { createAuthService } from "../auth/service";
 import { createMemoryAuthStore } from "../auth/store";
 import { createMemoryWorkspaceStore, type WorkspaceCatalogStore } from "./store";
 import { createWorkspaceService } from "./service";
+import { envelopeDeliveredThroughSequence } from "@forgeroom/orchestration";
 
 const PASSWORD = "correct-horse-battery";
 const HASH = `sha256:${"cd".repeat(32)}`;
@@ -433,10 +434,13 @@ describe("P0-108 channel context and pins", () => {
     expect(JSON.stringify(envelope)).not.toContain('"reasoning"');
     expect(JSON.stringify(envelope)).not.toContain("sk-live");
 
+    const envelopeMax = envelopeDeliveredThroughSequence(envelope);
+
     const pending = await workspace.advanceSessionDeliveryCursor({
       session,
       channelAgentSessionId: "cas_ctx",
       deliveredThroughSequence: messageBody.sequence,
+      envelopeDeliveredThroughSequence: envelopeMax,
       turnCreation: "pending",
     });
     expect(pending.ok && pending.value.advanced).toBe(false);
@@ -445,16 +449,15 @@ describe("P0-108 channel context and pins", () => {
     const confirmed = await workspace.advanceSessionDeliveryCursor({
       session,
       channelAgentSessionId: "cas_ctx",
-      deliveredThroughSequence: messageBody.sequence + 1,
+      deliveredThroughSequence: envelopeMax,
+      envelopeDeliveredThroughSequence: envelopeMax,
       turnCreation: "confirmed",
     });
     expect(confirmed.ok && confirmed.value.advanced).toBe(true);
-    expect(confirmed.ok && confirmed.value.last_delivered_channel_sequence).toBe(
-      messageBody.sequence + 1,
-    );
+    expect(confirmed.ok && confirmed.value.last_delivered_channel_sequence).toBe(envelopeMax);
 
     const sessionRow = await workspaceStore.getChannelAgentSession("cas_ctx");
-    expect(sessionRow?.lastDeliveredChannelSequence).toBe(messageBody.sequence + 1);
+    expect(sessionRow?.lastDeliveredChannelSequence).toBe(envelopeMax);
   });
 
   it("pins an artifact with retained source link", async () => {
@@ -663,12 +666,14 @@ describe("P0-108 channel context and pins", () => {
         session,
         channelAgentSessionId: "cas_mono",
         deliveredThroughSequence: Math.min(2, highWater),
+        envelopeDeliveredThroughSequence: highWater,
         turnCreation: "confirmed",
       }),
       workspace.advanceSessionDeliveryCursor({
         session,
         channelAgentSessionId: "cas_mono",
         deliveredThroughSequence: highWater,
+        envelopeDeliveredThroughSequence: highWater,
         turnCreation: "confirmed",
       }),
     ]);
@@ -678,5 +683,308 @@ describe("P0-108 channel context and pins", () => {
     expect(finalSession?.lastDeliveredChannelSequence).toBeGreaterThanOrEqual(
       Math.min(2, highWater),
     );
+  });
+
+  it("rejects context for inactive agent sessions", async () => {
+    const { app, env, workspace, workspaceStore } = await createTestApp();
+    const { session, cookie } = await login(app, env);
+    const channel = await createChannel(
+      app,
+      env,
+      cookie,
+      session.csrf_token,
+      "Auth",
+      "idem_auth_ch",
+    );
+    const coworker = await workspace.seedCoworker({
+      workspaceId: env.workspaceId,
+      createdBy: env.ownerUserId,
+      handle: "inactive",
+      name: "Inactive",
+      title: "Inactive",
+    });
+    const nowIso = new Date().toISOString();
+    await workspaceStore.upsertChannelAgentSession({
+      id: "cas_inactive",
+      workspaceId: env.workspaceId,
+      channelId: channel.id,
+      agentProfileId: coworker.id,
+      logicalAguiThreadId: "thread_inactive",
+      currentGenerationId: null,
+      lastDeliveredChannelSequence: 0,
+      state: "disabled",
+      createdAt: nowIso,
+      updatedAt: nowIso,
+    });
+
+    const disabledSession = await workspace.buildChannelContextForTurn({
+      session,
+      channelId: channel.id,
+      coworkerId: coworker.id,
+      channelAgentSessionId: "cas_inactive",
+      humanRequest: "Should fail",
+      assignment: null,
+    });
+    expect(disabledSession.ok).toBe(false);
+    if (!disabledSession.ok) {
+      expect(disabledSession.error.code).toBe("forbidden");
+    }
+  });
+
+  it("rejects cross-channel pin create idempotency key reuse", async () => {
+    const { app, env } = await createTestApp();
+    const { session, cookie } = await login(app, env);
+    const channelA = await createChannel(app, env, cookie, session.csrf_token, "X", "idem_x_a");
+    const channelB = await createChannel(app, env, cookie, session.csrf_token, "Y", "idem_x_b");
+
+    const msgA = await app.request(`/api/channels/${channelA.id}/messages`, {
+      method: "POST",
+      headers: mutationHeaders(env, cookie, session.csrf_token),
+      body: JSON.stringify({
+        body: "A",
+        recipient_handles: [],
+        routing_mode: "direct",
+        parent_message_id: null,
+      }),
+    });
+    const msgB = await app.request(`/api/channels/${channelB.id}/messages`, {
+      method: "POST",
+      headers: mutationHeaders(env, cookie, session.csrf_token),
+      body: JSON.stringify({
+        body: "B",
+        recipient_handles: [],
+        routing_mode: "direct",
+        parent_message_id: null,
+      }),
+    });
+    const a = (await msgA.json()) as { message_id: string };
+    const b = (await msgB.json()) as { message_id: string };
+
+    const key = "idem_cross_channel_pin";
+    const created = await app.request(`/api/channels/${channelA.id}/pins`, {
+      method: "POST",
+      headers: mutationHeaders(env, cookie, session.csrf_token),
+      body: JSON.stringify({
+        schemaVersion: 1,
+        source_message_id: a.message_id,
+        source_artifact_id: null,
+        label: "A",
+        idempotency_key: key,
+      }),
+    });
+    expect(created.status).toBe(201);
+
+    const conflict = await app.request(`/api/channels/${channelB.id}/pins`, {
+      method: "POST",
+      headers: mutationHeaders(env, cookie, session.csrf_token),
+      body: JSON.stringify({
+        schemaVersion: 1,
+        source_message_id: b.message_id,
+        source_artifact_id: null,
+        label: "B",
+        idempotency_key: key,
+      }),
+    });
+    expect(conflict.status).toBe(409);
+  });
+
+  it("replays pin create after channel archival via idempotency receipt", async () => {
+    const { app, env } = await createTestApp();
+    const { session, cookie } = await login(app, env);
+    const channel = await createChannel(
+      app,
+      env,
+      cookie,
+      session.csrf_token,
+      "ArchivePin",
+      "idem_arch_pin_ch",
+    );
+    const message = await app.request(`/api/channels/${channel.id}/messages`, {
+      method: "POST",
+      headers: mutationHeaders(env, cookie, session.csrf_token),
+      body: JSON.stringify({
+        body: "Pin before archive",
+        recipient_handles: [],
+        routing_mode: "direct",
+        parent_message_id: null,
+      }),
+    });
+    const messageBody = (await message.json()) as { message_id: string };
+    const body = {
+      schemaVersion: 1,
+      source_message_id: messageBody.message_id,
+      source_artifact_id: null,
+      label: "Keep",
+      idempotency_key: "idem_arch_pin",
+    };
+    const pinned = await app.request(`/api/channels/${channel.id}/pins`, {
+      method: "POST",
+      headers: mutationHeaders(env, cookie, session.csrf_token),
+      body: JSON.stringify(body),
+    });
+    expect(pinned.status).toBe(201);
+    const first = withoutRequestId(await pinned.json()) as {
+      pin: { id: string };
+      sequence: number;
+    };
+
+    const archived = await app.request(`/api/channels/${channel.id}/archive`, {
+      method: "POST",
+      headers: mutationHeaders(env, cookie, session.csrf_token),
+      body: JSON.stringify({ schemaVersion: 1, idempotency_key: "idem_arch_pin_ch_done" }),
+    });
+    expect(archived.status).toBe(200);
+
+    const replay = await app.request(`/api/channels/${channel.id}/pins`, {
+      method: "POST",
+      headers: mutationHeaders(env, cookie, session.csrf_token),
+      body: JSON.stringify(body),
+    });
+    expect(replay.status).toBe(201);
+    const second = withoutRequestId(await replay.json()) as {
+      pin: { id: string };
+      sequence: number;
+    };
+    expect(second.pin.id).toBe(first.pin.id);
+    expect(second.sequence).toBe(first.sequence);
+  });
+
+  it("excludes cross-workspace artifacts from context and rejects pinning them", async () => {
+    const { app, env, workspace, workspaceStore } = await createTestApp();
+    const { session, cookie } = await login(app, env);
+    const channel = await createChannel(
+      app,
+      env,
+      cookie,
+      session.csrf_token,
+      "WorkspaceArt",
+      "idem_ws_art",
+    );
+    await workspaceStore.insertArtifact({
+      id: "artifact_foreign_ws",
+      workspaceId: "workspace_other",
+      channelId: channel.id,
+      runId: "run_foreign",
+      runStepId: "step_foreign",
+      creatorAgentId: "cw_foreign",
+      kind: "file",
+      name: "foreign.md",
+      mimeType: "text/markdown",
+      byteSize: 4,
+      sha256: HASH,
+      revision: 1,
+      createdAt: new Date().toISOString(),
+    });
+
+    const rejected = await app.request(`/api/channels/${channel.id}/pins`, {
+      method: "POST",
+      headers: mutationHeaders(env, cookie, session.csrf_token),
+      body: JSON.stringify({
+        schemaVersion: 1,
+        source_message_id: null,
+        source_artifact_id: "artifact_foreign_ws",
+        label: "Foreign",
+        idempotency_key: "idem_ws_art_pin",
+      }),
+    });
+    expect(rejected.status).toBe(400);
+
+    const coworker = await workspace.seedCoworker({
+      workspaceId: env.workspaceId,
+      createdBy: env.ownerUserId,
+      handle: "ws_guard",
+      name: "Ws Guard",
+      title: "Guard",
+    });
+    await app.request(`/api/channels/${channel.id}/participants`, {
+      method: "POST",
+      headers: mutationHeaders(env, cookie, session.csrf_token),
+      body: JSON.stringify({
+        schemaVersion: 1,
+        participant_type: "coworker",
+        participant_id: coworker.id,
+        role: "member",
+        idempotency_key: "idem_ws_guard",
+      }),
+    });
+    const nowIso = new Date().toISOString();
+    await workspaceStore.upsertChannelAgentSession({
+      id: "cas_ws",
+      workspaceId: env.workspaceId,
+      channelId: channel.id,
+      agentProfileId: coworker.id,
+      logicalAguiThreadId: "thread_ws",
+      currentGenerationId: null,
+      lastDeliveredChannelSequence: 0,
+      state: "active",
+      createdAt: nowIso,
+      updatedAt: nowIso,
+    });
+    const context = await workspace.buildChannelContextForTurn({
+      session,
+      channelId: channel.id,
+      coworkerId: coworker.id,
+      channelAgentSessionId: "cas_ws",
+      humanRequest: "Check artifacts",
+      assignment: null,
+    });
+    expect(context.ok).toBe(true);
+    if (context.ok) {
+      expect(context.value.artifacts.some((row) => row.id === "artifact_foreign_ws")).toBe(false);
+    }
+  });
+
+  it("rejects delivery cursor advance beyond envelope-delivered sequence", async () => {
+    const { app, env, workspace, workspaceStore } = await createTestApp();
+    const { session, cookie } = await login(app, env);
+    const channel = await createChannel(
+      app,
+      env,
+      cookie,
+      session.csrf_token,
+      "CursorCap",
+      "idem_cursor_cap",
+    );
+    const coworker = await workspace.seedCoworker({
+      workspaceId: env.workspaceId,
+      createdBy: env.ownerUserId,
+      handle: "capper",
+      name: "Capper",
+      title: "Cap",
+    });
+    await app.request(`/api/channels/${channel.id}/participants`, {
+      method: "POST",
+      headers: mutationHeaders(env, cookie, session.csrf_token),
+      body: JSON.stringify({
+        schemaVersion: 1,
+        participant_type: "coworker",
+        participant_id: coworker.id,
+        role: "member",
+        idempotency_key: "idem_cap_member",
+      }),
+    });
+    const nowIso = new Date().toISOString();
+    await workspaceStore.upsertChannelAgentSession({
+      id: "cas_cap",
+      workspaceId: env.workspaceId,
+      channelId: channel.id,
+      agentProfileId: coworker.id,
+      logicalAguiThreadId: "thread_cap",
+      currentGenerationId: null,
+      lastDeliveredChannelSequence: 0,
+      state: "active",
+      createdAt: nowIso,
+      updatedAt: nowIso,
+    });
+    const channelRow = await workspaceStore.getChannel(channel.id);
+    const highWater = Math.max(0, (channelRow?.nextSequence ?? 1) - 1);
+    const overEnvelope = await workspace.advanceSessionDeliveryCursor({
+      session,
+      channelAgentSessionId: "cas_cap",
+      deliveredThroughSequence: highWater,
+      envelopeDeliveredThroughSequence: 0,
+      turnCreation: "confirmed",
+    });
+    expect(overEnvelope.ok).toBe(false);
   });
 });
