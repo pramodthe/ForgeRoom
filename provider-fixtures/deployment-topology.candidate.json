@@ -14,14 +14,26 @@
     "status": "verified",
     "probeDate": "2026-08-26",
     "checks": [
-      { "name": "DATABASE_URL", "result": "pass", "note": "PostgreSQL forgeroom reachable; schema migrations not applied (workspaces missing)" },
+      {
+        "name": "DATABASE_URL",
+        "result": "pass",
+        "note": "PostgreSQL forgeroom reachable; schema migrations not applied (workspaces missing)"
+      },
       { "name": "COMPOSIO_API_KEY", "result": "pass" },
       { "name": "COMPOSIO_CONNECTED_ACCOUNT_ID", "result": "pass", "redactedSuffix": "nizY" },
       { "name": "DAYTONA_API_KEY", "result": "pass" },
       { "name": "ARTIFACT_STORAGE_DIR", "result": "pass" },
       { "name": "TRUEFORGE_BASE_URL", "result": "pass", "note": "URL set (len 21)" },
-      { "name": "TRUEFORGE_API_KEY", "result": "blocked", "note": "missing — blocks harness session/AgentSpec probes" },
-      { "name": "MODEL_PROVIDER_API_KEY", "result": "blocked", "note": "missing — blocks coworker model preset probe (OD-005)" }
+      {
+        "name": "TRUEFORGE_API_KEY",
+        "result": "blocked",
+        "note": "missing — blocks harness session/AgentSpec probes"
+      },
+      {
+        "name": "MODEL_PROVIDER_API_KEY",
+        "result": "blocked",
+        "note": "missing — blocks coworker model preset probe (OD-005)"
+      }
     ]
   },
   "demoDeployment": {

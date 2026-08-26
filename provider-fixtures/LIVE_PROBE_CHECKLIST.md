@@ -25,7 +25,8 @@ Optional when probing optional CopilotKit later (P0-210 only): none required for
 - [x] Provider fixture reset twice — label removal idempotent (2nd remove returns expected provider error; label absent after both).
 - [ ] Seed Operator coworker with a reliable model preset; record preset id — **blocked: `TRUEFORGE_API_KEY`, `MODEL_PROVIDER_API_KEY` missing**.
 - [ ] Resolve Research draft prompt to exact permission preview/denials (no writes) — **blocked: TrueForge harness + model preset**.
-- [x] Produce one Daytona sample file; download via Daytona SDK; retain in local artifact storage — **TrueForge download path blocked on `TRUEFORGE_API_KEY`**.
+- [x] Produce one Daytona sample file; download via Daytona SDK — **TrueForge→artifact-storage retain path blocked on `TRUEFORGE_API_KEY`**.
+- [x] Local `ARTIFACT_STORAGE_DIR` adapter retain (separate probe; bytes differ from Daytona SDK download hash).
 - [x] Confirm local deployment topology preflight (DB, auth env, Composio, Daytona, storage) — partial; TrueForge/model keys missing.
 - [ ] Record verified run-limit watchdog behavior or adjust candidates with evidence — **blocked: TrueForge hard enforcement (P0-204)**.
 

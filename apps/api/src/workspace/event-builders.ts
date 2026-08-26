@@ -6,13 +6,44 @@ export type CustomSourceEventName =
   | "channel.archived"
   | "participant.added"
   | "participant.removed"
-  | "message.created";
+  | "message.created"
+  | "pin.created"
+  | "pin.removed";
 
 export function customAguiEvent(name: CustomSourceEventName): P0PersistedAguiEvent {
+  if (name === "message.created") {
+    throw new Error("message.created requires authoritative routing payload");
+  }
   return {
     type: "CUSTOM",
     name,
     payload: { schemaVersion: 1 },
+  };
+}
+
+export function pinAguiEvent(
+  name: "pin.created" | "pin.removed",
+  pinId: string,
+): P0PersistedAguiEvent {
+  return {
+    type: "CUSTOM",
+    name,
+    payload: { schemaVersion: 1, pin_id: pinId },
+  };
+}
+
+export function messageCreatedAguiEvent(input: {
+  routing_mode: "direct" | "team";
+  recipient_handles: readonly string[];
+}): P0PersistedAguiEvent {
+  return {
+    type: "CUSTOM",
+    name: "message.created",
+    payload: {
+      schemaVersion: 1,
+      routing_mode: input.routing_mode,
+      recipient_handles: [...input.recipient_handles],
+    },
   };
 }
 

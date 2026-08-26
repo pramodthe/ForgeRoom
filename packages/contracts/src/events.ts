@@ -15,6 +15,7 @@ import {
   sha256Schema,
 } from "./primitives";
 import { runActivityCountersSchema, runLifecycleSchema } from "./runs";
+import { messageCreatedRoutingPayloadSchema } from "./routing";
 import {
   channelArtifactProjectionSchema,
   channelCoworkerProjectionSchema,
@@ -1047,10 +1048,31 @@ export const customApplicationEventSchema = z
         schemaVersion: schemaVersion1,
         lifecycle: runLifecycleSchema.optional(),
         activity: runActivityCountersSchema.optional(),
+        pin_id: opaqueIdSchema.optional(),
+        routing_mode: z.enum(["direct", "team"]).optional(),
+        recipient_handles: z.array(z.string().min(1)).min(1).max(2).optional(),
       })
       .strict(),
   })
-  .strict();
+  .strict()
+  .superRefine((value, ctx) => {
+    if (value.name === "message.created") {
+      const parsed = messageCreatedRoutingPayloadSchema.safeParse(value.payload);
+      if (!parsed.success) {
+        for (const issue of parsed.error.issues) {
+          ctx.addIssue({ ...issue, path: ["payload", ...issue.path] });
+        }
+      }
+      return;
+    }
+    if (value.payload.routing_mode !== undefined || value.payload.recipient_handles !== undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "routing fields are only permitted on message.created events",
+        path: ["payload"],
+      });
+    }
+  });
 
 export const p0PersistedAguiEventSchema = z.union([
   activitySnapshotEventSchema,

@@ -56,7 +56,44 @@ export type {
   ChannelMessageCommand,
   ChannelParticipantAddCommand,
   ChannelParticipantRemoveCommand,
+  ChannelPin,
+  ChannelPinCreateCommand,
+  ChannelPinRemoveCommand,
 } from "./channels";
+
+export {
+  channelContextEnvelopeSchema,
+  channelContextRosterEntrySchema,
+  channelContextPinRefSchema,
+  channelContextSafeArtifactSchema,
+  channelContextAssignmentSchema,
+  channelContextDeltaSchema,
+} from "./context";
+export type {
+  ChannelContextEnvelope,
+  ChannelContextRosterEntry,
+  ChannelContextPinRef,
+  ChannelContextSafeArtifact,
+  ChannelContextAssignment,
+  ChannelContextDelta,
+} from "./context";
+export {
+  P0_MAX_ROUTING_RECIPIENTS,
+  routingFailureReasonSchema,
+  routingFailureCodeSchema,
+  routingResolutionSuccessSchema,
+  routingResolutionFailureSchema,
+  routingResolutionSchema,
+  messageCreatedRoutingPayloadSchema,
+} from "./routing";
+export type {
+  RoutingFailureReason,
+  RoutingFailureCode,
+  RoutingResolutionSuccess,
+  RoutingResolutionFailure,
+  RoutingResolution,
+  MessageCreatedRoutingPayload,
+} from "./routing";
 
 export {
   coworkerDraftSchema,
@@ -70,6 +107,8 @@ export {
   coworkerProposalSchema,
   coworkerEffectivePreviewSchema,
   coworkerProfileSchema,
+  RESERVED_COWORKER_HANDLES,
+  isReservedCoworkerHandle,
 } from "./coworkers";
 export type {
   CoworkerDraft,

@@ -8,6 +8,7 @@ import { materializeChannelEvent } from "./event-persist";
 
 export type ChannelStatus = "active" | "archived";
 export type CoworkerStatus = "active" | "disabled";
+export type ChannelAgentSessionState = "active" | "rotating" | "disabled";
 
 export type CoworkerEditableConfig = {
   standing_instructions: string;
@@ -164,6 +165,63 @@ export type MessageRecord = {
   createdAt: string;
 };
 
+export type PinRecord = {
+  id: string;
+  channelId: string;
+  sourceEventId: string | null;
+  sourceArtifactId: string | null;
+  label: string;
+  pinnedBy: string;
+  createdAt: string;
+  removedAt: string | null;
+};
+
+/** Safe artifact reference for pins/context — never includes storage credentials or sandbox paths. */
+export type SafeArtifactRecord = {
+  id: string;
+  workspaceId: string;
+  channelId: string;
+  runId: string;
+  runStepId: string;
+  creatorAgentId: string;
+  kind: "file" | "preview";
+  name: string;
+  mimeType: string;
+  byteSize: number;
+  sha256: string;
+  revision: number;
+  createdAt: string;
+};
+
+export type ChannelAgentSessionRecord = {
+  id: string;
+  workspaceId: string;
+  channelId: string;
+  agentProfileId: string;
+  logicalAguiThreadId: string;
+  currentGenerationId: string | null;
+  lastDeliveredChannelSequence: number;
+  state: ChannelAgentSessionState;
+  createdAt: string;
+  updatedAt: string;
+};
+
+/** Seed/upsert input for routing tests and cursor proofs. */
+export type ChannelAgentSessionUpsertInput = Pick<
+  ChannelAgentSessionRecord,
+  "id" | "workspaceId" | "channelId" | "agentProfileId" | "state"
+> &
+  Partial<
+    Pick<
+      ChannelAgentSessionRecord,
+      | "logicalAguiThreadId"
+      | "currentGenerationId"
+      | "lastDeliveredChannelSequence"
+      | "createdAt"
+      | "updatedAt"
+    >
+  >;
+
 export type CommandReceipt = {
   workspaceId: string;
   commandKind: string;
@@ -191,6 +249,49 @@ export function decodeReceiptResultId(stored: string): { resultId: string; lease
     resultId: stored.slice(0, index),
     leaseOwner: stored.slice(index + RECEIPT_LEASE_SEP.length),
   };
+}
+
+/** Persist pin id + channel event sequence inside command receipt result_id for replay. */
+export const PIN_RECEIPT_SEQ_SEP = "@seq:";
+
+export function encodePinReceiptResultId(pinId: string, sequence: number): string {
+  return `${pinId}${PIN_RECEIPT_SEQ_SEP}${sequence}`;
+}
+
+export function parsePinReceiptResultId(resultId: string): {
+  pinId: string;
+  sequence: number | null;
+} {
+  const index = resultId.lastIndexOf(PIN_RECEIPT_SEQ_SEP);
+  if (index === -1) {
+    return { pinId: resultId, sequence: null };
+  }
+  const raw = resultId.slice(index + PIN_RECEIPT_SEQ_SEP.length);
+  if (!/^(0|[1-9][0-9]*)$/.test(raw)) {
+    return { pinId: resultId, sequence: null };
+  }
+  return { pinId: resultId.slice(0, index), sequence: Number(raw) };
+}
+
+/** Stable idempotency target for pin create — binds workspace key to channel + source. */
+export const PIN_CREATE_TARGET_PREFIX = "pin-create:";
+
+export function pinCreateTargetId(
+  channelId: string,
+  sourceMessageId: string | null,
+  sourceArtifactId: string | null,
+): string {
+  if (sourceMessageId) {
+    return `${PIN_CREATE_TARGET_PREFIX}${channelId}:message:${sourceMessageId}`;
+  }
+  if (sourceArtifactId) {
+    return `${PIN_CREATE_TARGET_PREFIX}${channelId}:artifact:${sourceArtifactId}`;
+  }
+  throw new Error("pin create requires exactly one source");
+}
+
+export function isPinCreateTargetId(resultId: string): boolean {
+  return resultId.startsWith(PIN_CREATE_TARGET_PREFIX);
 }
 
 export type MembershipWriteResult =
@@ -238,6 +339,10 @@ export type WorkspaceCatalogStore = {
 
   getCoworker(id: string): Promise<CoworkerRecord | null>;
   listCoworkers(workspaceId: string): Promise<CoworkerRecord[]>;
+  /** Current channel/coworker session rows used for routing availability (may be empty pre-P0-201). */
+  listChannelAgentSessions(channelId: string): Promise<ChannelAgentSessionRecord[]>;
+  /** Test/seed helper; production writers arrive with P0-201 session creation. */
+  upsertChannelAgentSession(session: ChannelAgentSessionUpsertInput): Promise<void>;
   insertCoworker(coworker: CoworkerRecord, version: AgentVersionRecord): Promise<void>;
   updateCoworker(coworker: CoworkerRecord, version?: AgentVersionRecord): Promise<void>;
   /**
@@ -273,6 +378,38 @@ export type WorkspaceCatalogStore = {
   ): Promise<void>;
 
   getMessage(id: string): Promise<MessageRecord | null>;
+  getMessageByEventId(eventId: string): Promise<MessageRecord | null>;
+
+  getPin(id: string): Promise<PinRecord | null>;
+  listActivePins(channelId: string): Promise<PinRecord[]>;
+  findActivePinBySource(input: {
+    channelId: string;
+    sourceEventId?: string | null;
+    sourceArtifactId?: string | null;
+  }): Promise<PinRecord | null>;
+  findPinBySource(input: {
+    channelId: string;
+    sourceEventId?: string | null;
+    sourceArtifactId?: string | null;
+  }): Promise<PinRecord | null>;
+
+  getArtifact(id: string): Promise<SafeArtifactRecord | null>;
+  listSafeArtifacts(channelId: string, workspaceId: string): Promise<SafeArtifactRecord[]>;
+  /** Test/fixture helper — artifact storage pipeline is owned by later tasks. */
+  insertArtifact(artifact: SafeArtifactRecord): Promise<void>;
+
+  getChannelAgentSession(id: string): Promise<ChannelAgentSessionRecord | null>;
+  /** Test/fixture helper for context cursor proofs. */
+  upsertChannelAgentSession(session: ChannelAgentSessionUpsertInput): Promise<void>;
+  /**
+   * Persist a new delivery cursor when the caller has already decided the advance is valid
+   * (confirmed/reconciled turn). Never called for pending/uncertain creation.
+   */
+  setSessionDeliveryCursor(
+    sessionId: string,
+    nextSequence: number,
+    updatedAt: string,
+  ): Promise<ChannelAgentSessionRecord | null>;
 
   listEventsAfter(
     channelId: string,
@@ -312,6 +449,17 @@ export type WorkspaceCatalogStore = {
     idempotencyKey: string,
     leaseOwner: string,
   ): Promise<void>;
+  /**
+   * After a successful mutation, rebind the durable result_id while the lease owner still holds
+   * the claim (used to persist pin event sequence for idempotent replay).
+   */
+  rebindCommandReceiptResultId(
+    workspaceId: string,
+    commandKind: string,
+    idempotencyKey: string,
+    leaseOwner: string,
+    nextResultId: string,
+  ): Promise<boolean>;
 
   /**
    * Insert channel + owner + channel.created event (sequence 0) atomically.
@@ -342,6 +490,21 @@ export type WorkspaceCatalogStore = {
     event: ChannelEventInsert;
     message: MessageRecord;
   }): Promise<AppendChannelEventResult>;
+
+  /** Lock channel, append pin.created event, insert pin row. */
+  createPinWithEvent(input: {
+    channelId: string;
+    event: ChannelEventInsert;
+    pin: PinRecord;
+  }): Promise<AppendChannelEventResult & { pin: PinRecord }>;
+
+  /** Lock channel, append pin.removed event, soft-delete pin. */
+  removePinWithEvent(input: {
+    channelId: string;
+    event: ChannelEventInsert;
+    pinId: string;
+    removedAt: string;
+  }): Promise<AppendChannelEventResult & { pin: PinRecord }>;
 };
 
 export function emptyEditableConfig(): CoworkerEditableConfig {
@@ -366,6 +529,9 @@ export function createMemoryWorkspaceStore(): WorkspaceCatalogStore {
   const receipts = new Map<string, CommandReceipt>();
   const events = new Map<string, ChannelEventRecord>();
   const messages = new Map<string, MessageRecord>();
+  const pins = new Map<string, PinRecord>();
+  const artifacts = new Map<string, SafeArtifactRecord>();
+  const agentSessions = new Map<string, ChannelAgentSessionRecord>();
   /** Serialize per-channel appends so concurrent callers preserve unique monotonic sequences. */
   const channelLocks = new Map<string, Promise<void>>();
 
@@ -568,6 +734,11 @@ export function createMemoryWorkspaceStore(): WorkspaceCatalogStore {
         .filter((row) => row.workspaceId === workspaceId)
         .sort((a, b) => a.handle.localeCompare(b.handle));
     },
+    async listChannelAgentSessions(channelId) {
+      return [...agentSessions.values()]
+        .filter((row) => row.channelId === channelId)
+        .sort((a, b) => a.agentProfileId.localeCompare(b.agentProfileId));
+    },
     async insertCoworker(coworker, version) {
       coworkers.set(coworker.id, structuredClone(coworker));
       versions.set(version.id, structuredClone(version));
@@ -686,6 +857,96 @@ export function createMemoryWorkspaceStore(): WorkspaceCatalogStore {
     async getMessage(id) {
       return messages.get(id) ?? null;
     },
+    async getMessageByEventId(eventId) {
+      return [...messages.values()].find((row) => row.eventId === eventId) ?? null;
+    },
+    async getPin(id) {
+      const row = pins.get(id);
+      return row ? structuredClone(row) : null;
+    },
+    async listActivePins(channelId) {
+      return [...pins.values()]
+        .filter((row) => row.channelId === channelId && row.removedAt === null)
+        .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+        .map((row) => structuredClone(row));
+    },
+    async findActivePinBySource(input) {
+      return (
+        [...pins.values()].find((row) => {
+          if (row.channelId !== input.channelId || row.removedAt !== null) {
+            return false;
+          }
+          if (input.sourceEventId) {
+            return row.sourceEventId === input.sourceEventId;
+          }
+          if (input.sourceArtifactId) {
+            return row.sourceArtifactId === input.sourceArtifactId;
+          }
+          return false;
+        }) ?? null
+      );
+    },
+    async findPinBySource(input) {
+      return (
+        [...pins.values()].find((row) => {
+          if (row.channelId !== input.channelId) {
+            return false;
+          }
+          if (input.sourceEventId) {
+            return row.sourceEventId === input.sourceEventId;
+          }
+          if (input.sourceArtifactId) {
+            return row.sourceArtifactId === input.sourceArtifactId;
+          }
+          return false;
+        }) ?? null
+      );
+    },
+    async getArtifact(id) {
+      const row = artifacts.get(id);
+      return row ? structuredClone(row) : null;
+    },
+    async listSafeArtifacts(channelId, workspaceId) {
+      return [...artifacts.values()]
+        .filter((row) => row.channelId === channelId && row.workspaceId === workspaceId)
+        .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+        .map((row) => structuredClone(row));
+    },
+    async insertArtifact(artifact) {
+      artifacts.set(artifact.id, structuredClone(artifact));
+    },
+    async getChannelAgentSession(id) {
+      const row = agentSessions.get(id);
+      return row ? structuredClone(row) : null;
+    },
+    async upsertChannelAgentSession(session: ChannelAgentSessionUpsertInput) {
+      const now = new Date().toISOString();
+      agentSessions.set(session.id, {
+        ...session,
+        logicalAguiThreadId:
+          session.logicalAguiThreadId ?? `thread_${session.channelId}_${session.agentProfileId}`,
+        currentGenerationId: session.currentGenerationId ?? null,
+        lastDeliveredChannelSequence: session.lastDeliveredChannelSequence ?? 0,
+        createdAt: session.createdAt ?? now,
+        updatedAt: session.updatedAt ?? now,
+      });
+    },
+    async setSessionDeliveryCursor(sessionId, nextSequence, updatedAt) {
+      const existing = agentSessions.get(sessionId);
+      if (!existing) {
+        return null;
+      }
+      // Monotonic GREATEST semantics (mirrors postgres).
+      const nextValue = Math.max(existing.lastDeliveredChannelSequence, nextSequence);
+      const next = {
+        ...existing,
+        lastDeliveredChannelSequence: nextValue,
+        updatedAt:
+          nextValue > existing.lastDeliveredChannelSequence ? updatedAt : existing.updatedAt,
+      };
+      agentSessions.set(sessionId, next);
+      return structuredClone(next);
+    },
     async listEventsAfter(channelId, afterSequence, options) {
       const limit = clampEventLimit(options?.limit);
       const rows = [...events.values()]
@@ -744,6 +1005,21 @@ export function createMemoryWorkspaceStore(): WorkspaceCatalogStore {
       }
       receipts.delete(key);
     },
+    async rebindCommandReceiptResultId(
+      workspaceId,
+      commandKind,
+      idempotencyKey,
+      leaseOwner,
+      nextResultId,
+    ) {
+      const key = receiptKey(workspaceId, commandKind, idempotencyKey);
+      const existing = receipts.get(key);
+      if (!existing || existing.leaseOwner !== leaseOwner) {
+        return false;
+      }
+      receipts.set(key, { ...existing, resultId: nextResultId });
+      return true;
+    },
     async insertChannelWithOwner(channel, owner, createdEvent) {
       return withChannelLock(channel.id, () => {
         if (channel.nextSequence !== 1) {
@@ -768,6 +1044,54 @@ export function createMemoryWorkspaceStore(): WorkspaceCatalogStore {
           message: input.message,
         }),
       );
+    },
+    async createPinWithEvent(input) {
+      return withChannelLock(input.channelId, () => {
+        if (input.pin.channelId !== input.channelId) {
+          throw new Error("pin channel mismatch");
+        }
+        const sourceCount =
+          Number(input.pin.sourceEventId !== null) + Number(input.pin.sourceArtifactId !== null);
+        if (sourceCount !== 1) {
+          throw new Error("pin must reference exactly one source");
+        }
+        const duplicate = [...pins.values()].find((row) => {
+          if (row.channelId !== input.channelId || row.removedAt !== null) {
+            return false;
+          }
+          if (input.pin.sourceEventId) {
+            return row.sourceEventId === input.pin.sourceEventId;
+          }
+          return row.sourceArtifactId === input.pin.sourceArtifactId;
+        });
+        if (duplicate) {
+          throw new Error("pin_source_conflict");
+        }
+        const appended = appendEventLocked({
+          channelId: input.channelId,
+          event: input.event,
+        });
+        pins.set(input.pin.id, structuredClone(input.pin));
+        return { ...appended, pin: structuredClone(input.pin) };
+      });
+    },
+    async removePinWithEvent(input) {
+      return withChannelLock(input.channelId, () => {
+        const existing = pins.get(input.pinId);
+        if (!existing || existing.channelId !== input.channelId) {
+          throw new Error("pin_not_found");
+        }
+        if (existing.removedAt !== null) {
+          throw new Error("pin_already_removed");
+        }
+        const appended = appendEventLocked({
+          channelId: input.channelId,
+          event: input.event,
+        });
+        const removed = { ...existing, removedAt: input.removedAt };
+        pins.set(removed.id, removed);
+        return { ...appended, pin: structuredClone(removed) };
+      });
     },
   };
 }

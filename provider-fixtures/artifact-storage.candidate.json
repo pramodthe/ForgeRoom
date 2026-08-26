@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "status": "verified",
+  "status": "partial",
   "ownerTask": "P0-000",
   "verificationOwner": "P0-310",
   "probeDate": "2026-08-26",
@@ -9,15 +9,17 @@
     "env": "ARTIFACT_STORAGE_DIR",
     "status": "verified",
     "probeEvidence": {
+      "probeKind": "local_adapter_direct_write",
       "sampleObjectKey": "forgeroom-p0-probe-sample.md",
       "sha256": "fe283ac9a23048f0b92e2217668dd7d3dcb855308bdf87dcf0e4a0196d9a9f53",
-      "retainVerified": true
+      "retainVerified": true,
+      "note": "Local adapter write/retain verified independently. Same object key as Daytona probe but different bytes (Daytona SDK download sha256 1026610d8710ec1ee5ea1e92a878f3b71e638d1db535d0f903c1d78fdad9c369). Do not treat as one retained sample until TrueForge→storage path is probed."
     }
   },
   "demoDeployment": {
     "adapter": "pending_live_probe",
     "candidates": ["local_directory_with_persistent_disk", "s3_compatible_object_storage"],
     "status": "candidate",
-    "note": "Local directory retain verified 2026-08-26. Demo durable object storage still blocked pending upload/download probe on target host."
+    "note": "Local directory adapter retain verified 2026-08-26 (separate probe). Demo durable object storage still blocked pending upload/download probe on target host."
   }
 }

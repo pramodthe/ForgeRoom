@@ -24,7 +24,7 @@ Every provider- and demo-specific TBD is replaced by a verified, safe, reproduci
 - [x] Provider fixture reset runs twice without duplicates (label remove idempotent; label absent after both runs). DB fixture reset blocked until P0-103 migrations applied locally.
 - [x] One seeded coworker and the exact conversational prompt/permission-draft fixture for creating the second coworker are frozen.
 - [ ] The fixed TaskRecord fixture and one successful Run suitable for Save-as-skill are deterministic (TaskRecord candidate frozen; successful Run binding still requires TrueForge live probe — see save-as-skill.candidate.json).
-- [x] Daytona produces sample file (SDK upload/download verified); local artifact storage retains sample file. TrueForge→storage path blocked on `TRUEFORGE_API_KEY`.
+- [x] Daytona produces sample file (SDK upload/download verified); local artifact adapter retain verified separately. TrueForge→storage path blocked on `TRUEFORGE_API_KEY`.
 - [x] Run limits and deployment topology are recorded (local preflight verified; demo host candidate).
 - [x] Pure AG-UI baseline candidates/fixtures and the optional-CopilotKit coherent-graph/no-canary/no-forced-override policy are frozen for P0-210 selection.
 - [x] Controlled DataTable, bar/line chart, TaskCard, ArtifactCard and ChoiceForm/filter fixtures are deterministic, bounded and visually useful.
@@ -43,8 +43,8 @@ Run redacted live probes for Composio read/write/read-back, fixture reset, a man
   - `packages/test-fixtures/src/index.test.ts`
 - Redacted live probes (2026-08-26, branch `codex/p0-000-live-probes`):
   - **Composio PASS**: 1 github account ACTIVE (suffix `nizY`); tools `GITHUB_GET_AN_ISSUE`, `GITHUB_ADD_LABELS_TO_AN_ISSUE`, `GITHUB_REMOVE_A_LABEL_FROM_AN_ISSUE`; synthetic `pramodthe/Hi-Tuto#10` label write + reconcile; descriptor hashes in `composio/descriptors/manifest.json`.
-  - **Daytona PASS**: sandbox created (suffix `4c94`); SDK upload/download match (content sha256 `1026610d…9c369`).
-  - **Artifact storage PASS (local)**: `forgeroom-p0-probe-sample.md` retained under `ARTIFACT_STORAGE_DIR` (sha256 `fe283ac9…9f53`).
+  - **Daytona PARTIAL**: sandbox created (suffix `4c94`); SDK upload/download match (content sha256 `1026610d…9c369`). TrueForge→storage path blocked.
+  - **Artifact storage PARTIAL (local adapter)**: `forgeroom-p0-probe-sample.md` retained under `ARTIFACT_STORAGE_DIR` (sha256 `fe283ac9…9f53`) — separate probe; not same bytes as Daytona download.
   - **Deployment topology PARTIAL**: local preflight pass for DB/Composio/Daytona/storage; blocked on `TRUEFORGE_API_KEY`, `MODEL_PROVIDER_API_KEY`.
   - **BLOCKED**: Operator/Research model presets (OD-005), Research permission preview (OD-012), Save-as-skill Run binding, TrueForge sandbox→artifact path, DB fixture reset (workspaces table missing — run P0-103 migrations), demo durable storage, run-limit watchdog (P0-204).
 - Descriptor exports/hashes: `provider-fixtures/composio/descriptors/manifest.json`
@@ -75,13 +75,13 @@ Run redacted live probes for Composio read/write/read-back, fixture reset, a man
   - [x] Deterministic write + reconciliation read on synthetic data: `pramodthe/Hi-Tuto#10` label probe.
   - [x] Provider fixture reset twice (`OD-009`): label removal idempotent.
   - [ ] Model presets for Operator/Research (`OD-005`): blocked — `TRUEFORGE_API_KEY`, `MODEL_PROVIDER_API_KEY`.
-  - [x] Daytona sample file + local storage retain; TrueForge download path blocked.
+  - [x] Daytona sandbox SDK upload/download verified; local adapter retain verified separately (different sha256). TrueForge→storage path blocked.
 
 ## Handoff (partial — do not mark done)
 
 ~~~text
 Task: P0-000
-Outcome: Composio/Daytona/local-artifact probes verified with redacted evidence; TrueForge model preset + DB fixture reset + demo deployment still blocked.
+Outcome: Composio/Daytona SDK/local-adapter probes verified with redacted evidence (separate artifact hashes documented); TrueForge model preset + DB fixture reset + demo deployment still blocked.
 Requirements: AG-010, TR-001, SK-001, AGUI-009, GUI-003, TL-001, TL-003, TL-004, AP-004, SB-001
 Changed: provider-fixtures/**, demo.md, STATUS.md, test-fixtures test
 Verified: pnpm --filter @forgeroom/test-fixtures test

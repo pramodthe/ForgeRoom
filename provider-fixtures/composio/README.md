@@ -13,10 +13,10 @@ Exact application slugs, direct-tool names, connected-account IDs and descriptor
 
 ## Files
 
-| File                              | Status                                        |
-| --------------------------------- | --------------------------------------------- |
-| `applications.candidate.json`     | Verified github toolkit (probe 2026-08-26)    |
-| `tools.candidate.json`            | Verified read/write/reconcile slugs + hashes  |
-| `accounts.verified.json`          | Redacted suffix `nizY` only                   |
-| `accounts.redacted.template.json` | Suffix template only                          |
-| `descriptors/manifest.json`       | SHA-256 hashes from live descriptor export    |
+| File                              | Status                                       |
+| --------------------------------- | -------------------------------------------- |
+| `applications.candidate.json`     | Verified github toolkit (probe 2026-08-26)   |
+| `tools.candidate.json`            | Verified read/write/reconcile slugs + hashes |
+| `accounts.verified.json`          | Redacted suffix `nizY` only                  |
+| `accounts.redacted.template.json` | Suffix template only                         |
+| `descriptors/manifest.json`       | SHA-256 hashes from live descriptor export   |
