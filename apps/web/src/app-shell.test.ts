@@ -2,10 +2,11 @@ import { describe, expect, it } from "vitest";
 import type { SessionResponse } from "@forgeroom/contracts";
 import { assertMockFixturesValid, MOCK_WORKSPACE_ID } from "./api/mock-fixtures";
 import { getSkillVersion } from "./api/workspace-api";
-import { isSessionExpired, sessionWorkspaceMismatch } from "./auth/session";
+import { isSessionExpired, liveSession, sessionWorkspaceMismatch } from "./auth/session";
 import {
   isSafePostLoginRedirect,
   P0_ROUTE_CONTRACT,
+  parseWorkspaceIdFromPath,
   postLoginDestination,
   workspaceChannelPath,
   workspaceTasksPath,
@@ -34,6 +35,11 @@ describe("P0 route contract", () => {
       "/w/ws_demo_001/channels/ch_general_001",
     );
     expect(workspaceTasksPath(MOCK_WORKSPACE_ID)).toBe("/w/ws_demo_001/tasks");
+  });
+
+  it("encodes reserved characters in dynamic path segments", () => {
+    expect(workspaceChannelPath("ws/a", "ch/1")).toBe("/w/ws%2Fa/channels/ch%2F1");
+    expect(parseWorkspaceIdFromPath("/w/ws%2Fa/tasks")).toBe("ws/a");
   });
 
   it("documents the UX path contract", () => {
@@ -71,6 +77,12 @@ describe("session helpers", () => {
   it("detects expired sessions", () => {
     expect(isSessionExpired(baseSession, new Date("2099-01-02T00:00:00Z"))).toBe(true);
     expect(isSessionExpired(baseSession, new Date("2098-12-31T00:00:00Z"))).toBe(false);
+  });
+
+  it("treats expired sessions as unauthenticated", () => {
+    const expired = { ...baseSession, expires_at: "2020-01-01T00:00:00.000Z" };
+    expect(liveSession(expired)).toBeNull();
+    expect(liveSession(baseSession)).not.toBeNull();
   });
 
   it("detects workspace mismatches", () => {

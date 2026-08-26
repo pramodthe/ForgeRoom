@@ -15,47 +15,51 @@ export const P0_ROUTES = {
   workspaceConnections: "/w/$workspaceId/connections",
 } as const;
 
+function segment(value: string): string {
+  return encodeURIComponent(value);
+}
+
 export function loginPath(): string {
   return P0_ROUTES.login;
 }
 
 export function workspaceChannelPath(workspaceId: string, channelId: string): string {
-  return `/w/${workspaceId}/channels/${channelId}`;
+  return `/w/${segment(workspaceId)}/channels/${segment(channelId)}`;
 }
 
 export function workspaceTasksPath(workspaceId: string): string {
-  return `/w/${workspaceId}/tasks`;
+  return `/w/${segment(workspaceId)}/tasks`;
 }
 
 export function workspaceTaskDetailPath(workspaceId: string, taskId: string): string {
-  return `/w/${workspaceId}/tasks/${taskId}`;
+  return `/w/${segment(workspaceId)}/tasks/${segment(taskId)}`;
 }
 
 export function workspaceCoworkersPath(workspaceId: string): string {
-  return `/w/${workspaceId}/coworkers`;
+  return `/w/${segment(workspaceId)}/coworkers`;
 }
 
 export function workspaceCoworkerDetailPath(workspaceId: string, coworkerId: string): string {
-  return `/w/${workspaceId}/coworkers/${coworkerId}`;
+  return `/w/${segment(workspaceId)}/coworkers/${segment(coworkerId)}`;
 }
 
 export function workspaceSkillsPath(workspaceId: string): string {
-  return `/w/${workspaceId}/skills`;
+  return `/w/${segment(workspaceId)}/skills`;
 }
 
 export function workspaceSkillDetailPath(workspaceId: string, skillId: string): string {
-  return `/w/${workspaceId}/skills/${skillId}`;
+  return `/w/${segment(workspaceId)}/skills/${segment(skillId)}`;
 }
 
 export function workspaceConnectionsPath(workspaceId: string): string {
-  return `/w/${workspaceId}/connections`;
+  return `/w/${segment(workspaceId)}/connections`;
 }
 
 const WORKSPACE_PREFIX = /^\/w\/([^/]+)/;
 
 export function parseWorkspaceIdFromPath(pathname: string): string | null {
   const match = WORKSPACE_PREFIX.exec(pathname);
-  return match?.[1] ?? null;
+  return match?.[1] ? decodeURIComponent(match[1]) : null;
 }
 
 export function isWorkspaceRoute(pathname: string): boolean {
@@ -85,6 +89,10 @@ export function postLoginDestination(
   defaultChannelId: string,
 ): string {
   if (redirect && isSafePostLoginRedirect(redirect)) {
+    const redirectWorkspaceId = parseWorkspaceIdFromPath(redirect);
+    if (redirectWorkspaceId && redirectWorkspaceId !== sessionWorkspaceId) {
+      return workspaceChannelPath(sessionWorkspaceId, defaultChannelId);
+    }
     return redirect;
   }
   return workspaceChannelPath(sessionWorkspaceId, defaultChannelId);

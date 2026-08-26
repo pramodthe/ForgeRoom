@@ -21,6 +21,12 @@ export class ComponentHostBoundary extends Component<
     return { error };
   }
 
+  componentDidUpdate(prevProps: ComponentHostBoundaryProps): void {
+    if (prevProps.slotId !== this.props.slotId && this.state.error) {
+      this.setState({ error: null });
+    }
+  }
+
   componentDidCatch(error: Error, info: ErrorInfo): void {
     console.error(
       `component host failure [${this.props.slotKind}:${this.props.slotId}]`,
@@ -57,7 +63,7 @@ type SlotProps = {
 
 export function AgUiActivitySlot({ slotId, children, placeholder }: SlotProps) {
   return (
-    <ComponentHostBoundary slotKind="agui-activity" slotId={slotId}>
+    <ComponentHostBoundary key={slotId} slotKind="agui-activity" slotId={slotId}>
       {children ?? placeholder ?? (
         <div
           className="rounded border border-dashed border-zinc-300 bg-zinc-50 p-4 text-sm text-zinc-600"
@@ -73,7 +79,7 @@ export function AgUiActivitySlot({ slotId, children, placeholder }: SlotProps) {
 
 export function ControlledComponentSlot({ slotId, children, placeholder }: SlotProps) {
   return (
-    <ComponentHostBoundary slotKind="controlled-component" slotId={slotId}>
+    <ComponentHostBoundary key={slotId} slotKind="controlled-component" slotId={slotId}>
       {children ?? placeholder ?? (
         <div
           className="rounded border border-dashed border-zinc-300 bg-zinc-50 p-4 text-sm text-zinc-600"

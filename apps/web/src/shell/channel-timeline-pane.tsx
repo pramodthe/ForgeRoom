@@ -7,7 +7,7 @@ type ChannelTimelinePaneProps = {
 
 export function ChannelTimelinePane({ channel }: ChannelTimelinePaneProps) {
   return (
-    <section className="flex h-full min-w-0 flex-1 flex-col bg-white">
+    <section className="flex h-full min-w-0 flex-1 flex-col bg-white" key={channel.id}>
       <header className="border-b border-zinc-200 px-4 py-3">
         <h1 className="text-lg font-semibold text-zinc-900">{channel.name}</h1>
         <p className="mt-1 text-sm text-zinc-600">{channel.mission_brief}</p>
