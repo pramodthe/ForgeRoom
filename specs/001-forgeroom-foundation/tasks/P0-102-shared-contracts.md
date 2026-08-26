@@ -45,7 +45,7 @@ Run typecheck, contract parse/reject unit tests and public-package boundary test
   - `apps/worker/src/{index,index.test}.ts`, `apps/worker/package.json`, `pnpm-lock.yaml`
 - Commands: exact Node 22.12 / pnpm 10.34.5 frozen install, `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm build`, import smoke, and `git diff --check` — all passed (2026-08-25).
 - Test names/results:
-  - `@forgeroom/contracts` 57 passed across 8 files: closed P0 command surface; strict 11-variant worker commands; safe nested payloads/prototype keys/finite JSON; activity and state revision/value/authority rules; PauseGroup atomic resume and immutable approval identity; controlled component grants, safe replay and interaction boundaries; records, exports and typed P0 unsupported capabilities.
+  - `@forgeroom/contracts` 59 passed across 8 files: closed P0 command surface; strict 11-variant worker commands; safe nested payloads/prototype keys/finite JSON; activity and state revision/value/authority rules; invariant-safe PauseGroup and controlled-UI deltas; PauseGroup atomic resume and immutable approval identity; controlled component grants, safe replay and interaction boundaries; records, exports and typed P0 unsupported capabilities.
   - `@forgeroom/worker` 2 passed: standalone process and shared-contract validation before production command dispatch.
   - `@forgeroom/domain` 2 passed: schema identity re-export; closed task/run/draft transitions.
   - `@forgeroom/web` imports `CONTRACT_RELEASE` from `@forgeroom/contracts` (not a local duplicate).
@@ -64,9 +64,10 @@ Run typecheck, contract parse/reject unit tests and public-package boundary test
 - 2026-08-25 — Independent review requested changes: safe-payload filtering, JSON Patch revision/path enforcement, approval bindings, controlled-UI contracts, missing P0 commands and worker package consumption remain blocking.
 - 2026-08-25 — Addressed all 11 Qodo findings: hardened payload and prototype-key safety; bound activity/state revisions and authority lanes; completed command, PauseGroup, approval, controlled-UI and replay contracts; and routed worker dispatch through the shared discriminated command union.
 - 2026-08-25 — Two independent adversarial audits reported no remaining code blockers in the P0-102/Qodo scope; contracts and worker typechecks plus 59 targeted tests passed.
+- 2026-08-25 — Addressed two follow-up Qodo correctness findings: invariant-coupled activity and channel-state deltas now prove their base fields with JSON Patch tests and validate the reconstructed final PauseGroup or controlled-UI state; contracts and worker now have 61 targeted tests.
 
 ## Handoff
 
 - Outcome: Browser and API import one closed Zod contract set for P0 identity, channels, coworkers, Tasks, Skills, Runs, envelopes, pauses, artifacts, controlled UI, and channel vs thread state; iframe/open-UI and upstream AG-UI adapters fail closed.
-- Open risks: no known local P0-102 contract blockers. A fresh Qodo review is pending after the remediation commit is pushed. P0-211 still owns exact `@ag-ui/*` schema adapters after P0-210 freezes versions.
+- Open risks: no known local P0-102 contract blockers. A fresh Qodo review is pending after the follow-up remediation commit is pushed. P0-211 still owns exact `@ag-ui/*` schema adapters after P0-210 freezes versions.
 - Follow-up tasks: P0-103 after this task is reviewed and merged; P0-000 remains independently ready.

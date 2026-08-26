@@ -258,11 +258,15 @@ describe("channel envelope", () => {
         activityType: "forgeroom.controlled_ui.v1",
         patch: [
           { op: "test", path: "/activityRevision", value: 0 },
+          { op: "test", path: "/status", value: "building" },
+          { op: "test", path: "/renderRevision", value: null },
+          { op: "test", path: "/stateRevision", value: null },
+          { op: "replace", path: "/renderRevision", value: 1 },
           { op: "replace", path: "/status", value: "ready" },
           { op: "replace", path: "/activityRevision", value: 1 },
         ],
       }).patch,
-    ).toHaveLength(3);
+    ).toHaveLength(7);
     expect(HASH.startsWith("sha256:")).toBe(true);
     expect(NOW).toContain("2026");
   });
@@ -325,6 +329,84 @@ describe("channel envelope", () => {
         `${activityType}:${path}`,
       ).toBe(false);
     }
+  });
+
+  it("requires invariant-coupled activity fields and validates their final state", () => {
+    const controlledUiBase = {
+      type: "ACTIVITY_DELTA" as const,
+      messageId: "act_ui_1",
+      activityType: "forgeroom.controlled_ui.v1" as const,
+    };
+    const pauseGroupBase = {
+      type: "ACTIVITY_DELTA" as const,
+      messageId: "act_pause_1",
+      activityType: "forgeroom.pause_group.v1" as const,
+    };
+
+    expect(
+      activityDeltaEventSchema.safeParse({
+        ...controlledUiBase,
+        patch: [
+          { op: "test", path: "/activityRevision", value: 0 },
+          { op: "replace", path: "/status", value: "ready" },
+          { op: "replace", path: "/activityRevision", value: 1 },
+        ],
+      }).success,
+    ).toBe(false);
+    expect(
+      activityDeltaEventSchema.safeParse({
+        ...controlledUiBase,
+        patch: [
+          { op: "test", path: "/activityRevision", value: 0 },
+          { op: "test", path: "/status", value: "building" },
+          { op: "test", path: "/renderRevision", value: null },
+          { op: "test", path: "/stateRevision", value: null },
+          { op: "replace", path: "/status", value: "ready" },
+          { op: "replace", path: "/activityRevision", value: 1 },
+        ],
+      }).success,
+    ).toBe(false);
+    expect(
+      activityDeltaEventSchema.safeParse({
+        ...controlledUiBase,
+        patch: [
+          { op: "test", path: "/activityRevision", value: 0 },
+          { op: "test", path: "/status", value: "ready" },
+          { op: "test", path: "/renderRevision", value: null },
+          { op: "test", path: "/stateRevision", value: null },
+          { op: "replace", path: "/renderRevision", value: 1 },
+          { op: "replace", path: "/activityRevision", value: 1 },
+        ],
+      }).success,
+    ).toBe(false);
+    expect(
+      activityDeltaEventSchema.safeParse({
+        ...pauseGroupBase,
+        patch: [
+          { op: "test", path: "/activityRevision", value: 0 },
+          { op: "test", path: "/state", value: "collecting" },
+          { op: "test", path: "/requiredActionCount", value: 2 },
+          { op: "test", path: "/resolvedActionCount", value: 1 },
+          { op: "replace", path: "/state", value: "ready" },
+          { op: "replace", path: "/activityRevision", value: 1 },
+        ],
+      }).success,
+    ).toBe(false);
+
+    expect(
+      activityDeltaEventSchema.safeParse({
+        ...pauseGroupBase,
+        patch: [
+          { op: "test", path: "/activityRevision", value: 0 },
+          { op: "test", path: "/state", value: "collecting" },
+          { op: "test", path: "/requiredActionCount", value: 2 },
+          { op: "test", path: "/resolvedActionCount", value: 1 },
+          { op: "replace", path: "/resolvedActionCount", value: 2 },
+          { op: "replace", path: "/state", value: "ready" },
+          { op: "replace", path: "/activityRevision", value: 1 },
+        ],
+      }).success,
+    ).toBe(true);
   });
 });
 
@@ -450,6 +532,47 @@ describe("state delta policy", () => {
         `${stateKind}:${path}`,
       ).toBe(true);
     }
+  });
+
+  it("requires coupled UI projection preconditions and validates the final projection", () => {
+    const base = {
+      type: "STATE_DELTA" as const,
+      stateKind: "channel" as const,
+      revision: 1,
+    };
+
+    for (const patch of [
+      [
+        { op: "test", path: "/revision", value: 1 },
+        { op: "replace", path: "/uiInstances/ui_1/status", value: "ready" },
+        { op: "replace", path: "/revision", value: 2 },
+      ],
+      [
+        { op: "test", path: "/revision", value: 1 },
+        { op: "test", path: "/uiInstances/ui_1/status", value: "building" },
+        { op: "test", path: "/uiInstances/ui_1/renderRevision", value: null },
+        { op: "test", path: "/uiInstances/ui_1/stateRevision", value: null },
+        { op: "replace", path: "/uiInstances/ui_1/status", value: "ready" },
+        { op: "replace", path: "/revision", value: 2 },
+      ],
+    ] as const) {
+      expect(stateDeltaEventSchema.safeParse({ ...base, patch }).success).toBe(false);
+    }
+
+    expect(
+      stateDeltaEventSchema.safeParse({
+        ...base,
+        patch: [
+          { op: "test", path: "/revision", value: 1 },
+          { op: "test", path: "/uiInstances/ui_1/status", value: "building" },
+          { op: "test", path: "/uiInstances/ui_1/renderRevision", value: null },
+          { op: "test", path: "/uiInstances/ui_1/stateRevision", value: null },
+          { op: "replace", path: "/uiInstances/ui_1/renderRevision", value: 1 },
+          { op: "replace", path: "/uiInstances/ui_1/status", value: "ready" },
+          { op: "replace", path: "/revision", value: 2 },
+        ],
+      }).success,
+    ).toBe(true);
   });
 
   it("rejects prototype-mutating record paths and snapshot keys before reconstruction", () => {

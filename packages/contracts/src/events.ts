@@ -433,6 +433,80 @@ const activityBase = {
 const coworkerWorkPhaseSchema = z.enum(["queued", "running", "interrupted", "finished", "failed"]);
 const sandboxCommandStateSchema = z.enum(["creating", "running", "completed", "failed"]);
 
+const pauseGroupActivityInvariantBaseSchema = z
+  .object({
+    state: pauseGroupStateSchema,
+    requiredActionCount: z.number().int().positive(),
+    resolvedActionCount: nonNegativeIntSchema,
+  })
+  .strict();
+
+function validatePauseGroupActivityInvariant(
+  value: z.infer<typeof pauseGroupActivityInvariantBaseSchema>,
+  ctx: z.RefinementCtx,
+): void {
+  if (value.resolvedActionCount > value.requiredActionCount) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "resolvedActionCount cannot exceed requiredActionCount",
+      path: ["resolvedActionCount"],
+    });
+  }
+  const complete = value.resolvedActionCount === value.requiredActionCount;
+  if (value.state === "collecting" && complete) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "a complete PauseGroup cannot remain collecting",
+      path: ["state"],
+    });
+  }
+  if (["ready", "resuming", "resumed", "uncertain"].includes(value.state) && !complete) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: `${value.state} requires every RequiredAction to resolve`,
+      path: ["state"],
+    });
+  }
+}
+
+const pauseGroupActivityInvariantSchema = pauseGroupActivityInvariantBaseSchema.superRefine(
+  validatePauseGroupActivityInvariant,
+);
+
+const controlledUiActivityInvariantBaseSchema = z
+  .object({
+    status: uiInstanceStatusSchema,
+    renderRevision: z.number().int().nonnegative().nullable(),
+    stateRevision: z.number().int().nonnegative().nullable(),
+  })
+  .strict();
+
+function validateControlledUiActivityInvariant(
+  value: z.infer<typeof controlledUiActivityInvariantBaseSchema>,
+  ctx: z.RefinementCtx,
+): void {
+  if (
+    value.status === "building" &&
+    (value.renderRevision !== null || value.stateRevision !== null)
+  ) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "building UI activities cannot carry committed revisions",
+    });
+  }
+  if (value.status === "ready" && value.renderRevision === null) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "ready UI activities require a committed render revision",
+      path: ["renderRevision"],
+    });
+  }
+}
+
+const controlledUiActivityInvariantSchema = controlledUiActivityInvariantBaseSchema.superRefine(
+  validateControlledUiActivityInvariant,
+);
+
 export const coworkerWorkActivitySchema = z
   .object({
     ...activityBase,
@@ -480,35 +554,10 @@ export const pauseGroupActivitySchema = z
     ...activityBase,
     activityType: z.literal("forgeroom.pause_group.v1"),
     pauseGroupId: opaqueIdSchema,
-    state: pauseGroupStateSchema,
-    requiredActionCount: z.number().int().positive(),
-    resolvedActionCount: nonNegativeIntSchema,
+    ...pauseGroupActivityInvariantBaseSchema.shape,
   })
   .strict()
-  .superRefine((value, ctx) => {
-    if (value.resolvedActionCount > value.requiredActionCount) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "resolvedActionCount cannot exceed requiredActionCount",
-        path: ["resolvedActionCount"],
-      });
-    }
-    const complete = value.resolvedActionCount === value.requiredActionCount;
-    if (value.state === "collecting" && complete) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "a complete PauseGroup cannot remain collecting",
-        path: ["state"],
-      });
-    }
-    if (["ready", "resuming", "resumed", "uncertain"].includes(value.state) && !complete) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: `${value.state} requires every RequiredAction to resolve`,
-        path: ["state"],
-      });
-    }
-  });
+  .superRefine(validatePauseGroupActivityInvariant);
 
 export const controlledUiActivitySchema = z
   .object({
@@ -518,30 +567,11 @@ export const controlledUiActivitySchema = z
     rail: p0UiRailSchema,
     componentName: p0AgentToolComponentNameSchema,
     componentVersion: z.string().min(1),
-    status: uiInstanceStatusSchema,
-    renderRevision: z.number().int().nonnegative().nullable(),
-    stateRevision: z.number().int().nonnegative().nullable(),
+    ...controlledUiActivityInvariantBaseSchema.shape,
     textAlternative: z.string().min(1),
   })
   .strict()
-  .superRefine((value, ctx) => {
-    if (
-      value.status === "building" &&
-      (value.renderRevision !== null || value.stateRevision !== null)
-    ) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "building UI activities cannot carry committed revisions",
-      });
-    }
-    if (value.status === "ready" && value.renderRevision === null) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "ready UI activities require a committed render revision",
-        path: ["renderRevision"],
-      });
-    }
-  });
+  .superRefine(validateControlledUiActivityInvariant);
 
 export const connectionActivitySchema = z
   .object({
@@ -689,6 +719,187 @@ function validateOperationValue(
   }
 }
 
+type CorrelatedPatchField = {
+  key: string;
+  path: string;
+  schema: z.ZodTypeAny;
+};
+
+function validateCorrelatedPatchInvariant(
+  patch: JsonPatchOperation[],
+  fields: readonly CorrelatedPatchField[],
+  invariantSchema: z.ZodTypeAny,
+  invariantName: string,
+  ctx: z.RefinementCtx,
+): void {
+  const fieldsByPath = new Map(fields.map((field) => [field.path, field]));
+  const interior = patch.slice(1, -1).map((operation, offset) => ({
+    index: offset + 1,
+    operation,
+  }));
+  const replacements = interior.filter(
+    ({ operation }) => operation.op === "replace" && fieldsByPath.has(operation.path),
+  );
+  if (replacements.length === 0) return;
+
+  const firstReplacementIndex = replacements[0]?.index ?? patch.length;
+  const finalValue: Record<string, unknown> = {};
+  let hasCompletePrecondition = true;
+
+  for (const field of fields) {
+    const tests = interior.filter(
+      ({ operation }) => operation.op === "test" && operation.path === field.path,
+    );
+    const test = tests[0];
+    if (tests.length !== 1 || !test || test.index >= firstReplacementIndex) {
+      hasCompletePrecondition = false;
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `${invariantName} updates must test ${field.path} exactly once before replacing any coupled field`,
+        path: ["patch", Math.min(firstReplacementIndex, patch.length - 1)],
+      });
+      continue;
+    }
+
+    if (!("value" in test.operation)) {
+      hasCompletePrecondition = false;
+      continue;
+    }
+    const parsed = field.schema.safeParse(test.operation.value);
+    if (!parsed.success) {
+      hasCompletePrecondition = false;
+      continue;
+    }
+    finalValue[field.key] = parsed.data;
+  }
+
+  if (!hasCompletePrecondition) return;
+
+  const baseResult = invariantSchema.safeParse(finalValue);
+  if (!baseResult.success) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: `${invariantName} tests must describe a valid base state: ${baseResult.error.issues[0]?.message ?? "invalid precondition"}`,
+      path: ["patch", firstReplacementIndex],
+    });
+    return;
+  }
+
+  for (const { operation } of replacements) {
+    const field = fieldsByPath.get(operation.path);
+    if (field && "value" in operation) {
+      finalValue[field.key] = operation.value;
+    }
+  }
+
+  const result = invariantSchema.safeParse(finalValue);
+  if (!result.success) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: `patch would violate ${invariantName}: ${result.error.issues[0]?.message ?? "invalid transition"}`,
+      path: ["patch", firstReplacementIndex],
+    });
+  }
+}
+
+function validateActivityPatchInvariants(
+  activityType: z.infer<typeof forgeRoomActivityTypeSchema>,
+  patch: JsonPatchOperation[],
+  ctx: z.RefinementCtx,
+): void {
+  if (activityType === "forgeroom.pause_group.v1") {
+    validateCorrelatedPatchInvariant(
+      patch,
+      [
+        { key: "state", path: "/state", schema: pauseGroupStateSchema },
+        {
+          key: "requiredActionCount",
+          path: "/requiredActionCount",
+          schema: z.number().int().positive(),
+        },
+        {
+          key: "resolvedActionCount",
+          path: "/resolvedActionCount",
+          schema: nonNegativeIntSchema,
+        },
+      ],
+      pauseGroupActivityInvariantSchema,
+      "PauseGroup activity invariants",
+      ctx,
+    );
+  }
+
+  if (activityType === "forgeroom.controlled_ui.v1") {
+    validateCorrelatedPatchInvariant(
+      patch,
+      [
+        { key: "status", path: "/status", schema: uiInstanceStatusSchema },
+        {
+          key: "renderRevision",
+          path: "/renderRevision",
+          schema: nonNegativeIntSchema.nullable(),
+        },
+        {
+          key: "stateRevision",
+          path: "/stateRevision",
+          schema: nonNegativeIntSchema.nullable(),
+        },
+      ],
+      controlledUiActivityInvariantSchema,
+      "controlled UI activity invariants",
+      ctx,
+    );
+  }
+}
+
+function escapeJsonPointerSegment(segment: string): string {
+  return segment.replace(/~/g, "~0").replace(/\//g, "~1");
+}
+
+function validateChannelUiInstancePatchInvariants(
+  patch: JsonPatchOperation[],
+  ctx: z.RefinementCtx,
+): void {
+  const coupledFields = new Set(["status", "renderRevision", "stateRevision"]);
+  const changedInstanceIds = new Set<string>();
+
+  for (const operation of patch.slice(1, -1)) {
+    const [root, recordId, field] = parseJsonPointer(operation.path);
+    if (
+      operation.op === "replace" &&
+      root === "uiInstances" &&
+      recordId &&
+      field &&
+      coupledFields.has(field)
+    ) {
+      changedInstanceIds.add(recordId);
+    }
+  }
+
+  for (const recordId of changedInstanceIds) {
+    const recordPath = `/uiInstances/${escapeJsonPointerSegment(recordId)}`;
+    validateCorrelatedPatchInvariant(
+      patch,
+      [
+        { key: "status", path: `${recordPath}/status`, schema: uiInstanceStatusSchema },
+        {
+          key: "renderRevision",
+          path: `${recordPath}/renderRevision`,
+          schema: nonNegativeIntSchema.nullable(),
+        },
+        {
+          key: "stateRevision",
+          path: `${recordPath}/stateRevision`,
+          schema: nonNegativeIntSchema.nullable(),
+        },
+      ],
+      controlledUiActivityInvariantSchema,
+      `controlled UI projection ${recordId} invariants`,
+      ctx,
+    );
+  }
+}
+
 export const forgeRoomActivityContentSchema = z.union([
   coworkerWorkActivitySchema,
   taskRecordActivitySchema,
@@ -762,6 +973,8 @@ export const activityDeltaEventSchema = z
         );
       }
     }
+
+    validateActivityPatchInvariants(value.activityType, value.patch, ctx);
   });
 
 export const stateSnapshotEventSchema = z
@@ -818,6 +1031,10 @@ export const stateDeltaEventSchema = z
             : threadStatePatchValueSchema(operation.path);
         validateOperationValue(operation, schema, index, ctx);
       }
+    }
+
+    if (value.stateKind === "channel") {
+      validateChannelUiInstancePatchInvariants(value.patch, ctx);
     }
   });
 
