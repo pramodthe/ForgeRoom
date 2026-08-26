@@ -1,7 +1,7 @@
 ---
 id: P0-104
 title: Implement owner authentication and authorization
-status: in_review
+status: done
 owner: cursor-agent
 started: 2026-08-26
 depends_on: [P0-103]
@@ -32,24 +32,25 @@ Run API tests for success, invalid login, rate limit, revoked session, forged us
 ## Completion evidence
 
 - Files changed:
-  - `apps/api/src/auth/{crypto,passwords,rate-limit,store,postgres-store,service,routes}.ts`
+  - `apps/api/src/auth/{crypto,passwords,rate-limit,store,postgres-store,service,routes,client-key}.ts`
   - `apps/api/src/{env,http,server,server.test,index,main}.ts`
   - `apps/api/package.json` (adds `@forgeroom/db`, `drizzle-orm`)
   - `packages/domain/src/{auth,auth.test}.ts`, `packages/domain/src/index.ts`
   - `apps/web/src/{auth-api,login-page,main}.ts(x)`, `apps/web/vite.config.ts` (`/api` proxy)
   - `.env.example` owner/session vars
-  - Spec status: `P0-103` done; this task claimed → in_review; `STATUS.md` / `tasks.md`
-- Security tests/results (`@forgeroom/api` 13 passed):
+- Security tests/results (`@forgeroom/api` tests green on CI):
   - login → session → logout revocation
   - invalid login → 401
   - login rate limit → 429
-  - missing CSRF / forged Origin → `csrf_failed`
+  - missing CSRF / forged Origin → `csrf_failed`; same-origin Referer accepted when Origin omitted
   - forged `X-ForgeRoom-User-Id` → `forbidden` (server-derived identity only)
-  - recent-auth probe succeeds then fails after window
+  - recent-auth probe succeeds then fails after window; future `authenticatedAt` rejected
   - `/api/auth/register` and `/api/auth/password-reset` → 404
   - production rejects `AUTH_BYPASS` and plaintext `OWNER_PASSWORD`
-- Commands: `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm build` — all passed (2026-08-26).
+  - rate-limit prune/maxKeys and valid-length dummy scrypt hash for constant-time padding
+- Commands: `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm build` — all passed locally; GitHub Actions CI green on merge head.
 - Known limitations: approval/connector product routes land in later tasks; `/api/auth/recent-probe` is the shared recent-auth gate until those exist. Default store is Postgres `auth_sessions`; set `AUTH_STORE=memory` for ephemeral local runs.
+- Merged: PR #5 (`ea3db05`) after Qodo review clean at head `a37d924` and CI success.
 
 ## Work log
 
@@ -61,9 +62,11 @@ Run API tests for success, invalid login, rate limit, revoked session, forged us
   - Verification: API tests for success, invalid login, rate limit, revoked session, forged user ID, missing CSRF, forged Origin; `pnpm lint && pnpm typecheck && pnpm test && pnpm build`.
 - 2026-08-26 — Implementation complete; moved to in_review. Qodo rules search returned no matching standards.
 - 2026-08-26 — Pre-PR Qodo review: fixed logout Origin/Referer acceptance, untrusted X-Forwarded-For rate-limit bypass, migrate+seed before listen, and env-driven auth store selection.
+- 2026-08-26 — PR #5 Qodo hardening: rate-limit prune/maxKeys, pinned scrypt params, rightmost XFF when trustProxy, reject future authenticatedAt, injected DATABASE_URL, stop/startup cleanup, valid dummy hash, AggregateError on multi-close failure.
+- 2026-08-26 — Merged to `main` (`ea3db05`); Qodo clean at head; CI green; moved to `done`.
 
 ## Handoff
 
 - Outcome: Owner login/session/logout with HttpOnly session cookie, hashed server secret, CSRF+Origin mutation guards, login rate limiting, recent-auth gate, and no registration/reset/bypass in production.
-- Open risks: GitHub Actions currently fails to schedule runs on this repo (observed on PR #4); verify Actions before merging the P0-104 PR.
-- Follow-up tasks: open PR for this branch; start **P0-000** soon (blocks fixtures, TrueForge, Composio, AG-UI, Daytona, GenUI); P0-105 waits on P0-000 + P0-104.
+- Open risks: GitHub Actions sometimes needs a PR reopen to schedule the first run on a branch; reopen works as a reliable retrigger.
+- Follow-up tasks: start/finish **P0-000** (blocks fixtures, TrueForge, Composio, AG-UI, Daytona, GenUI); P0-105 waits on P0-000 + P0-104; P0-106 unblocked on auth.
