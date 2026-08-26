@@ -56,7 +56,27 @@ export type {
   ChannelMessageCommand,
   ChannelParticipantAddCommand,
   ChannelParticipantRemoveCommand,
+  ChannelPin,
+  ChannelPinCreateCommand,
+  ChannelPinRemoveCommand,
 } from "./channels";
+
+export {
+  channelContextEnvelopeSchema,
+  channelContextRosterEntrySchema,
+  channelContextPinRefSchema,
+  channelContextSafeArtifactSchema,
+  channelContextAssignmentSchema,
+  channelContextDeltaSchema,
+} from "./context";
+export type {
+  ChannelContextEnvelope,
+  ChannelContextRosterEntry,
+  ChannelContextPinRef,
+  ChannelContextSafeArtifact,
+  ChannelContextAssignment,
+  ChannelContextDelta,
+} from "./context";
 
 export {
   coworkerDraftSchema,

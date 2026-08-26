@@ -19,3 +19,25 @@ export function startWorker(options: WorkerStartOptions = {}): WorkerHandle {
     },
   };
 }
+
+export {
+  CHANNEL_CONTEXT_VERSION,
+  MAX_CHANNEL_CONTEXT_BYTES,
+  MAX_CONTEXT_SUMMARY_CHARS,
+  MAX_CONTEXT_PINS,
+  MAX_CONTEXT_ARTIFACTS,
+  MAX_RECENT_DELTAS,
+  MAX_DELTA_SUMMARY_CHARS,
+  MAX_HUMAN_REQUEST_CHARS,
+  UNTRUSTED_CONTENT_NOTICE,
+  buildChannelContextEnvelope,
+  renderChannelContextText,
+  nextDeliveryCursor,
+  measureChannelContextBytes,
+} from "./context-envelope";
+export type {
+  BuildChannelContextInput,
+  TurnCreationStatus,
+  DeliveryCursorAdvanceInput,
+  DeliveryCursorAdvanceResult,
+} from "./context-envelope";

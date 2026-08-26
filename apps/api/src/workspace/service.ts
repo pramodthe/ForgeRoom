@@ -3,8 +3,12 @@ import type {
   AgentChannelEnvelope,
   Channel,
   ChannelArchiveCommand,
+  ChannelContextEnvelope,
   ChannelCreateCommand,
   ChannelMessageCommand,
+  ChannelPin,
+  ChannelPinCreateCommand,
+  ChannelPinRemoveCommand,
   ChannelUpdateCommand,
   CoworkerDisableCommand,
   CoworkerProfile,
@@ -12,7 +16,12 @@ import type {
   SafeJsonObject,
   SessionResponse,
 } from "@forgeroom/contracts";
-import { channelSchema, coworkerProfileSchema } from "@forgeroom/contracts";
+import { channelPinSchema, channelSchema, coworkerProfileSchema } from "@forgeroom/contracts";
+import {
+  buildChannelContextEnvelope,
+  nextDeliveryCursor,
+  type TurnCreationStatus,
+} from "@forgeroom/orchestration";
 import { randomOpaqueId } from "../auth/crypto";
 import { customAguiEvent } from "./event-builders";
 import { ChannelEventPersistenceError } from "./event-guard";
@@ -27,6 +36,7 @@ import {
   type CoworkerEditableConfig,
   type CoworkerRecord,
   type ParticipantRecord,
+  type PinRecord,
   type TaskGrantRecord,
   type WorkspaceCatalogStore,
 } from "./store";
@@ -54,6 +64,26 @@ function toChannel(row: ChannelRecord): Channel {
     next_sequence: row.nextSequence,
     created_at: row.createdAt,
     updated_at: row.updatedAt,
+  });
+}
+
+async function toChannelPin(
+  store: WorkspaceCatalogStore,
+  row: PinRecord,
+): Promise<ChannelPin> {
+  let sourceMessageId: string | null = null;
+  if (row.sourceEventId) {
+    const message = await store.getMessageByEventId(row.sourceEventId);
+    sourceMessageId = message?.id ?? null;
+  }
+  return channelPinSchema.parse({
+    id: row.id,
+    channel_id: row.channelId,
+    source_message_id: sourceMessageId,
+    source_artifact_id: row.sourceArtifactId,
+    label: row.label,
+    pinned_by: row.pinnedBy,
+    created_at: row.createdAt,
   });
 }
 
@@ -156,6 +186,49 @@ export type WorkspaceService = {
     channelId: string,
     command: ChannelMessageCommand,
   ): Promise<WorkspaceServiceResult<{ message_id: string; event_id: string; sequence: number }>>;
+  createPin(
+    session: SessionResponse,
+    channelId: string,
+    command: ChannelPinCreateCommand,
+  ): Promise<WorkspaceServiceResult<{ pin: ChannelPin; sequence: number }>>;
+  removePin(
+    session: SessionResponse,
+    channelId: string,
+    pinId: string,
+    command: ChannelPinRemoveCommand,
+  ): Promise<WorkspaceServiceResult<{ pin: ChannelPin; sequence: number }>>;
+  /**
+   * Assemble a bounded channel context envelope for a coworker turn.
+   * Full turn dispatch is later; this is the authoritative context builder.
+   */
+  buildChannelContextForTurn(input: {
+    session: SessionResponse;
+    channelId: string;
+    coworkerId: string;
+    channelAgentSessionId: string;
+    humanRequest: string;
+    assignment?: {
+      run_id: string | null;
+      run_step_id: string | null;
+      goal: string | null;
+      objective: string | null;
+    } | null;
+  }): Promise<WorkspaceServiceResult<ChannelContextEnvelope>>;
+  /**
+   * Advance the per-session delivery cursor only after confirmed/reconciled turn creation.
+   */
+  advanceSessionDeliveryCursor(input: {
+    session: SessionResponse;
+    channelAgentSessionId: string;
+    deliveredThroughSequence: number;
+    turnCreation: TurnCreationStatus;
+  }): Promise<
+    WorkspaceServiceResult<{
+      advanced: boolean;
+      last_delivered_channel_sequence: number;
+      reason: string;
+    }>
+  >;
   listEvents(
     session: SessionResponse,
     channelId: string,
@@ -259,6 +332,26 @@ export function createWorkspaceService(options?: {
       createdAt,
       draft: {
         actorKind: "system",
+        aguiEvent: customAguiEvent(type),
+      },
+    };
+  }
+
+  function pinEvent(
+    type: "pin.created" | "pin.removed",
+    actorId: string,
+    createdAt: string,
+    sourceMessageId?: string,
+  ): ChannelEventInsert {
+    return {
+      id: randomOpaqueId("evt"),
+      type,
+      actorType: "human",
+      actorId,
+      createdAt,
+      draft: {
+        actorKind: "human",
+        ...(sourceMessageId ? { sourceMessageId } : {}),
         aguiEvent: customAguiEvent(type),
       },
     };
@@ -1126,6 +1219,378 @@ export function createWorkspaceService(options?: {
         }
         throw error;
       }
+    },
+
+    async createPin(session, channelId, command) {
+      const loaded = await loadOwnedChannel(session, channelId);
+      if (!loaded.ok) {
+        return loaded;
+      }
+      if (loaded.value.status === "archived") {
+        return {
+          ok: false,
+          error: {
+            code: "conflict",
+            message: "Archived channels cannot accept pins.",
+            details: { reason: "channel_archived" },
+          },
+        };
+      }
+
+      let sourceEventId: string | null = null;
+      let sourceArtifactId: string | null = null;
+      let sourceMessageId: string | null = null;
+
+      if (command.source_message_id) {
+        const message = await store.getMessage(command.source_message_id);
+        if (!message || message.channelId !== channelId) {
+          return {
+            ok: false,
+            error: {
+              code: "validation_failed",
+              message: "source_message_id must reference a message in the same channel.",
+              details: { source_message_id: command.source_message_id },
+            },
+          };
+        }
+        sourceEventId = message.eventId;
+        sourceMessageId = message.id;
+      } else if (command.source_artifact_id) {
+        const artifact = await store.getArtifact(command.source_artifact_id);
+        if (!artifact || artifact.channelId !== channelId) {
+          return {
+            ok: false,
+            error: {
+              code: "validation_failed",
+              message: "source_artifact_id must reference an artifact in the same channel.",
+              details: { source_artifact_id: command.source_artifact_id },
+            },
+          };
+        }
+        sourceArtifactId = artifact.id;
+      }
+
+      const pinId = randomOpaqueId("pin");
+      return withIdempotency({
+        workspaceId: loaded.value.workspaceId,
+        commandKind: "channel.pin.create",
+        idempotencyKey: command.idempotency_key,
+        resultId: pinId,
+        reload: async (id) => {
+          const row = await store.getPin(id);
+          if (!row || row.removedAt !== null) {
+            return null;
+          }
+          const pin = await toChannelPin(store, row);
+          return { pin, sequence: -1 };
+        },
+        run: async () => {
+          const duplicate = await store.findActivePinBySource({
+            channelId,
+            sourceEventId,
+            sourceArtifactId,
+          });
+          if (duplicate) {
+            return {
+              ok: false,
+              error: {
+                code: "conflict",
+                message: "Source is already pinned in this channel.",
+                details: { pin_id: duplicate.id } as SafeJsonObject,
+              },
+            };
+          }
+          const createdAt = now().toISOString();
+          try {
+            const appended = await store.createPinWithEvent({
+              channelId,
+              event: pinEvent("pin.created", session.user.id, createdAt, sourceMessageId ?? undefined),
+              pin: {
+                id: pinId,
+                channelId,
+                sourceEventId,
+                sourceArtifactId,
+                label: command.label,
+                pinnedBy: session.user.id,
+                createdAt,
+                removedAt: null,
+              },
+            });
+            publish(appended);
+            return {
+              ok: true,
+              value: {
+                pin: await toChannelPin(store, appended.pin),
+                sequence: appended.sequence,
+              },
+            };
+          } catch (error) {
+            if (error instanceof Error && error.message.includes("pin_source_conflict")) {
+              return {
+                ok: false,
+                error: {
+                  code: "conflict",
+                  message: "Source is already pinned in this channel.",
+                },
+              };
+            }
+            if (error instanceof Error && error.message.includes("channel_archived")) {
+              return {
+                ok: false,
+                error: {
+                  code: "conflict",
+                  message: "Archived channels cannot accept pins.",
+                  details: { reason: "channel_archived" },
+                },
+              };
+            }
+            if (error instanceof ChannelEventPersistenceError) {
+              return {
+                ok: false,
+                error: { code: "validation_failed", message: error.message },
+              };
+            }
+            throw error;
+          }
+        },
+      });
+    },
+
+    async removePin(session, channelId, pinId, command) {
+      const loaded = await loadOwnedChannel(session, channelId);
+      if (!loaded.ok) {
+        return loaded;
+      }
+      if (loaded.value.status === "archived") {
+        return {
+          ok: false,
+          error: {
+            code: "conflict",
+            message: "Archived channels cannot modify pins.",
+            details: { reason: "channel_archived" },
+          },
+        };
+      }
+      return withIdempotency({
+        workspaceId: loaded.value.workspaceId,
+        commandKind: "channel.pin.remove",
+        idempotencyKey: command.idempotency_key,
+        resultId: pinId,
+        reload: async (id) => {
+          const row = await store.getPin(id);
+          if (!row || row.channelId !== channelId || row.removedAt === null) {
+            return null;
+          }
+          return { pin: await toChannelPin(store, row), sequence: -1 };
+        },
+        run: async () => {
+          const existing = await store.getPin(pinId);
+          if (!existing || existing.channelId !== channelId) {
+            return { ok: false, error: { code: "not_found", message: "Pin not found." } };
+          }
+          if (existing.removedAt !== null) {
+            return {
+              ok: true,
+              value: { pin: await toChannelPin(store, existing), sequence: -1 },
+            };
+          }
+          let sourceMessageId: string | undefined;
+          if (existing.sourceEventId) {
+            const message = await store.getMessageByEventId(existing.sourceEventId);
+            sourceMessageId = message?.id;
+          }
+          const removedAt = now().toISOString();
+          try {
+            const appended = await store.removePinWithEvent({
+              channelId,
+              pinId,
+              removedAt,
+              event: pinEvent("pin.removed", session.user.id, removedAt, sourceMessageId),
+            });
+            publish(appended);
+            return {
+              ok: true,
+              value: {
+                pin: await toChannelPin(store, appended.pin),
+                sequence: appended.sequence,
+              },
+            };
+          } catch (error) {
+            if (error instanceof Error && error.message.includes("pin_not_found")) {
+              return { ok: false, error: { code: "not_found", message: "Pin not found." } };
+            }
+            if (error instanceof Error && error.message.includes("pin_already_removed")) {
+              const latest = await store.getPin(pinId);
+              if (latest) {
+                return {
+                  ok: true,
+                  value: { pin: await toChannelPin(store, latest), sequence: -1 },
+                };
+              }
+            }
+            if (error instanceof ChannelEventPersistenceError) {
+              return {
+                ok: false,
+                error: { code: "validation_failed", message: error.message },
+              };
+            }
+            throw error;
+          }
+        },
+      });
+    },
+
+    async buildChannelContextForTurn(input) {
+      const loaded = await loadOwnedChannel(input.session, input.channelId);
+      if (!loaded.ok) {
+        return loaded;
+      }
+      const coworker = await store.getCoworker(input.coworkerId);
+      if (!coworker || coworker.workspaceId !== loaded.value.workspaceId) {
+        return { ok: false, error: { code: "not_found", message: "Coworker not found." } };
+      }
+      const agentSession = await store.getChannelAgentSession(input.channelAgentSessionId);
+      if (
+        !agentSession ||
+        agentSession.channelId !== input.channelId ||
+        agentSession.agentProfileId !== input.coworkerId
+      ) {
+        return {
+          ok: false,
+          error: {
+            code: "not_found",
+            message: "Channel agent session not found for this coworker.",
+          },
+        };
+      }
+
+      const participants = await store.listParticipants(input.channelId);
+      const active = participants.filter((row) => row.removedAt === null);
+      const coworkers = await store.listCoworkers(loaded.value.workspaceId);
+      const coworkerById = new Map(coworkers.map((row) => [row.id, row]));
+
+      const roster = active.map((row) => {
+        if (row.participantType === "coworker") {
+          const profile = coworkerById.get(row.participantId);
+          return {
+            participant_type: "coworker" as const,
+            participant_id: row.participantId,
+            role: row.role,
+            ...(profile?.handle ? { handle: profile.handle } : {}),
+            ...(profile?.name ? { name: profile.name } : {}),
+          };
+        }
+        return {
+          participant_type: "human" as const,
+          participant_id: row.participantId,
+          role: row.role,
+          name: input.session.user.display_name,
+        };
+      });
+
+      const pinRows = await store.listActivePins(input.channelId);
+      const pins = [];
+      for (const row of pinRows) {
+        const pin = await toChannelPin(store, row);
+        pins.push({
+          id: pin.id,
+          label: pin.label,
+          source_message_id: pin.source_message_id,
+          source_artifact_id: pin.source_artifact_id,
+        });
+      }
+
+      const artifacts = (await store.listSafeArtifacts(input.channelId)).map((row) => ({
+        id: row.id,
+        name: row.name,
+        kind: row.kind,
+        mime_type: row.mimeType,
+        revision: row.revision,
+        sha256: row.sha256,
+      }));
+
+      const deltaPage = await store.listEventsAfter(
+        input.channelId,
+        agentSession.lastDeliveredChannelSequence,
+        { limit: 64 },
+      );
+      const recent_deltas = deltaPage.events.map((row) => ({
+        sequence: row.sequence,
+        type: row.type,
+        summary: `${row.type}#${row.sequence}`,
+      }));
+
+      const envelope = buildChannelContextEnvelope({
+        channel: {
+          id: loaded.value.id,
+          name: loaded.value.name,
+          mission_brief: loaded.value.missionBrief,
+          summary: loaded.value.summary,
+          expected_channel_id: input.channelId,
+        },
+        roster,
+        assignment: {
+          coworker_id: input.coworkerId,
+          run_id: input.assignment?.run_id ?? null,
+          run_step_id: input.assignment?.run_step_id ?? null,
+          goal: input.assignment?.goal ?? null,
+          objective: input.assignment?.objective ?? null,
+        },
+        pins,
+        artifacts,
+        recent_deltas,
+        human_request: input.humanRequest,
+        last_delivered_channel_sequence: agentSession.lastDeliveredChannelSequence,
+      });
+      return { ok: true, value: envelope };
+    },
+
+    async advanceSessionDeliveryCursor(input) {
+      const agentSession = await store.getChannelAgentSession(input.channelAgentSessionId);
+      if (!agentSession) {
+        return {
+          ok: false,
+          error: { code: "not_found", message: "Channel agent session not found." },
+        };
+      }
+      const denied = assertWorkspace(input.session, agentSession.workspaceId);
+      if (denied) {
+        return { ok: false, error: denied };
+      }
+      const decision = nextDeliveryCursor({
+        current_sequence: agentSession.lastDeliveredChannelSequence,
+        delivered_through_sequence: input.deliveredThroughSequence,
+        turn_creation: input.turnCreation,
+      });
+      if (!decision.advanced) {
+        return {
+          ok: true,
+          value: {
+            advanced: false,
+            last_delivered_channel_sequence: agentSession.lastDeliveredChannelSequence,
+            reason: decision.reason,
+          },
+        };
+      }
+      const updated = await store.setSessionDeliveryCursor(
+        input.channelAgentSessionId,
+        decision.next_sequence,
+        now().toISOString(),
+      );
+      if (!updated) {
+        return {
+          ok: false,
+          error: { code: "not_found", message: "Channel agent session not found." },
+        };
+      }
+      return {
+        ok: true,
+        value: {
+          advanced: true,
+          last_delivered_channel_sequence: updated.lastDeliveredChannelSequence,
+          reason: decision.reason,
+        },
+      };
     },
 
     async listEvents(session, channelId, afterSequence, options) {

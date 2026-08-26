@@ -164,6 +164,47 @@ export type MessageRecord = {
   createdAt: string;
 };
 
+export type PinRecord = {
+  id: string;
+  channelId: string;
+  sourceEventId: string | null;
+  sourceArtifactId: string | null;
+  label: string;
+  pinnedBy: string;
+  createdAt: string;
+  removedAt: string | null;
+};
+
+/** Safe artifact reference for pins/context — never includes storage credentials or sandbox paths. */
+export type SafeArtifactRecord = {
+  id: string;
+  workspaceId: string;
+  channelId: string;
+  runId: string;
+  runStepId: string;
+  creatorAgentId: string;
+  kind: "file" | "preview";
+  name: string;
+  mimeType: string;
+  byteSize: number;
+  sha256: string;
+  revision: number;
+  createdAt: string;
+};
+
+export type ChannelAgentSessionRecord = {
+  id: string;
+  workspaceId: string;
+  channelId: string;
+  agentProfileId: string;
+  logicalAguiThreadId: string;
+  currentGenerationId: string | null;
+  lastDeliveredChannelSequence: number;
+  state: "active" | "rotating" | "disabled";
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type CommandReceipt = {
   workspaceId: string;
   commandKind: string;
@@ -273,6 +314,33 @@ export type WorkspaceCatalogStore = {
   ): Promise<void>;
 
   getMessage(id: string): Promise<MessageRecord | null>;
+  getMessageByEventId(eventId: string): Promise<MessageRecord | null>;
+
+  getPin(id: string): Promise<PinRecord | null>;
+  listActivePins(channelId: string): Promise<PinRecord[]>;
+  findActivePinBySource(input: {
+    channelId: string;
+    sourceEventId?: string | null;
+    sourceArtifactId?: string | null;
+  }): Promise<PinRecord | null>;
+
+  getArtifact(id: string): Promise<SafeArtifactRecord | null>;
+  listSafeArtifacts(channelId: string): Promise<SafeArtifactRecord[]>;
+  /** Test/fixture helper — artifact storage pipeline is owned by later tasks. */
+  insertArtifact(artifact: SafeArtifactRecord): Promise<void>;
+
+  getChannelAgentSession(id: string): Promise<ChannelAgentSessionRecord | null>;
+  /** Test/fixture helper for context cursor proofs. */
+  upsertChannelAgentSession(session: ChannelAgentSessionRecord): Promise<void>;
+  /**
+   * Persist a new delivery cursor when the caller has already decided the advance is valid
+   * (confirmed/reconciled turn). Never called for pending/uncertain creation.
+   */
+  setSessionDeliveryCursor(
+    sessionId: string,
+    nextSequence: number,
+    updatedAt: string,
+  ): Promise<ChannelAgentSessionRecord | null>;
 
   listEventsAfter(
     channelId: string,
@@ -342,6 +410,21 @@ export type WorkspaceCatalogStore = {
     event: ChannelEventInsert;
     message: MessageRecord;
   }): Promise<AppendChannelEventResult>;
+
+  /** Lock channel, append pin.created event, insert pin row. */
+  createPinWithEvent(input: {
+    channelId: string;
+    event: ChannelEventInsert;
+    pin: PinRecord;
+  }): Promise<AppendChannelEventResult & { pin: PinRecord }>;
+
+  /** Lock channel, append pin.removed event, soft-delete pin. */
+  removePinWithEvent(input: {
+    channelId: string;
+    event: ChannelEventInsert;
+    pinId: string;
+    removedAt: string;
+  }): Promise<AppendChannelEventResult & { pin: PinRecord }>;
 };
 
 export function emptyEditableConfig(): CoworkerEditableConfig {
@@ -366,6 +449,9 @@ export function createMemoryWorkspaceStore(): WorkspaceCatalogStore {
   const receipts = new Map<string, CommandReceipt>();
   const events = new Map<string, ChannelEventRecord>();
   const messages = new Map<string, MessageRecord>();
+  const pins = new Map<string, PinRecord>();
+  const artifacts = new Map<string, SafeArtifactRecord>();
+  const agentSessions = new Map<string, ChannelAgentSessionRecord>();
   /** Serialize per-channel appends so concurrent callers preserve unique monotonic sequences. */
   const channelLocks = new Map<string, Promise<void>>();
 
@@ -686,6 +772,68 @@ export function createMemoryWorkspaceStore(): WorkspaceCatalogStore {
     async getMessage(id) {
       return messages.get(id) ?? null;
     },
+    async getMessageByEventId(eventId) {
+      return [...messages.values()].find((row) => row.eventId === eventId) ?? null;
+    },
+    async getPin(id) {
+      const row = pins.get(id);
+      return row ? structuredClone(row) : null;
+    },
+    async listActivePins(channelId) {
+      return [...pins.values()]
+        .filter((row) => row.channelId === channelId && row.removedAt === null)
+        .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+        .map((row) => structuredClone(row));
+    },
+    async findActivePinBySource(input) {
+      return (
+        [...pins.values()].find((row) => {
+          if (row.channelId !== input.channelId || row.removedAt !== null) {
+            return false;
+          }
+          if (input.sourceEventId) {
+            return row.sourceEventId === input.sourceEventId;
+          }
+          if (input.sourceArtifactId) {
+            return row.sourceArtifactId === input.sourceArtifactId;
+          }
+          return false;
+        }) ?? null
+      );
+    },
+    async getArtifact(id) {
+      const row = artifacts.get(id);
+      return row ? structuredClone(row) : null;
+    },
+    async listSafeArtifacts(channelId) {
+      return [...artifacts.values()]
+        .filter((row) => row.channelId === channelId)
+        .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+        .map((row) => structuredClone(row));
+    },
+    async insertArtifact(artifact) {
+      artifacts.set(artifact.id, structuredClone(artifact));
+    },
+    async getChannelAgentSession(id) {
+      const row = agentSessions.get(id);
+      return row ? structuredClone(row) : null;
+    },
+    async upsertChannelAgentSession(session) {
+      agentSessions.set(session.id, structuredClone(session));
+    },
+    async setSessionDeliveryCursor(sessionId, nextSequence, updatedAt) {
+      const existing = agentSessions.get(sessionId);
+      if (!existing) {
+        return null;
+      }
+      const next = {
+        ...existing,
+        lastDeliveredChannelSequence: nextSequence,
+        updatedAt,
+      };
+      agentSessions.set(sessionId, next);
+      return structuredClone(next);
+    },
     async listEventsAfter(channelId, afterSequence, options) {
       const limit = clampEventLimit(options?.limit);
       const rows = [...events.values()]
@@ -768,6 +916,54 @@ export function createMemoryWorkspaceStore(): WorkspaceCatalogStore {
           message: input.message,
         }),
       );
+    },
+    async createPinWithEvent(input) {
+      return withChannelLock(input.channelId, () => {
+        if (input.pin.channelId !== input.channelId) {
+          throw new Error("pin channel mismatch");
+        }
+        const sourceCount =
+          Number(input.pin.sourceEventId !== null) + Number(input.pin.sourceArtifactId !== null);
+        if (sourceCount !== 1) {
+          throw new Error("pin must reference exactly one source");
+        }
+        const duplicate = [...pins.values()].find((row) => {
+          if (row.channelId !== input.channelId || row.removedAt !== null) {
+            return false;
+          }
+          if (input.pin.sourceEventId) {
+            return row.sourceEventId === input.pin.sourceEventId;
+          }
+          return row.sourceArtifactId === input.pin.sourceArtifactId;
+        });
+        if (duplicate) {
+          throw new Error("pin_source_conflict");
+        }
+        const appended = appendEventLocked({
+          channelId: input.channelId,
+          event: input.event,
+        });
+        pins.set(input.pin.id, structuredClone(input.pin));
+        return { ...appended, pin: structuredClone(input.pin) };
+      });
+    },
+    async removePinWithEvent(input) {
+      return withChannelLock(input.channelId, () => {
+        const existing = pins.get(input.pinId);
+        if (!existing || existing.channelId !== input.channelId) {
+          throw new Error("pin_not_found");
+        }
+        if (existing.removedAt !== null) {
+          throw new Error("pin_already_removed");
+        }
+        const appended = appendEventLocked({
+          channelId: input.channelId,
+          event: input.event,
+        });
+        const removed = { ...existing, removedAt: input.removedAt };
+        pins.set(removed.id, removed);
+        return { ...appended, pin: structuredClone(removed) };
+      });
     },
   };
 }

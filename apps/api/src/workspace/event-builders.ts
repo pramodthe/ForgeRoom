@@ -6,7 +6,9 @@ export type CustomSourceEventName =
   | "channel.archived"
   | "participant.added"
   | "participant.removed"
-  | "message.created";
+  | "message.created"
+  | "pin.created"
+  | "pin.removed";
 
 export function customAguiEvent(name: CustomSourceEventName): P0PersistedAguiEvent {
   return {

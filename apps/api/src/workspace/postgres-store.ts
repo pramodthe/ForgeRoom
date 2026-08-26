@@ -1,7 +1,10 @@
 import {
   agentProfiles,
   agentVersions,
+  artifacts,
+  channelAgentSessions,
   channelParticipants,
+  channelPins,
   channels,
   createDb,
   createSql,
@@ -15,6 +18,7 @@ import { clampEventLimit } from "./event-read";
 import { hashAguiEvent, materializeChannelEvent } from "./event-persist";
 import type {
   AppendChannelEventResult,
+  ChannelAgentSessionRecord,
   ChannelEventInsert,
   ChannelEventRecord,
   ChannelPatch,
@@ -28,6 +32,8 @@ import type {
   MembershipWriteResult,
   MessageRecord,
   ParticipantRecord,
+  PinRecord,
+  SafeArtifactRecord,
   TaskGrantRecord,
   WorkspaceCatalogStore,
 } from "./store";
@@ -157,6 +163,52 @@ function mapMessage(row: typeof messages.$inferSelect): MessageRecord {
     body: row.body,
     parentMessageId: row.parentMessageId,
     createdAt: asIso(row.createdAt),
+  };
+}
+
+function mapPin(row: typeof channelPins.$inferSelect): PinRecord {
+  return {
+    id: row.id,
+    channelId: row.channelId,
+    sourceEventId: row.sourceEventId,
+    sourceArtifactId: row.sourceArtifactId,
+    label: row.label,
+    pinnedBy: row.pinnedBy,
+    createdAt: asIso(row.createdAt),
+    removedAt: row.removedAt ? asIso(row.removedAt) : null,
+  };
+}
+
+function mapSafeArtifact(row: typeof artifacts.$inferSelect): SafeArtifactRecord {
+  return {
+    id: row.id,
+    workspaceId: row.workspaceId,
+    channelId: row.channelId,
+    runId: row.runId,
+    runStepId: row.runStepId,
+    creatorAgentId: row.creatorAgentId,
+    kind: row.kind as SafeArtifactRecord["kind"],
+    name: row.name,
+    mimeType: row.mimeType,
+    byteSize: row.byteSize,
+    sha256: row.sha256,
+    revision: row.revision,
+    createdAt: asIso(row.createdAt),
+  };
+}
+
+function mapAgentSession(row: typeof channelAgentSessions.$inferSelect): ChannelAgentSessionRecord {
+  return {
+    id: row.id,
+    workspaceId: row.workspaceId,
+    channelId: row.channelId,
+    agentProfileId: row.agentProfileId,
+    logicalAguiThreadId: row.logicalAguiThreadId,
+    currentGenerationId: row.currentGenerationId,
+    lastDeliveredChannelSequence: row.lastDeliveredChannelSequence,
+    state: row.state as ChannelAgentSessionRecord["state"],
+    createdAt: asIso(row.createdAt),
+    updatedAt: asIso(row.updatedAt),
   };
 }
 
@@ -903,6 +955,148 @@ export function createPostgresWorkspaceStore(sql: SqlClient): WorkspaceCatalogSt
       const rows = await db.select().from(messages).where(eq(messages.id, id)).limit(1);
       return rows[0] ? mapMessage(rows[0]) : null;
     },
+    async getMessageByEventId(eventId) {
+      const rows = await db.select().from(messages).where(eq(messages.eventId, eventId)).limit(1);
+      return rows[0] ? mapMessage(rows[0]) : null;
+    },
+    async getPin(id) {
+      const rows = await db.select().from(channelPins).where(eq(channelPins.id, id)).limit(1);
+      return rows[0] ? mapPin(rows[0]) : null;
+    },
+    async listActivePins(channelId) {
+      const rows = await db
+        .select()
+        .from(channelPins)
+        .where(and(eq(channelPins.channelId, channelId), isNull(channelPins.removedAt)));
+      return rows
+        .map(mapPin)
+        .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+    },
+    async findActivePinBySource(input) {
+      const rows = await db
+        .select()
+        .from(channelPins)
+        .where(and(eq(channelPins.channelId, input.channelId), isNull(channelPins.removedAt)));
+      const match = rows.find((row) => {
+        if (input.sourceEventId) {
+          return row.sourceEventId === input.sourceEventId;
+        }
+        if (input.sourceArtifactId) {
+          return row.sourceArtifactId === input.sourceArtifactId;
+        }
+        return false;
+      });
+      return match ? mapPin(match) : null;
+    },
+    async getArtifact(id) {
+      const rows = await db.select().from(artifacts).where(eq(artifacts.id, id)).limit(1);
+      return rows[0] ? mapSafeArtifact(rows[0]) : null;
+    },
+    async listSafeArtifacts(channelId) {
+      const rows = await db.select().from(artifacts).where(eq(artifacts.channelId, channelId));
+      return rows
+        .map(mapSafeArtifact)
+        .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+    },
+    async insertArtifact(artifact) {
+      await sql`
+        INSERT INTO artifacts (
+          id, workspace_id, channel_id, run_id, run_step_id, creator_agent_id,
+          kind, name, mime_type, storage_key, byte_size, sha256,
+          source_sandbox_id, source_sandbox_path, revision, metadata_json, created_at
+        )
+        VALUES (
+          ${artifact.id},
+          ${artifact.workspaceId},
+          ${artifact.channelId},
+          ${artifact.runId},
+          ${artifact.runStepId},
+          ${artifact.creatorAgentId},
+          ${artifact.kind},
+          ${artifact.name},
+          ${artifact.mimeType},
+          ${`fixture://${artifact.id}`},
+          ${artifact.byteSize},
+          ${artifact.sha256},
+          NULL,
+          NULL,
+          ${artifact.revision},
+          ${JSON.stringify({})}::jsonb,
+          ${artifact.createdAt}
+        )
+      `;
+    },
+    async getChannelAgentSession(id) {
+      const rows = await db
+        .select()
+        .from(channelAgentSessions)
+        .where(eq(channelAgentSessions.id, id))
+        .limit(1);
+      return rows[0] ? mapAgentSession(rows[0]) : null;
+    },
+    async upsertChannelAgentSession(session) {
+      await sql`
+        INSERT INTO channel_agent_sessions (
+          id, workspace_id, channel_id, agent_profile_id, logical_agui_thread_id,
+          current_generation_id, last_delivered_channel_sequence, state, created_at, updated_at
+        )
+        VALUES (
+          ${session.id},
+          ${session.workspaceId},
+          ${session.channelId},
+          ${session.agentProfileId},
+          ${session.logicalAguiThreadId},
+          ${session.currentGenerationId},
+          ${session.lastDeliveredChannelSequence},
+          ${session.state},
+          ${session.createdAt},
+          ${session.updatedAt}
+        )
+        ON CONFLICT (id) DO UPDATE SET
+          last_delivered_channel_sequence = EXCLUDED.last_delivered_channel_sequence,
+          state = EXCLUDED.state,
+          current_generation_id = EXCLUDED.current_generation_id,
+          updated_at = EXCLUDED.updated_at
+      `;
+    },
+    async setSessionDeliveryCursor(sessionId, nextSequence, updatedAt) {
+      const rows = await sql<
+        {
+          id: string;
+          workspace_id: string;
+          channel_id: string;
+          agent_profile_id: string;
+          logical_agui_thread_id: string;
+          current_generation_id: string | null;
+          last_delivered_channel_sequence: number;
+          state: string;
+          created_at: string | Date;
+          updated_at: string | Date;
+        }[]
+      >`
+        UPDATE channel_agent_sessions
+        SET last_delivered_channel_sequence = ${nextSequence},
+            updated_at = ${updatedAt}
+        WHERE id = ${sessionId}
+        RETURNING *
+      `;
+      const row = rows[0];
+      if (!row) {
+        return null;
+      }
+      return {
+        id: row.id,
+        workspaceId: row.workspace_id,
+        channelId: row.channel_id,
+        agentProfileId: row.agent_profile_id,
+        logicalAguiThreadId: row.logical_agui_thread_id,
+        currentGenerationId: row.current_generation_id,
+        lastDeliveredChannelSequence: row.last_delivered_channel_sequence,
+        state: row.state as ChannelAgentSessionRecord["state"],
+        createdAt: asIso(row.created_at),
+        updatedAt: asIso(row.updated_at),
+      } satisfies ChannelAgentSessionRecord;
+    },
     async listEventsAfter(channelId, afterSequence, options) {
       const limit = clampEventLimit(options?.limit);
       const rows = await sql<
@@ -1191,6 +1385,214 @@ export function createPostgresWorkspaceStore(sql: SqlClient): WorkspaceCatalogSt
         channelId: input.channelId,
         event: input.event,
         message: input.message,
+      });
+    },
+    async createPinWithEvent(input) {
+      return sql.begin(async (tx) => {
+        if (input.pin.channelId !== input.channelId) {
+          throw new Error("pin channel mismatch");
+        }
+        const sourceCount =
+          Number(input.pin.sourceEventId !== null) + Number(input.pin.sourceArtifactId !== null);
+        if (sourceCount !== 1) {
+          throw new Error("pin must reference exactly one source");
+        }
+        const locked = await tx<
+          {
+            id: string;
+            workspace_id: string;
+            name: string;
+            mission_brief: string;
+            summary: string | null;
+            policy_json: unknown;
+            next_sequence: number;
+            status: string;
+            created_by: string;
+            created_at: string | Date;
+            updated_at: string | Date;
+          }[]
+        >`
+          SELECT *
+          FROM channels
+          WHERE id = ${input.channelId}
+          FOR UPDATE
+        `;
+        const current = locked[0];
+        if (!current) {
+          throw new Error(`channel ${input.channelId} not found`);
+        }
+        if (current.status === "archived") {
+          throw new Error("channel_archived");
+        }
+        const conflict = await tx<
+          { id: string }[]
+        >`
+          SELECT id
+          FROM channel_pins
+          WHERE channel_id = ${input.channelId}
+            AND removed_at IS NULL
+            AND (
+              (${input.pin.sourceEventId}::text IS NOT NULL AND source_event_id = ${input.pin.sourceEventId})
+              OR (${input.pin.sourceArtifactId}::text IS NOT NULL AND source_artifact_id = ${input.pin.sourceArtifactId})
+            )
+          LIMIT 1
+        `;
+        if (conflict.length > 0) {
+          throw new Error("pin_source_conflict");
+        }
+        const sequence = current.next_sequence;
+        const written = await insertDurableEventSql(
+          tx as unknown as SqlClient,
+          input.channelId,
+          sequence,
+          input.event,
+        );
+        const nextSequence = sequence + 1;
+        await tx`
+          UPDATE channels
+          SET next_sequence = ${nextSequence},
+              updated_at = ${input.event.createdAt}
+          WHERE id = ${input.channelId}
+        `;
+        await tx`
+          INSERT INTO channel_pins (
+            id, channel_id, source_event_id, source_artifact_id,
+            label, pinned_by, created_at, removed_at
+          )
+          VALUES (
+            ${input.pin.id},
+            ${input.pin.channelId},
+            ${input.pin.sourceEventId},
+            ${input.pin.sourceArtifactId},
+            ${input.pin.label},
+            ${input.pin.pinnedBy},
+            ${input.pin.createdAt},
+            ${input.pin.removedAt}
+          )
+        `;
+        return {
+          sequence,
+          channel: {
+            id: current.id,
+            workspaceId: current.workspace_id,
+            name: current.name,
+            missionBrief: current.mission_brief,
+            summary: current.summary,
+            policyJson: (current.policy_json ?? {}) as Record<string, unknown>,
+            nextSequence,
+            status: current.status as ChannelRecord["status"],
+            createdBy: current.created_by,
+            createdAt: asIso(current.created_at),
+            updatedAt: input.event.createdAt,
+          },
+          envelope: written.envelope,
+          event: written.event,
+          pin: structuredClone(input.pin),
+        } satisfies AppendChannelEventResult & { pin: PinRecord };
+      });
+    },
+    async removePinWithEvent(input) {
+      return sql.begin(async (tx) => {
+        const locked = await tx<
+          {
+            id: string;
+            workspace_id: string;
+            name: string;
+            mission_brief: string;
+            summary: string | null;
+            policy_json: unknown;
+            next_sequence: number;
+            status: string;
+            created_by: string;
+            created_at: string | Date;
+            updated_at: string | Date;
+          }[]
+        >`
+          SELECT *
+          FROM channels
+          WHERE id = ${input.channelId}
+          FOR UPDATE
+        `;
+        const current = locked[0];
+        if (!current) {
+          throw new Error(`channel ${input.channelId} not found`);
+        }
+        if (current.status === "archived") {
+          throw new Error("channel_archived");
+        }
+        const pinRows = await tx<
+          {
+            id: string;
+            channel_id: string;
+            source_event_id: string | null;
+            source_artifact_id: string | null;
+            label: string;
+            pinned_by: string;
+            created_at: string | Date;
+            removed_at: string | Date | null;
+          }[]
+        >`
+          SELECT *
+          FROM channel_pins
+          WHERE id = ${input.pinId}
+            AND channel_id = ${input.channelId}
+          FOR UPDATE
+        `;
+        const pinRow = pinRows[0];
+        if (!pinRow) {
+          throw new Error("pin_not_found");
+        }
+        if (pinRow.removed_at !== null) {
+          throw new Error("pin_already_removed");
+        }
+        const sequence = current.next_sequence;
+        const written = await insertDurableEventSql(
+          tx as unknown as SqlClient,
+          input.channelId,
+          sequence,
+          input.event,
+        );
+        const nextSequence = sequence + 1;
+        await tx`
+          UPDATE channels
+          SET next_sequence = ${nextSequence},
+              updated_at = ${input.event.createdAt}
+          WHERE id = ${input.channelId}
+        `;
+        await tx`
+          UPDATE channel_pins
+          SET removed_at = ${input.removedAt}
+          WHERE id = ${input.pinId}
+        `;
+        const pin: PinRecord = {
+          id: pinRow.id,
+          channelId: pinRow.channel_id,
+          sourceEventId: pinRow.source_event_id,
+          sourceArtifactId: pinRow.source_artifact_id,
+          label: pinRow.label,
+          pinnedBy: pinRow.pinned_by,
+          createdAt: asIso(pinRow.created_at),
+          removedAt: input.removedAt,
+        };
+        return {
+          sequence,
+          channel: {
+            id: current.id,
+            workspaceId: current.workspace_id,
+            name: current.name,
+            missionBrief: current.mission_brief,
+            summary: current.summary,
+            policyJson: (current.policy_json ?? {}) as Record<string, unknown>,
+            nextSequence,
+            status: current.status as ChannelRecord["status"],
+            createdBy: current.created_by,
+            createdAt: asIso(current.created_at),
+            updatedAt: input.event.createdAt,
+          },
+          envelope: written.envelope,
+          event: written.event,
+          pin,
+        } satisfies AppendChannelEventResult & { pin: PinRecord };
       });
     },
   };
