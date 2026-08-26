@@ -3,6 +3,7 @@ import {
   agentChannelEnvelopeSchema,
   channelSchema,
   sessionResponseSchema,
+  type AgentChannelEnvelope,
 } from "@forgeroom/contracts";
 import { withMigratedDatabase } from "@forgeroom/db/test-harness";
 import { loadApiEnv } from "../env";
@@ -11,11 +12,12 @@ import { createAuthService } from "../auth/service";
 import { createMemoryAuthStore } from "../auth/store";
 import { createPostgresAuthStore } from "../auth/postgres-store";
 import { assertPersistableChannelEnvelope, ChannelEventPersistenceError } from "./event-guard";
-import { customAguiEvent } from "./event-builders";
+import { buildEnvelope, customAguiEvent } from "./event-builders";
 import { createChannelEventHub } from "./event-hub";
 import { createPostgresWorkspaceStore } from "./postgres-store";
-import { createWorkspaceService } from "./service";
+import { createWorkspaceService, type WorkspaceService } from "./service";
 import { createMemoryWorkspaceStore, type WorkspaceCatalogStore } from "./store";
+import { drainThroughSequence } from "./event-stream";
 
 const PASSWORD = "correct-horse-battery";
 
@@ -25,7 +27,10 @@ function withoutRequestId(body: unknown): Record<string, unknown> {
   return rest;
 }
 
-async function createTestApp(options?: { workspaceStore?: WorkspaceCatalogStore }) {
+async function createTestApp(options?: {
+  workspaceStore?: WorkspaceCatalogStore;
+  wrapWorkspace?: (workspace: WorkspaceService) => WorkspaceService;
+}) {
   const authStore = createMemoryAuthStore();
   const workspaceStore = options?.workspaceStore ?? createMemoryWorkspaceStore();
   const eventHub = createChannelEventHub();
@@ -43,7 +48,10 @@ async function createTestApp(options?: { workspaceStore?: WorkspaceCatalogStore 
     SESSION_TTL_SECONDS: "3600",
   });
   const auth = createAuthService({ env, store: authStore });
-  const workspace = createWorkspaceService({ store: workspaceStore, eventHub });
+  let workspace = createWorkspaceService({ store: workspaceStore, eventHub });
+  if (options?.wrapWorkspace) {
+    workspace = options.wrapWorkspace(workspace);
+  }
   await auth.seedOwner();
   return {
     app: createApiApp({ env, auth, workspace }),
@@ -378,6 +386,172 @@ describe("P0-107 channel event log and SSE", () => {
 
     // Direct hub publish proves catch-up path can also see in-process fan-out.
     expect(workspace.subscribeChannelEvents).toBeTypeOf("function");
+
+    controller.abort();
+    await reader.cancel().catch(() => undefined);
+  });
+
+  it("drainThroughSequence advances past skipped sequences without emitting them", () => {
+    const pending = new Map<number, AgentChannelEnvelope>([
+      [
+        2,
+        buildEnvelope(2, {
+          channelId: "ch",
+          actorKind: "human",
+          sourceMessageId: "msg_2",
+          aguiEvent: customAguiEvent("message.created"),
+        }),
+      ],
+    ]);
+    const drained = drainThroughSequence(0, 2, pending);
+    expect(drained.lastSent).toBe(2);
+    expect(drained.toEmit.map((e) => e.channelSequence)).toEqual([2]);
+    expect(pending.size).toBe(0);
+  });
+
+  it("SSE advances past unparseable sequences so later events are not stalled", async () => {
+    const { app, env } = await createTestApp({
+      wrapWorkspace: (base) => ({
+        ...base,
+        async listEvents(session, channelId, afterSequence, options) {
+          const page = await base.listEvents(session, channelId, afterSequence, options);
+          if (!page.ok) {
+            return page;
+          }
+          return {
+            ok: true,
+            value: {
+              ...page.value,
+              // Simulate envelopeFromStoredEvent returning null for sequence 1.
+              events: page.value.events.filter((envelope) => envelope.channelSequence !== 1),
+            },
+          };
+        },
+      }),
+    });
+    const { session, cookie } = await login(app, env);
+    const channel = await createChannel(app, env, cookie, session.csrf_token, "Skip", "idem_skip");
+
+    for (const body of ["first", "second"]) {
+      const posted = await app.request(`/api/channels/${channel.id}/messages`, {
+        method: "POST",
+        headers: mutationHeaders(env, cookie, session.csrf_token),
+        body: JSON.stringify({
+          body,
+          recipient_handles: [],
+          routing_mode: "direct",
+          parent_message_id: null,
+        }),
+      });
+      expect(posted.status).toBe(201);
+    }
+
+    const controller = new AbortController();
+    const streamResponse = await app.request(`/api/channels/${channel.id}/stream`, {
+      headers: {
+        cookie: `${env.sessionCookieName}=${cookie}`,
+        "Last-Event-ID": "-1",
+        accept: "text/event-stream",
+      },
+      signal: controller.signal,
+    });
+    expect(streamResponse.status).toBe(200);
+
+    const reader = streamResponse.body!.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    const sequences: number[] = [];
+
+    const deadline = Date.now() + 3_000;
+    while (!sequences.includes(2) && Date.now() < deadline) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      for (const block of parseSseBlocks(buffer)) {
+        if (block.event === "channel_event") {
+          const envelope = agentChannelEnvelopeSchema.parse(JSON.parse(block.data));
+          if (!sequences.includes(envelope.channelSequence)) {
+            sequences.push(envelope.channelSequence);
+          }
+        }
+      }
+      const lastSep = buffer.lastIndexOf("\n\n");
+      if (lastSep >= 0) {
+        buffer = buffer.slice(lastSep + 2);
+      }
+    }
+
+    expect(sequences).toContain(0);
+    expect(sequences).not.toContain(1);
+    expect(sequences).toContain(2);
+
+    controller.abort();
+    await reader.cancel().catch(() => undefined);
+  });
+
+  it("SSE poll failure emits error without deadlocking the write chain", async () => {
+    let listCalls = 0;
+    const { app, env } = await createTestApp({
+      wrapWorkspace: (base) => ({
+        ...base,
+        async listEvents(session, channelId, afterSequence, options) {
+          listCalls += 1;
+          // Replay + catch-up succeed; live DB polls fail.
+          if (listCalls >= 3) {
+            return {
+              ok: false,
+              error: { code: "forbidden", message: "simulated poll failure" },
+            };
+          }
+          return base.listEvents(session, channelId, afterSequence, options);
+        },
+      }),
+    });
+    const { session, cookie } = await login(app, env);
+    const channel = await createChannel(
+      app,
+      env,
+      cookie,
+      session.csrf_token,
+      "PollFail",
+      "idem_poll_fail",
+    );
+
+    const controller = new AbortController();
+    const streamResponse = await app.request(`/api/channels/${channel.id}/stream`, {
+      headers: {
+        cookie: `${env.sessionCookieName}=${cookie}`,
+        accept: "text/event-stream",
+      },
+      signal: controller.signal,
+    });
+    expect(streamResponse.status).toBe(200);
+
+    const reader = streamResponse.body!.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let errorPayload: { code?: string; message?: string } | null = null;
+
+    const deadline = Date.now() + 3_000;
+    while (!errorPayload && Date.now() < deadline) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      for (const block of parseSseBlocks(buffer)) {
+        if (block.event === "error") {
+          errorPayload = JSON.parse(block.data) as { code?: string; message?: string };
+        }
+      }
+      const lastSep = buffer.lastIndexOf("\n\n");
+      if (lastSep >= 0) {
+        buffer = buffer.slice(lastSep + 2);
+      }
+    }
+
+    expect(errorPayload).toMatchObject({
+      code: "forbidden",
+      message: "simulated poll failure",
+    });
 
     controller.abort();
     await reader.cancel().catch(() => undefined);

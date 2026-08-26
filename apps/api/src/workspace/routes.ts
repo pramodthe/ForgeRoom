@@ -22,6 +22,7 @@ import {
   requireParam,
   requireSession,
 } from "../http-guards";
+import { drainThroughSequence } from "./event-stream";
 import type { WorkspaceService, WorkspaceServiceError } from "./service";
 
 function fail(c: Context, error: WorkspaceServiceError) {
@@ -343,7 +344,16 @@ export function mountWorkspaceRoutes(
         return writeChain;
       };
 
-      const writeEnvelopeOrdered = async (envelope: AgentChannelEnvelope) => {
+      const emitEnvelope = async (envelope: AgentChannelEnvelope) => {
+        await stream.writeSSE({
+          id: String(envelope.channelSequence),
+          event: "channel_event",
+          data: JSON.stringify(envelope),
+        });
+      };
+
+      /** Buffer a valid envelope, then emit contiguous pending from lastSent+1. */
+      const bufferEnvelope = async (envelope: AgentChannelEnvelope) => {
         if (closed || envelope.channelSequence <= lastSent) {
           return;
         }
@@ -352,16 +362,40 @@ export function mountWorkspaceRoutes(
           const next = pending.get(lastSent + 1)!;
           pending.delete(lastSent + 1);
           lastSent = next.channelSequence;
-          await stream.writeSSE({
-            id: String(next.channelSequence),
-            event: "channel_event",
-            data: JSON.stringify(next),
-          });
+          await emitEnvelope(next);
         }
       };
 
+      /**
+       * After observing DB through `throughSequence`, emit pending envelopes and
+       * skip any sequences with no valid envelope so gaps cannot stall the stream.
+       */
+      const observeThrough = async (throughSequence: number) => {
+        if (closed || throughSequence <= lastSent) {
+          return;
+        }
+        const drained = drainThroughSequence(lastSent, throughSequence, pending);
+        lastSent = drained.lastSent;
+        for (const envelope of drained.toEmit) {
+          if (closed) return;
+          await emitEnvelope(envelope);
+        }
+      };
+
+      const applyEventPage = async (page: {
+        events: AgentChannelEnvelope[];
+        next_after_sequence: number;
+      }) => {
+        for (const envelope of page.events) {
+          if (closed) return;
+          if (envelope.channelSequence <= lastSent) continue;
+          pending.set(envelope.channelSequence, envelope);
+        }
+        await observeThrough(page.next_after_sequence);
+      };
+
       const queueEnvelope = (envelope: AgentChannelEnvelope) => {
-        void enqueueWrite(() => writeEnvelopeOrdered(envelope));
+        void enqueueWrite(() => bufferEnvelope(envelope));
       };
 
       const unsubscribe = workspace.subscribeChannelEvents(channelId, (envelope) => {
@@ -369,34 +403,34 @@ export function mountWorkspaceRoutes(
           return;
         }
         if (!liveEnabled) {
-          pending.set(envelope.channelSequence, envelope);
+          if (envelope.channelSequence > lastSent) {
+            pending.set(envelope.channelSequence, envelope);
+          }
           return;
         }
         queueEnvelope(envelope);
       });
 
-      const pollFromDb = async () => {
+      /** Must only be called from inside the write chain (never await enqueueWrite here). */
+      const pollFromDb = async (): Promise<
+        { ok: true } | { ok: false; code: string; message: string }
+      > => {
         let cursor = lastSent;
         for (;;) {
           const page = await workspace.listEvents(authed.session, channelId, cursor, {
             limit: 200,
           });
           if (!page.ok) {
-            closed = true;
-            await enqueueWrite(async () => {
-              await stream.writeSSE({
-                event: "error",
-                data: JSON.stringify({ code: page.error.code, message: page.error.message }),
-              });
-            });
-            return;
+            return {
+              ok: false,
+              code: page.error.code,
+              message: page.error.message,
+            };
           }
-          for (const envelope of page.value.events) {
-            await writeEnvelopeOrdered(envelope);
-          }
+          await applyEventPage(page.value);
           cursor = page.value.next_after_sequence;
           if (!page.value.has_more) {
-            break;
+            return { ok: true };
           }
         }
       };
@@ -420,9 +454,7 @@ export function mountWorkspaceRoutes(
             return;
           }
           await enqueueWrite(async () => {
-            for (const envelope of replay.value.events) {
-              await writeEnvelopeOrdered(envelope);
-            }
+            await applyEventPage(replay.value);
           });
           await writeChain;
           cursor = replay.value.next_after_sequence;
@@ -433,17 +465,27 @@ export function mountWorkspaceRoutes(
 
         // Catch-up after subscribe attach.
         await enqueueWrite(async () => {
-          await pollFromDb();
-          // Flush anything buffered during replay.
-          const buffered = [...pending.values()].sort(
-            (a, b) => a.channelSequence - b.channelSequence,
-          );
-          pending.clear();
+          const polled = await pollFromDb();
+          if (!polled.ok) {
+            closed = true;
+            await stream.writeSSE({
+              event: "error",
+              data: JSON.stringify({ code: polled.code, message: polled.message }),
+            });
+            return;
+          }
+          // Flush hub-buffered envelopes that arrived during replay (no DB through-cursor).
+          const buffered = [...pending.entries()]
+            .sort((a, b) => a[0] - b[0])
+            .map(([, envelope]) => envelope);
           for (const envelope of buffered) {
-            await writeEnvelopeOrdered(envelope);
+            await bufferEnvelope(envelope);
           }
         });
         await writeChain;
+        if (closed) {
+          return;
+        }
         liveEnabled = true;
 
         let lastAuthCheck = Date.now();
@@ -493,9 +535,20 @@ export function mountWorkspaceRoutes(
           if (nowMs - lastDbPoll >= DB_POLL_MS) {
             lastDbPoll = nowMs;
             await enqueueWrite(async () => {
-              await pollFromDb();
+              const polled = await pollFromDb();
+              if (!polled.ok) {
+                closed = true;
+                // Write error inline — do not await enqueueWrite (would deadlock).
+                await stream.writeSSE({
+                  event: "error",
+                  data: JSON.stringify({ code: polled.code, message: polled.message }),
+                });
+              }
             });
             await writeChain;
+            if (closed) {
+              break;
+            }
           }
 
           await enqueueWrite(async () => {
