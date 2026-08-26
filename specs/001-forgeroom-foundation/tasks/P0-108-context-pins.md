@@ -1,7 +1,7 @@
 ---
 id: P0-108
 title: Implement bounded channel context and pins
-status: in_review
+status: done
 owner: cursor-agent
 started: 2026-08-26
 completed: 2026-08-26

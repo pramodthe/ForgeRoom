@@ -2,10 +2,10 @@
 
 | Field | Current value |
 | --- | --- |
-| Overall | P0-101–P0-108 foundation API complete (incl. P0-205 router); P0-401 app shell done; P0-210 AG-UI spike merged; P0-000 in progress |
+| Overall | M1 Foundation + P0-401 shell done; P0-210 AG-UI spike merged (in_review); P0-000 partial live probes in progress |
 | Current phase | Phase 1 — Foundation |
-| Active task | P0-401 (done); P0-210 (in_review); P0-000 (in_progress) |
-| Next task | finish P0-000 TrueForge probes (PR #12); P0-105 waits on P0-000 completion |
+| Active task | P0-000 (in_progress); P0-210 (in_review, live proofs deferred to P0-211) |
+| Next task | Finish P0-000 TrueForge probes (add keys to .env); start P0-105 demo fixtures or P0-402 composer when ready |
 | P0 blockers | TrueForge model presets, Research permission preview, Save-as-skill Run binding, TrueForge→artifact path, DB fixture reset (migrations), demo durable storage — Composio/Daytona SDK/local adapter verified 2026-08-26 |
 | Last updated | 2026-08-26 |
 
@@ -49,6 +49,7 @@ Never put credentials in this file.
 
 ## Recently completed
 
+- P0-401 authenticated three-pane app shell merged via PR #15 (`c4e08e3`).
 - P0-108 bounded channel context and pins merged to `main` via PR #10 (`1c3589b`).
 - P0-205 mention/team router merged to `main` via PR #11 (`fe36cd1`).
 - P0-107 canonical event log and resumable SSE merged to `main` via PR #8 (merge commit `ffbca91`).
