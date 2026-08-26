@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { errorEnvelopeSchema } from "@forgeroom/contracts";
+import { canTransitionTask } from "@forgeroom/domain";
 import { startWorker } from "@forgeroom/orchestration";
 import { loadApiEnv } from "./env";
 import { createApiApp } from "./server";
@@ -29,5 +31,20 @@ describe("API/worker separability", () => {
       embedWorker: true,
     });
     expect(loadApiEnv({ FORGEROOM_EMBED_WORKER: "false" }).embedWorker).toBe(false);
+  });
+
+  it("imports shared contracts and domain transitions", () => {
+    expect(canTransitionTask("todo", "done")).toBe(false);
+    expect(
+      errorEnvelopeSchema.parse({
+        error: {
+          code: "stale_coworker_draft",
+          message: "Review the updated permission preview.",
+          request_id: "req_1",
+          retryable: false,
+          details: {},
+        },
+      }).error.code,
+    ).toBe("stale_coworker_draft");
   });
 });
