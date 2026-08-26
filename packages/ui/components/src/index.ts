@@ -1,4 +1,6 @@
 export { HostButton, type HostButtonProps } from "./host-button";
+export { ComponentHostBoundary, AgUiActivitySlot, ControlledComponentSlot } from "./component-host";
+export { LoadingState, ForbiddenState, RouteErrorState, EmptyState } from "./shell-states";
 
 export const CONTROLLED_COMPONENT_RAIL = "registered_react" as const;
 export const OPEN_GENERATED_UI_RAIL = "disabled" as const;

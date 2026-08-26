@@ -1,0 +1,98 @@
+import { describe, expect, it } from "vitest";
+import type { SessionResponse } from "@forgeroom/contracts";
+import { assertMockFixturesValid, MOCK_WORKSPACE_ID } from "./api/mock-fixtures";
+import { getSkillVersion } from "./api/workspace-api";
+import { isSessionExpired, sessionWorkspaceMismatch } from "./auth/session";
+import {
+  isSafePostLoginRedirect,
+  P0_ROUTE_CONTRACT,
+  postLoginDestination,
+  workspaceChannelPath,
+  workspaceTasksPath,
+} from "./routes/paths";
+import { P0_REGISTERED_ROUTES } from "./router";
+
+describe("P0 route contract", () => {
+  it("registers all UX routes", () => {
+    expect(P0_REGISTERED_ROUTES).toEqual([
+      "/",
+      "/login",
+      "/w/$workspaceId/channels",
+      "/w/$workspaceId/channels/$channelId",
+      "/w/$workspaceId/tasks",
+      "/w/$workspaceId/tasks/$taskId",
+      "/w/$workspaceId/coworkers",
+      "/w/$workspaceId/coworkers/$coworkerId",
+      "/w/$workspaceId/skills",
+      "/w/$workspaceId/skills/$skillId",
+      "/w/$workspaceId/connections",
+    ]);
+  });
+
+  it("builds stable workspace paths", () => {
+    expect(workspaceChannelPath(MOCK_WORKSPACE_ID, "ch_general_001")).toBe(
+      "/w/ws_demo_001/channels/ch_general_001",
+    );
+    expect(workspaceTasksPath(MOCK_WORKSPACE_ID)).toBe("/w/ws_demo_001/tasks");
+  });
+
+  it("documents the UX path contract", () => {
+    expect(P0_ROUTE_CONTRACT).toContain("/login");
+    expect(P0_ROUTE_CONTRACT).toContain("/w/$workspaceId/channels/$channelId");
+    expect(P0_ROUTE_CONTRACT).toContain("/w/$workspaceId/connections");
+  });
+});
+
+describe("mock fixtures", () => {
+  it("validates canonical contract fixtures", () => {
+    expect(() => assertMockFixturesValid()).not.toThrow();
+  });
+
+  it("resolves published skills by skill_id", async () => {
+    const version = await getSkillVersion(MOCK_WORKSPACE_ID, "skill_published_001");
+    expect(version?.skill_id).toBe("skill_published_001");
+  });
+});
+
+describe("session helpers", () => {
+  const baseSession: SessionResponse = {
+    request_id: "req_001",
+    user: {
+      id: "user_owner_001",
+      email: "owner@example.test",
+      display_name: "Owner",
+      role: "owner",
+    },
+    workspace_id: MOCK_WORKSPACE_ID,
+    csrf_token: "csrf_token",
+    expires_at: "2099-01-01T00:00:00+00:00",
+  };
+
+  it("detects expired sessions", () => {
+    expect(isSessionExpired(baseSession, new Date("2099-01-02T00:00:00Z"))).toBe(true);
+    expect(isSessionExpired(baseSession, new Date("2098-12-31T00:00:00Z"))).toBe(false);
+  });
+
+  it("detects workspace mismatches", () => {
+    expect(sessionWorkspaceMismatch(baseSession, MOCK_WORKSPACE_ID)).toBe(false);
+    expect(sessionWorkspaceMismatch(baseSession, "ws_other")).toBe(true);
+  });
+});
+
+describe("postLoginDestination", () => {
+  it("accepts safe workspace redirects", () => {
+    expect(isSafePostLoginRedirect("/w/ws_demo_001/tasks")).toBe(true);
+    expect(postLoginDestination("/w/ws_demo_001/tasks", MOCK_WORKSPACE_ID, "ch_general_001")).toBe(
+      "/w/ws_demo_001/tasks",
+    );
+  });
+
+  it("rejects unsafe redirects", () => {
+    expect(isSafePostLoginRedirect("//evil.test")).toBe(false);
+    expect(isSafePostLoginRedirect("/login")).toBe(false);
+    expect(isSafePostLoginRedirect("https://evil.test/w/ws_demo_001/tasks")).toBe(false);
+    expect(postLoginDestination("//evil.test", MOCK_WORKSPACE_ID, "ch_general_001")).toBe(
+      "/w/ws_demo_001/channels/ch_general_001",
+    );
+  });
+});

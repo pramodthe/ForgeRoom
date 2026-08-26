@@ -1,0 +1,103 @@
+/** P0 route paths and helpers aligned with specs/001-forgeroom-foundation/ux.md */
+
+export const DEMO_WORKSPACE_ID = "ws_demo_001";
+
+export const P0_ROUTES = {
+  login: "/login",
+  root: "/",
+  workspaceChannel: "/w/$workspaceId/channels/$channelId",
+  workspaceTasks: "/w/$workspaceId/tasks",
+  workspaceTaskDetail: "/w/$workspaceId/tasks/$taskId",
+  workspaceCoworkers: "/w/$workspaceId/coworkers",
+  workspaceCoworkerDetail: "/w/$workspaceId/coworkers/$coworkerId",
+  workspaceSkills: "/w/$workspaceId/skills",
+  workspaceSkillDetail: "/w/$workspaceId/skills/$skillId",
+  workspaceConnections: "/w/$workspaceId/connections",
+} as const;
+
+export function loginPath(): string {
+  return P0_ROUTES.login;
+}
+
+export function workspaceChannelPath(workspaceId: string, channelId: string): string {
+  return `/w/${workspaceId}/channels/${channelId}`;
+}
+
+export function workspaceTasksPath(workspaceId: string): string {
+  return `/w/${workspaceId}/tasks`;
+}
+
+export function workspaceTaskDetailPath(workspaceId: string, taskId: string): string {
+  return `/w/${workspaceId}/tasks/${taskId}`;
+}
+
+export function workspaceCoworkersPath(workspaceId: string): string {
+  return `/w/${workspaceId}/coworkers`;
+}
+
+export function workspaceCoworkerDetailPath(workspaceId: string, coworkerId: string): string {
+  return `/w/${workspaceId}/coworkers/${coworkerId}`;
+}
+
+export function workspaceSkillsPath(workspaceId: string): string {
+  return `/w/${workspaceId}/skills`;
+}
+
+export function workspaceSkillDetailPath(workspaceId: string, skillId: string): string {
+  return `/w/${workspaceId}/skills/${skillId}`;
+}
+
+export function workspaceConnectionsPath(workspaceId: string): string {
+  return `/w/${workspaceId}/connections`;
+}
+
+const WORKSPACE_PREFIX = /^\/w\/([^/]+)/;
+
+export function parseWorkspaceIdFromPath(pathname: string): string | null {
+  const match = WORKSPACE_PREFIX.exec(pathname);
+  return match?.[1] ?? null;
+}
+
+export function isWorkspaceRoute(pathname: string): boolean {
+  return WORKSPACE_PREFIX.test(pathname);
+}
+
+export function isLoginRoute(pathname: string): boolean {
+  return pathname === P0_ROUTES.login;
+}
+
+export function isSafePostLoginRedirect(pathname: string): boolean {
+  if (!pathname.startsWith("/") || pathname.startsWith("//")) {
+    return false;
+  }
+  if (pathname.includes("://")) {
+    return false;
+  }
+  if (isLoginRoute(pathname)) {
+    return false;
+  }
+  return isWorkspaceRoute(pathname);
+}
+
+export function postLoginDestination(
+  redirect: string | undefined,
+  sessionWorkspaceId: string,
+  defaultChannelId: string,
+): string {
+  if (redirect && isSafePostLoginRedirect(redirect)) {
+    return redirect;
+  }
+  return workspaceChannelPath(sessionWorkspaceId, defaultChannelId);
+}
+
+export const P0_ROUTE_CONTRACT = [
+  P0_ROUTES.login,
+  P0_ROUTES.workspaceChannel,
+  P0_ROUTES.workspaceTasks,
+  P0_ROUTES.workspaceTaskDetail,
+  P0_ROUTES.workspaceCoworkers,
+  P0_ROUTES.workspaceCoworkerDetail,
+  P0_ROUTES.workspaceSkills,
+  P0_ROUTES.workspaceSkillDetail,
+  P0_ROUTES.workspaceConnections,
+] as const;
