@@ -37,13 +37,17 @@ Run migrations against an empty database and integration tests for every named i
 - Migration files:
   - `packages/db/migrations/0001_p0_foundation.sql`
   - `packages/db/migrations/0001_p0_foundation.down.sql`
+  - `packages/db/migrations/0002_session_workspace_boundary.sql`
+  - `packages/db/migrations/0002_session_workspace_boundary.down.sql`
   - `packages/db/MIGRATIONS.md`
 - Other files: `packages/db/src/{schema,migrate,migrate-cli,client,index,test-harness}.ts`, constraint/exclusion tests, `.github/workflows/ci.yml` Postgres service, README migrate docs.
 - Commands: exact Node 22.12.0 / pnpm 10.34.5 frozen install, `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm build`, import smoke, and `git diff --check` — all passed (2026-08-26).
-- Constraint tests/results (`@forgeroom/db` 9 passed):
+- Constraint tests/results (`@forgeroom/db` 11 passed):
   - empty DB migrates, rolls back, and migrates forward again
   - concurrent forward/rollback callers serialize under one transaction-scoped advisory lock
   - concurrent current-generation assignment and retirement serialize on the generation row
+  - existing stable sessions receive their channel workspace during the boundary migration
+  - legacy cross-workspace sessions are identified before enforcement and a corrected retry succeeds
   - duplicate channel sequence, native-subagent flag, and duplicate `(channel, coworker)` session rejected
   - immutable CoworkerDraft body/hash-revision, TaskRevision uniqueness + append-only, SkillVersion uniqueness, active SkillBinding uniqueness, immutable generation history, and live current-generation pointer
   - claimed queue items require exact generation binding; AgentTurn session/generation/queue/run-step/type ownership is composite-bound; one remote-active AgentTurn
@@ -64,6 +68,8 @@ Run migrations against an empty database and integration tests for every named i
 - 2026-08-25 — Implementation complete; moved to in_review. Qodo rules search returned no matching standards.
 - 2026-08-26 — Addressed all seven Qodo findings: live generation pointers, exact queue/turn ownership, immutable replay/proposal/grant authority, and advisory-locked migration/rollback paths now have database integration coverage.
 - 2026-08-26 — Closed the follow-up current-generation race by locking the candidate generation during pointer validation and covering the two-connection assignment/retirement interleaving.
+- 2026-08-26 — Added a follow-up migration that composite-binds stable sessions, channels, and coworkers to the same workspace and rejects cross-tenant session creation.
+- 2026-08-26 — Serialized session writes across migration 0002 validation, backfill, and constraint enforcement to prevent concurrent inserts from bypassing the preflight.
 
 ## Handoff
 

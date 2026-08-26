@@ -35,8 +35,10 @@ describe("P0 foundation migration", () => {
       `;
       expect(forbidden.filter((row) => EXCLUDED_COLUMN.test(row.column_name))).toEqual([]);
 
-      const rolled = await rollbackLast(sql);
-      expect(rolled).toBe("0001_p0_foundation.sql");
+      const boundaryRolled = await rollbackLast(sql);
+      expect(boundaryRolled).toBe("0002_session_workspace_boundary.sql");
+      const foundationRolled = await rollbackLast(sql);
+      expect(foundationRolled).toBe("0001_p0_foundation.sql");
       const afterDown = await sql<{ table_name: string }[]>`
         SELECT table_name FROM information_schema.tables
         WHERE table_schema = 'public' AND table_name = 'channels'
@@ -57,17 +59,75 @@ describe("P0 foundation migration", () => {
       const second = createSql(url);
       try {
         const forwardResults = await Promise.all([migrate(first), migrate(second)]);
-        expect(forwardResults.flat()).toEqual(["0001_p0_foundation.sql"]);
-        expect(await appliedMigrations(first)).toEqual(["0001_p0_foundation.sql"]);
+        expect(forwardResults.flat()).toEqual([
+          "0001_p0_foundation.sql",
+          "0002_session_workspace_boundary.sql",
+        ]);
+        expect(await appliedMigrations(first)).toEqual([
+          "0001_p0_foundation.sql",
+          "0002_session_workspace_boundary.sql",
+        ]);
 
-        const rollbackResults = await Promise.all([rollbackLast(first), rollbackLast(second)]);
-        expect(
-          rollbackResults.filter((result) => result === "0001_p0_foundation.sql"),
-        ).toHaveLength(1);
-        expect(rollbackResults.filter((result) => result === null)).toHaveLength(1);
+        const rollbackResults = await Promise.all([
+          rollbackLast(first),
+          rollbackLast(second),
+          rollbackLast(first),
+        ]);
+        expect(rollbackResults).toEqual(
+          expect.arrayContaining([
+            "0002_session_workspace_boundary.sql",
+            "0001_p0_foundation.sql",
+            null,
+          ]),
+        );
       } finally {
         await Promise.all([first.end({ timeout: 5 }), second.end({ timeout: 5 })]);
       }
+    });
+  }, 60_000);
+
+  it("backfills workspace ownership for existing stable sessions", async () => {
+    await withMigratedDatabase(async (sql) => {
+      await seedRuntime(sql);
+      expect(await rollbackLast(sql)).toBe("0002_session_workspace_boundary.sql");
+      expect(await migrate(sql)).toEqual(["0002_session_workspace_boundary.sql"]);
+
+      const [session] = await sql<{ workspace_id: string }[]>`
+        SELECT workspace_id
+        FROM channel_agent_sessions
+        WHERE id = 'cas_1'
+      `;
+      expect(session?.workspace_id).toBe("ws_1");
+    });
+  }, 60_000);
+
+  it("identifies cross-workspace legacy sessions before enforcing the boundary", async () => {
+    await withMigratedDatabase(async (sql) => {
+      await seedRuntime(sql);
+      expect(await rollbackLast(sql)).toBe("0002_session_workspace_boundary.sql");
+      await sql`
+        INSERT INTO workspaces (id, name, slug, created_by, created_at)
+        VALUES ('ws_2', 'Other', 'other', 'user_1', ${NOW})
+      `;
+      await sql`
+        INSERT INTO agent_profiles (
+          id, workspace_id, handle, name, title, visibility, status,
+          editable_config_json, config_revision, native_subagents_enabled, created_at, updated_at
+        )
+        VALUES (
+          'cw_2', 'ws_2', 'foreign', 'Foreign', 'Reader', 'workspace', 'active',
+          '{}'::jsonb, 1, false, ${NOW}, ${NOW}
+        )
+      `;
+      await sql`UPDATE channel_agent_sessions SET agent_profile_id = 'cw_2' WHERE id = 'cas_1'`;
+
+      await expect(migrate(sql)).rejects.toThrow(
+        /cannot apply 0002_session_workspace_boundary: 1 cross-workspace legacy session.*cas_1\(channel=ws_1,agent=ws_2\)/i,
+      );
+      expect(await appliedMigrations(sql)).toEqual(["0001_p0_foundation.sql"]);
+
+      await sql`UPDATE channel_agent_sessions SET agent_profile_id = 'cw_1' WHERE id = 'cas_1'`;
+      expect(await migrate(sql)).toEqual(["0002_session_workspace_boundary.sql"]);
     });
   }, 60_000);
 });
@@ -156,12 +216,36 @@ describe("concurrency-critical constraints", () => {
       await expect(
         sql`
           INSERT INTO channel_agent_sessions (
-            id, channel_id, agent_profile_id, logical_agui_thread_id,
+            id, workspace_id, channel_id, agent_profile_id, logical_agui_thread_id,
             last_delivered_channel_sequence, state, created_at, updated_at
           )
-          VALUES ('cas_dup', 'ch_1', 'cw_1', 'thread_dup', 0, 'active', ${NOW}, ${NOW})
+          VALUES ('cas_dup', 'ws_1', 'ch_1', 'cw_1', 'thread_dup', 0, 'active', ${NOW}, ${NOW})
         `,
       ).rejects.toThrow(/channel_agent_sessions_pair_uidx|unique/i);
+
+      await sql`
+        INSERT INTO workspaces (id, name, slug, created_by, created_at)
+        VALUES ('ws_2', 'Other', 'other', 'user_1', ${NOW})
+      `;
+      await sql`
+        INSERT INTO agent_profiles (
+          id, workspace_id, handle, name, title, visibility, status,
+          editable_config_json, config_revision, native_subagents_enabled, created_at, updated_at
+        )
+        VALUES (
+          'cw_2', 'ws_2', 'foreign', 'Foreign', 'Reader', 'workspace', 'active',
+          '{}'::jsonb, 1, false, ${NOW}, ${NOW}
+        )
+      `;
+      await expect(
+        sql`
+          INSERT INTO channel_agent_sessions (
+            id, workspace_id, channel_id, agent_profile_id, logical_agui_thread_id,
+            last_delivered_channel_sequence, state, created_at, updated_at
+          )
+          VALUES ('cas_cross_workspace', 'ws_1', 'ch_1', 'cw_2', 'thread_cross', 0, 'active', ${NOW}, ${NOW})
+        `,
+      ).rejects.toThrow(/channel_agent_sessions_agent_workspace_fk|foreign key/i);
     });
   }, 60_000);
 
