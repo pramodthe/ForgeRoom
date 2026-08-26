@@ -4,6 +4,7 @@ title: Implement bounded channel context and pins
 status: in_review
 owner: cursor-agent
 started: 2026-08-26
+completed: 2026-08-26
 depends_on: [P0-107]
 requirements: [ME-001, ME-002, ME-003]
 specs: [../runtime.md#channel-context-envelope, ../ux.md#work-panel]
@@ -31,7 +32,8 @@ Run envelope snapshot, size-bound, cursor, pin API and cross-channel isolation t
 
 ## Completion evidence
 
-- Tests/results:
+- Merged to main via PR #10 (merge commit `1c3589b`).
+- Tests/results: `@forgeroom/orchestration` + `@forgeroom/api` context/pins tests green (63 API tests on merge branch).
   - `pnpm --filter @forgeroom/orchestration test` — 9 passed (envelope snapshot, size-bound, cursor, forbidden-key strip, cross-channel refuse)
   - `pnpm --filter @forgeroom/api test -- src/workspace/context-pins.test.ts` — 4 focused pin/context tests + existing API suites green (55 total in that vitest run)
   - `pnpm --filter @forgeroom/{contracts,orchestration,api} typecheck` and `pnpm lint` green
