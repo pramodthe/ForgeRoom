@@ -2,10 +2,10 @@
 
 | Field | Current value |
 | --- | --- |
-| Overall | P0-101–P0-104, P0-106–P0-107 complete; P0-108 context/pins in review; P0-205 router in progress; P0-000 demo/tool contract in progress |
+| Overall | P0-101–P0-104, P0-106–P0-107, P0-205 complete; P0-108 landing; P0-000 in progress |
 | Current phase | Phase 1 — Foundation |
-| Active task | P0-108 (in_review); P0-205 (in_progress); P0-000 (in_progress) |
-| Next task | Land P0-108 PR; complete P0-205; P0-105 waits on P0-000 live probes |
+| Active task | P0-108 (in_review); P0-000 (in_progress); P0-401/P0-210 in flight |
+| Next task | Merge P0-108 PR #10; review P0-000 PR #12; P0-105 waits on P0-000 completion |
 | P0 blockers | Live Composio tools/account/descriptor hashes, Daytona+storage probe, model presets, remaining OD-002–OD-012 verified rows, controlled-GenUI/Task/skill demo fixture, storage/deployment choices, and PD-002 before public release |
 | Last updated | 2026-08-26 |
 
@@ -41,6 +41,7 @@ Never put credentials in this file.
 
 ## Recently completed
 
+- P0-205 mention/team router merged to `main` via PR #11 (`fe36cd1`).
 - P0-107 canonical event log and resumable SSE merged to `main` via PR #8 (merge commit `ffbca91`).
 - P0-106 channel/coworker API accepted via PR #7 after archive-race remediation, full CI, and exact-head Qodo review.
 - P0-104 owner authentication and authorization merged to `main` (`ea3db05` via PR #5) after Qodo-clean head and green CI.

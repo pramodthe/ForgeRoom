@@ -8,6 +8,24 @@ import {
 } from "./primitives";
 import { taskRecordOperationSchema } from "./tasks";
 
+/** Case-insensitive handles reserved for routing syntax — cannot name a coworker. */
+export const RESERVED_COWORKER_HANDLES = ["team"] as const;
+
+export function isReservedCoworkerHandle(handle: string): boolean {
+  const lowered = handle.toLowerCase();
+  return RESERVED_COWORKER_HANDLES.some((reserved) => reserved === lowered);
+}
+
+function rejectReservedCoworkerHandle(value: { handle: string }, ctx: z.RefinementCtx): void {
+  if (isReservedCoworkerHandle(value.handle)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Coworker handle is reserved for routing syntax.",
+      path: ["handle"],
+    });
+  }
+}
+
 export const coworkerDraftStateSchema = z.enum([
   "draft",
   "awaiting_review",
@@ -29,7 +47,7 @@ export const coworkerBudgetSchema = z
   })
   .strict();
 
-export const coworkerProposalSchema = z
+const coworkerProposalBaseSchema = z
   .object({
     schemaVersion: schemaVersion1,
     name: z.string().min(1),
@@ -53,6 +71,10 @@ export const coworkerProposalSchema = z
     component_version_ids: z.array(opaqueIdSchema),
   })
   .strict();
+
+export const coworkerProposalSchema = coworkerProposalBaseSchema.superRefine(
+  rejectReservedCoworkerHandle,
+);
 
 export const coworkerEffectivePreviewSchema = z
   .object({
@@ -126,7 +148,9 @@ export const coworkerDraftRejectCommandSchema = z
   })
   .strict();
 
-export const coworkerUpdateCommandSchema = coworkerProposalSchema.omit({ schemaVersion: true });
+export const coworkerUpdateCommandSchema = coworkerProposalBaseSchema
+  .omit({ schemaVersion: true })
+  .superRefine(rejectReservedCoworkerHandle);
 
 export const coworkerDisableCommandSchema = z
   .object({

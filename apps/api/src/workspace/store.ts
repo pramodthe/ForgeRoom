@@ -8,6 +8,7 @@ import { materializeChannelEvent } from "./event-persist";
 
 export type ChannelStatus = "active" | "archived";
 export type CoworkerStatus = "active" | "disabled";
+export type ChannelAgentSessionState = "active" | "rotating" | "disabled";
 
 export type CoworkerEditableConfig = {
   standing_instructions: string;
@@ -200,10 +201,26 @@ export type ChannelAgentSessionRecord = {
   logicalAguiThreadId: string;
   currentGenerationId: string | null;
   lastDeliveredChannelSequence: number;
-  state: "active" | "rotating" | "disabled";
+  state: ChannelAgentSessionState;
   createdAt: string;
   updatedAt: string;
 };
+
+/** Seed/upsert input for routing tests and cursor proofs. */
+export type ChannelAgentSessionUpsertInput = Pick<
+  ChannelAgentSessionRecord,
+  "id" | "workspaceId" | "channelId" | "agentProfileId" | "state"
+> &
+  Partial<
+    Pick<
+      ChannelAgentSessionRecord,
+      | "logicalAguiThreadId"
+      | "currentGenerationId"
+      | "lastDeliveredChannelSequence"
+      | "createdAt"
+      | "updatedAt"
+    >
+  >;
 
 export type CommandReceipt = {
   workspaceId: string;
@@ -322,6 +339,10 @@ export type WorkspaceCatalogStore = {
 
   getCoworker(id: string): Promise<CoworkerRecord | null>;
   listCoworkers(workspaceId: string): Promise<CoworkerRecord[]>;
+  /** Current channel/coworker session rows used for routing availability (may be empty pre-P0-201). */
+  listChannelAgentSessions(channelId: string): Promise<ChannelAgentSessionRecord[]>;
+  /** Test/seed helper; production writers arrive with P0-201 session creation. */
+  upsertChannelAgentSession(session: ChannelAgentSessionUpsertInput): Promise<void>;
   insertCoworker(coworker: CoworkerRecord, version: AgentVersionRecord): Promise<void>;
   updateCoworker(coworker: CoworkerRecord, version?: AgentVersionRecord): Promise<void>;
   /**
@@ -379,7 +400,7 @@ export type WorkspaceCatalogStore = {
 
   getChannelAgentSession(id: string): Promise<ChannelAgentSessionRecord | null>;
   /** Test/fixture helper for context cursor proofs. */
-  upsertChannelAgentSession(session: ChannelAgentSessionRecord): Promise<void>;
+  upsertChannelAgentSession(session: ChannelAgentSessionUpsertInput): Promise<void>;
   /**
    * Persist a new delivery cursor when the caller has already decided the advance is valid
    * (confirmed/reconciled turn). Never called for pending/uncertain creation.
@@ -713,6 +734,11 @@ export function createMemoryWorkspaceStore(): WorkspaceCatalogStore {
         .filter((row) => row.workspaceId === workspaceId)
         .sort((a, b) => a.handle.localeCompare(b.handle));
     },
+    async listChannelAgentSessions(channelId) {
+      return [...agentSessions.values()]
+        .filter((row) => row.channelId === channelId)
+        .sort((a, b) => a.agentProfileId.localeCompare(b.agentProfileId));
+    },
     async insertCoworker(coworker, version) {
       coworkers.set(coworker.id, structuredClone(coworker));
       versions.set(version.id, structuredClone(version));
@@ -893,8 +919,17 @@ export function createMemoryWorkspaceStore(): WorkspaceCatalogStore {
       const row = agentSessions.get(id);
       return row ? structuredClone(row) : null;
     },
-    async upsertChannelAgentSession(session) {
-      agentSessions.set(session.id, structuredClone(session));
+    async upsertChannelAgentSession(session: ChannelAgentSessionUpsertInput) {
+      const now = new Date().toISOString();
+      agentSessions.set(session.id, {
+        ...session,
+        logicalAguiThreadId:
+          session.logicalAguiThreadId ?? `thread_${session.channelId}_${session.agentProfileId}`,
+        currentGenerationId: session.currentGenerationId ?? null,
+        lastDeliveredChannelSequence: session.lastDeliveredChannelSequence ?? 0,
+        createdAt: session.createdAt ?? now,
+        updatedAt: session.updatedAt ?? now,
+      });
     },
     async setSessionDeliveryCursor(sessionId, nextSequence, updatedAt) {
       const existing = agentSessions.get(sessionId);

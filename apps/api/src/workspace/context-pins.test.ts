@@ -107,9 +107,40 @@ async function createChannel(
   return channelSchema.parse(withoutRequestId(await created.json()));
 }
 
+async function seedRoutableCoworker(
+  app: ReturnType<typeof createApiApp>,
+  env: ReturnType<typeof loadApiEnv>,
+  cookie: string,
+  csrf: string,
+  workspace: Awaited<ReturnType<typeof createTestApp>>["workspace"],
+  channelId: string,
+  handle: string,
+) {
+  const coworker = await workspace.seedCoworker({
+    workspaceId: env.workspaceId,
+    createdBy: env.ownerUserId,
+    handle,
+    name: handle,
+    title: "Member",
+  });
+  const added = await app.request(`/api/channels/${channelId}/participants`, {
+    method: "POST",
+    headers: mutationHeaders(env, cookie, csrf),
+    body: JSON.stringify({
+      schemaVersion: 1,
+      participant_type: "coworker",
+      participant_id: coworker.id,
+      role: "member",
+      idempotency_key: `idem_${handle}_${channelId}`,
+    }),
+  });
+  expect(added.status).toBe(200);
+  return coworker;
+}
+
 describe("P0-108 channel context and pins", () => {
   it("pins and unpins a message while retaining the source link and emitting events", async () => {
-    const { app, env, workspaceStore } = await createTestApp();
+    const { app, env, workspaceStore, workspace } = await createTestApp();
     const { session, cookie } = await login(app, env);
     const channel = await createChannel(
       app,
@@ -118,6 +149,15 @@ describe("P0-108 channel context and pins", () => {
       session.csrf_token,
       "Pins",
       "idem_pin_ch",
+    );
+    await seedRoutableCoworker(
+      app,
+      env,
+      cookie,
+      session.csrf_token,
+      workspace,
+      channel.id,
+      "pinner",
     );
 
     const message = await app.request(`/api/channels/${channel.id}/messages`, {
@@ -517,6 +557,15 @@ describe("P0-108 channel context and pins", () => {
       "IdemPins",
       "idem_pin_seq_ch",
     );
+    await seedRoutableCoworker(
+      app,
+      env,
+      cookie,
+      session.csrf_token,
+      workspace,
+      channel.id,
+      "seqhelper",
+    );
 
     const msgA = await app.request(`/api/channels/${channel.id}/messages`, {
       method: "POST",
@@ -736,10 +785,28 @@ describe("P0-108 channel context and pins", () => {
   });
 
   it("rejects cross-channel pin create idempotency key reuse", async () => {
-    const { app, env } = await createTestApp();
+    const { app, env, workspace } = await createTestApp();
     const { session, cookie } = await login(app, env);
     const channelA = await createChannel(app, env, cookie, session.csrf_token, "X", "idem_x_a");
     const channelB = await createChannel(app, env, cookie, session.csrf_token, "Y", "idem_x_b");
+    await seedRoutableCoworker(
+      app,
+      env,
+      cookie,
+      session.csrf_token,
+      workspace,
+      channelA.id,
+      "cross_a",
+    );
+    await seedRoutableCoworker(
+      app,
+      env,
+      cookie,
+      session.csrf_token,
+      workspace,
+      channelB.id,
+      "cross_b",
+    );
 
     const msgA = await app.request(`/api/channels/${channelA.id}/messages`, {
       method: "POST",
@@ -793,7 +860,7 @@ describe("P0-108 channel context and pins", () => {
   });
 
   it("replays pin create after channel archival via idempotency receipt", async () => {
-    const { app, env } = await createTestApp();
+    const { app, env, workspace } = await createTestApp();
     const { session, cookie } = await login(app, env);
     const channel = await createChannel(
       app,
@@ -803,6 +870,16 @@ describe("P0-108 channel context and pins", () => {
       "ArchivePin",
       "idem_arch_pin_ch",
     );
+    await seedRoutableCoworker(
+      app,
+      env,
+      cookie,
+      session.csrf_token,
+      workspace,
+      channel.id,
+      "archiver",
+    );
+
     const message = await app.request(`/api/channels/${channel.id}/messages`, {
       method: "POST",
       headers: mutationHeaders(env, cookie, session.csrf_token),
@@ -939,7 +1016,7 @@ describe("P0-108 channel context and pins", () => {
   });
 
   it("replays create-pin after unpin without recreating", async () => {
-    const { app, env, workspaceStore } = await createTestApp();
+    const { app, env, workspaceStore, workspace } = await createTestApp();
     const { session, cookie } = await login(app, env);
     const channel = await createChannel(
       app,
@@ -949,6 +1026,16 @@ describe("P0-108 channel context and pins", () => {
       "UnpinReplay",
       "idem_unpin_replay_ch",
     );
+    await seedRoutableCoworker(
+      app,
+      env,
+      cookie,
+      session.csrf_token,
+      workspace,
+      channel.id,
+      "unpinhelper",
+    );
+
     const message = await app.request(`/api/channels/${channel.id}/messages`, {
       method: "POST",
       headers: mutationHeaders(env, cookie, session.csrf_token),

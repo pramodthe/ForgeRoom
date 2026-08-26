@@ -19,6 +19,7 @@ import { hashAguiEvent, materializeChannelEvent } from "./event-persist";
 import type {
   AppendChannelEventResult,
   ChannelAgentSessionRecord,
+  ChannelAgentSessionUpsertInput,
   ChannelEventInsert,
   ChannelEventRecord,
   ChannelPatch,
@@ -559,6 +560,47 @@ export function createPostgresWorkspaceStore(sql: SqlClient): WorkspaceCatalogSt
         .where(eq(agentProfiles.workspaceId, workspaceId));
       return rows.map(mapCoworker).sort((a, b) => a.handle.localeCompare(b.handle));
     },
+    async listChannelAgentSessions(channelId) {
+      const rows = await db
+        .select()
+        .from(channelAgentSessions)
+        .where(eq(channelAgentSessions.channelId, channelId));
+      return rows.map(mapAgentSession).sort((a, b) => a.agentProfileId.localeCompare(b.agentProfileId));
+    },
+    async upsertChannelAgentSession(session: ChannelAgentSessionUpsertInput) {
+      const now = new Date().toISOString();
+      await db
+        .insert(channelAgentSessions)
+        .values({
+          id: session.id,
+          workspaceId: session.workspaceId,
+          channelId: session.channelId,
+          agentProfileId: session.agentProfileId,
+          logicalAguiThreadId:
+            session.logicalAguiThreadId ?? `thread_${session.channelId}_${session.agentProfileId}`,
+          currentGenerationId: session.currentGenerationId ?? null,
+          lastDeliveredChannelSequence: session.lastDeliveredChannelSequence ?? 0,
+          state: session.state,
+          createdAt: session.createdAt ?? now,
+          updatedAt: session.updatedAt ?? now,
+        })
+        .onConflictDoUpdate({
+          target: [channelAgentSessions.channelId, channelAgentSessions.agentProfileId],
+          set: {
+            state: session.state,
+            ...(session.logicalAguiThreadId
+              ? { logicalAguiThreadId: session.logicalAguiThreadId }
+              : {}),
+            ...(session.currentGenerationId !== undefined
+              ? { currentGenerationId: session.currentGenerationId }
+              : {}),
+            ...(session.lastDeliveredChannelSequence !== undefined
+              ? { lastDeliveredChannelSequence: session.lastDeliveredChannelSequence }
+              : {}),
+            updatedAt: session.updatedAt ?? now,
+          },
+        });
+    },
     async insertCoworker(coworker, version) {
       await db.insert(agentProfiles).values({
         id: coworker.id,
@@ -1044,31 +1086,6 @@ export function createPostgresWorkspaceStore(sql: SqlClient): WorkspaceCatalogSt
         .where(eq(channelAgentSessions.id, id))
         .limit(1);
       return rows[0] ? mapAgentSession(rows[0]) : null;
-    },
-    async upsertChannelAgentSession(session) {
-      await sql`
-        INSERT INTO channel_agent_sessions (
-          id, workspace_id, channel_id, agent_profile_id, logical_agui_thread_id,
-          current_generation_id, last_delivered_channel_sequence, state, created_at, updated_at
-        )
-        VALUES (
-          ${session.id},
-          ${session.workspaceId},
-          ${session.channelId},
-          ${session.agentProfileId},
-          ${session.logicalAguiThreadId},
-          ${session.currentGenerationId},
-          ${session.lastDeliveredChannelSequence},
-          ${session.state},
-          ${session.createdAt},
-          ${session.updatedAt}
-        )
-        ON CONFLICT (id) DO UPDATE SET
-          last_delivered_channel_sequence = EXCLUDED.last_delivered_channel_sequence,
-          state = EXCLUDED.state,
-          current_generation_id = EXCLUDED.current_generation_id,
-          updated_at = EXCLUDED.updated_at
-      `;
     },
     async setSessionDeliveryCursor(sessionId, nextSequence, updatedAt) {
       const rows = await sql<

@@ -65,7 +65,11 @@ describe("channel envelope", () => {
     const event = {
       type: "CUSTOM" as const,
       name: "message.created" as const,
-      payload: { schemaVersion: 1 as const },
+      payload: {
+        schemaVersion: 1 as const,
+        routing_mode: "direct" as const,
+        recipient_handles: ["analyst"],
+      },
     };
     expect(
       agentChannelEnvelopeSchema.safeParse({
@@ -747,5 +751,26 @@ describe("custom application events", () => {
         payload: { schemaVersion: 1, raw: "unexpected" },
       }).success,
     ).toBe(false);
+  });
+
+  it("requires routing fields on message.created", () => {
+    expect(
+      customApplicationEventSchema.safeParse({
+        type: "CUSTOM",
+        name: "message.created",
+        payload: { schemaVersion: 1 },
+      }).success,
+    ).toBe(false);
+    expect(
+      customApplicationEventSchema.safeParse({
+        type: "CUSTOM",
+        name: "message.created",
+        payload: {
+          schemaVersion: 1,
+          routing_mode: "team",
+          recipient_handles: ["analyst", "builder"],
+        },
+      }).success,
+    ).toBe(true);
   });
 });

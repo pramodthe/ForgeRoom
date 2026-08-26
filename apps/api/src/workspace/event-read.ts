@@ -1,4 +1,8 @@
-import { agentChannelEnvelopeSchema, type AgentChannelEnvelope } from "@forgeroom/contracts";
+import {
+  agentChannelEnvelopeSchema,
+  messageCreatedRoutingPayloadSchema,
+  type AgentChannelEnvelope,
+} from "@forgeroom/contracts";
 import { buildEnvelope, customAguiEvent } from "./event-builders";
 import type { ChannelEventRecord } from "./store";
 
@@ -37,16 +41,27 @@ export function envelopeFromStoredEvent(
 
   // Legacy message.created: payload was { body, recipient_handles, routing_mode }.
   if (row.type === "message.created" && (row.actorType === "human" || row.actorType === "system")) {
-    try {
-      return buildEnvelope(row.sequence, {
-        channelId: row.channelId,
-        actorKind: row.actorType === "human" ? "human" : "system",
-        sourceMessageId: options?.sourceMessageId ?? undefined,
-        aguiEvent: customAguiEvent("message.created"),
+    const payload = row.payloadJson;
+    if (payload && typeof payload === "object" && !Array.isArray(payload)) {
+      const routing = messageCreatedRoutingPayloadSchema.safeParse({
+        schemaVersion: 1,
+        routing_mode: (payload as { routing_mode?: unknown }).routing_mode,
+        recipient_handles: (payload as { recipient_handles?: unknown }).recipient_handles,
       });
-    } catch {
-      return null;
+      if (routing.success) {
+        return buildEnvelope(row.sequence, {
+          channelId: row.channelId,
+          actorKind: row.actorType === "human" ? "human" : "system",
+          sourceMessageId: options?.sourceMessageId ?? undefined,
+          aguiEvent: {
+            type: "CUSTOM",
+            name: "message.created",
+            payload: routing.data,
+          },
+        });
+      }
     }
+    return null;
   }
 
   // Legacy channel/participant source names with non-envelope payloads.
