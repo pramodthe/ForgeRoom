@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "status": "candidate",
+  "ownerTask": "P0-000",
+  "decisionId": "OD-009",
+  "implementationOwners": ["P0-105", "P0-109"],
+  "demoTaskTitle": "Reconcile the synthetic demo record and publish a sandbox summary",
+  "taskRecord": {
+    "title": "Reconcile the synthetic demo record and publish a sandbox summary",
+    "description": "Operator updates the pinned synthetic provider field after approval; Research summarizes public/synthetic read data; Daytona produces a small artifact.",
+    "initial_status": "todo",
+    "reset_status": "todo",
+    "demo_transition": {
+      "from": "todo",
+      "to": "in_progress",
+      "then": "done"
+    },
+    "assignees": {
+      "seeded": "operator",
+      "conversational": "research"
+    },
+    "source": "channel_message_with_mentions_or_team"
+  },
+  "idempotentReset": {
+    "status": "candidate",
+    "command": null,
+    "note": "P0-105 owns the reset command once Composio synthetic IDs are verified"
+  }
+}

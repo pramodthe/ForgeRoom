@@ -2,18 +2,18 @@
 
 | Field | Current value |
 | --- | --- |
-| Overall | P0-101 through P0-104 complete; P0-000 ready in parallel |
+| Overall | P0-101 through P0-104 complete; P0-000 demo/tool contract in progress |
 | Current phase | Phase 1 — Foundation |
-| Active task | none (P0-104 done) |
-| Next task | P0-000 remains ready and should start soon (blocks fixtures/TrueForge/Composio/AG-UI/Daytona/GenUI); P0-105 waits on P0-000 + P0-104; P0-106 unblocked on auth |
-| P0 blockers | Exact Composio tools/account, deterministic write, fixture, pure AG-UI baseline, controlled-GenUI/Task/skill demo fixture, storage/deployment choices, and PD-002 before public release |
+| Active task | P0-000 (in_progress) |
+| Next task | Finish P0-000 live probes when secrets exist; then P0-105 (needs P0-000) and P0-106 (auth already unblocked) |
+| P0 blockers | Live Composio tools/account/descriptor hashes, Daytona+storage probe, model presets, and remaining OD-002–OD-012 verified rows; PD-002 before public release |
 | Last updated | 2026-08-26 |
 
 ## Milestones
 
 | Milestone | Status | Exit condition |
 | --- | --- | --- |
-| M0 Demo contract | ready | P0-000 done |
+| M0 Demo contract | in_progress | P0-000 done |
 | M1 Foundation | in_progress | P0-101 through P0-108 done |
 | M2 TrueForge + AG-UI runtime and Task integration | blocked | P0-109, P0-201–P0-206, P0-208, P0-210–P0-213 done |
 | M3 Tools, approvals and UI capabilities | blocked | P0-301–P0-316 and P0-318 done |
@@ -22,18 +22,22 @@
 
 ## Current decisions needed
 
-- One or two Composio applications.
-- Exact read and deterministic write tool slugs.
-- Pinned connected-account IDs and synthetic provider fixture.
-- Model preset for each seeded coworker.
-- Exact compatible stable pure AG-UI package versions; optional CopilotKit remains disabled unless separately proven.
-- Deterministic controlled DataTable/bar-or-line chart, TaskCard, ArtifactCard and ChoiceForm/filter fixture.
-- Conversational coworker prompt/permission preview and one instruction-only Save-as-skill fixture.
-- Durable demo artifact storage adapter.
-- Demo deployment topology.
-- Run limits: wall time, token/cost ceiling, tool calls and sandbox time.
+Still open until live probes / P0-210 (see `decisions/OPEN.md` and `provider-fixtures/`):
 
-Record provider/demo candidates in `demo.md` through P0-000; P0-210 freezes exact package versions. P1-317/P1-506 own any future generated-origin/security profile. Update accepted ADRs when a choice changes architecture. Never put credentials in this file.
+- Exact Composio application slug(s), tool slugs, pinned account suffixes and descriptor hashes (blocked-on-secrets).
+- Model preset for Operator and Research coworkers (blocked-on-secrets).
+- Exact pure AG-UI lockfile selection (candidates frozen; P0-210 selects).
+- Demo durable artifact storage adapter and checked-in deployment diagram (candidates recorded).
+- Verified synthetic provider record IDs and idempotent reset command.
+
+Frozen without secrets:
+
+- P0 feature profile disables native subagents, coordinator synthesis, component catalogue expansion and `iframe_v1`.
+- Optional CopilotKit disabled-unless-parity policy for P0-210.
+- Local artifact storage directory adapter for development.
+- Controlled-UI / coworker / Task / skill / run-limit candidate fixtures under `provider-fixtures/`.
+
+Never put credentials in this file.
 
 ## Recently completed
 

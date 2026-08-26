@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "status": "candidate",
+  "ownerTask": "P0-000",
+  "decisionId": "OD-011",
+  "componentName": "DataTable",
+  "props": {
+    "caption": "Synthetic demo records",
+    "description": "Public/synthetic Composio read projected into the controlled table.",
+    "empty_text": "No synthetic records",
+    "columns": [
+      { "key": "record_id", "label": "Record", "align": "start" },
+      { "key": "status", "label": "Status", "align": "start" },
+      { "key": "owner", "label": "Owner", "align": "start" }
+    ]
+  },
+  "bindingNotes": {
+    "rowsSource": "server DataGrant snapshot only",
+    "maxRows": 25,
+    "accessibleFallback": "same columns as plain text alternative"
+  },
+  "sampleRows": [
+    { "record_id": "demo-rec-001", "status": "open", "owner": "fixture" },
+    { "record_id": "demo-rec-002", "status": "ready", "owner": "fixture" }
+  ]
+}

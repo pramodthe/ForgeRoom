@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "status": "candidate",
+  "ownerTask": "P0-000",
+  "verification": "blocked-on-secrets",
+  "decisionId": "OD-002",
+  "preference": {
+    "applicationCount": "one_preferred_two_max",
+    "pattern": "issue_or_record_field_with_deterministic_update",
+    "narrativeFit": "Research coworker read-only GitHub/web-style data; Operator coworker may own the deterministic write path on a synthetic record"
+  },
+  "applications": [
+    {
+      "slot": 1,
+      "role": "primary_demo_toolkit",
+      "composioToolkitSlug": null,
+      "status": "blocked-on-secrets",
+      "note": "Fill only after COMPOSIO_API_KEY session lists available toolkits"
+    },
+    {
+      "slot": 2,
+      "role": "optional_second_toolkit",
+      "composioToolkitSlug": null,
+      "status": "candidate",
+      "default": "none",
+      "note": "Leave none unless primary toolkit cannot supply read + write + reconcile"
+    }
+  ]
+}

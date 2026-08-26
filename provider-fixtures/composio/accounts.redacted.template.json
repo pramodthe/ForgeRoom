@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "status": "blocked-on-secrets",
+  "ownerTask": "P0-000",
+  "decisionId": "OD-004",
+  "instructions": "Copy to a local untracked file or secret store. Commit only redactedSuffix values after probe.",
+  "accounts": [
+    {
+      "toolkitSlot": 1,
+      "envVar": "COMPOSIO_CONNECTED_ACCOUNT_ID",
+      "connectedAccountId": null,
+      "redactedSuffix": null,
+      "statusProbe": "pending"
+    }
+  ],
+  "forbiddenInGit": ["connectedAccountId", "COMPOSIO_API_KEY", "TRUEFORGE_API_KEY", "DAYTONA_API_KEY"]
+}

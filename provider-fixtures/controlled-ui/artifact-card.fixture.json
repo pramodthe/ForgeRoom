@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "status": "candidate",
+  "ownerTask": "P0-000",
+  "decisionId": "OD-011",
+  "componentName": "ArtifactCard",
+  "props": {
+    "heading": "Sandbox summary",
+    "show_preview": true,
+    "show_source": true,
+    "download_label": "Download"
+  },
+  "boundArtifactFixture": "daytona/sample-artifact.candidate.md",
+  "previewConstraints": {
+    "maxBytes": 8192,
+    "mime": "text/markdown",
+    "executable": false
+  }
+}

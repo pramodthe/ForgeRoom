@@ -1,0 +1,61 @@
+{
+  "schemaVersion": 1,
+  "release": "0.1",
+  "status": "frozen",
+  "ownerTask": "P0-000",
+  "compiledAgentSpec": {
+    "dynamic_sub_agents": false,
+    "nativeSubagents": "disabled",
+    "unexpectedChildActivity": "reject_typed_unsupported"
+  },
+  "disabled": {
+    "nativeSubagents": {
+      "status": "frozen",
+      "value": false,
+      "rejectCapabilities": [
+        "native_subagent",
+        "subagent.started",
+        "subagent.completed",
+        "subagent.failed",
+        "SUBAGENT_*"
+      ]
+    },
+    "coordinatorSynthesis": {
+      "status": "frozen",
+      "value": false,
+      "rejectCapabilities": ["coordinator_synthesis", "coordinator_planning"],
+      "note": "Direct mention/@team fan-out only; no planning or synthesis coworker in P0"
+    },
+    "componentCatalogueExpansion": {
+      "status": "frozen",
+      "value": false,
+      "rejectCapabilities": ["component_catalogue", "component_catalogue_ui"],
+      "allowedAgentTools": [
+        "DataTable",
+        "BarOrLineChart",
+        "TaskCard",
+        "ArtifactCard",
+        "ChoiceForm"
+      ],
+      "note": "P0 ships the fixed five agent tools only; P1 owns catalogue browse/preview/grant UI"
+    },
+    "iframe_v1": {
+      "status": "frozen",
+      "value": false,
+      "rejectCapabilities": [
+        "iframe_v1",
+        "generate_open_ui",
+        "open-generative-ui",
+        "open_generated_ui",
+        "GeneratedSourceEventRefV1"
+      ],
+      "note": "registry_v1 only; P1-317/P1-506 own any future iframe rail"
+    },
+    "copilotKitGateway": {
+      "status": "frozen",
+      "value": "disabled_unless_parity",
+      "rejectCapabilities": ["copilotkit_gateway"],
+      "enablementOwner": "P0-210"
+    }
+  }
+}

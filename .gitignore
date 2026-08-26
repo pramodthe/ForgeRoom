@@ -6,6 +6,11 @@
 .env.*
 !.env.example
 
+# Never commit live provider secrets or unredacted account files.
+provider-fixtures/**/secrets/
+provider-fixtures/**/*.secret.json
+provider-fixtures/composio/accounts.local.json
+
 # macOS and editor noise.
 .DS_Store
 

@@ -1,9 +1,13 @@
 export function describeArtifactStorageBoundary(): {
-  adapter: "pending-P0-000";
+  adapter: "local_directory";
   localDevelopment: "directory";
+  demoDeployment: "candidate-pending-live-probe";
+  ownerTask: "P0-000";
 } {
   return {
-    adapter: "pending-P0-000",
+    adapter: "local_directory",
     localDevelopment: "directory",
+    demoDeployment: "candidate-pending-live-probe",
+    ownerTask: "P0-000",
   };
 }

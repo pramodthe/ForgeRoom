@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "status": "candidate",
+  "ownerTask": "P0-000",
+  "verificationOwner": "P0-204",
+  "note": "Aligned with demo three-minute ceiling and contracts/api.md draft budget example. Soft watchdogs until TrueForge hard enforcement exists.",
+  "limits": {
+    "runWallTimeSeconds": 180,
+    "maxTurnTokens": 12000,
+    "maxToolCalls": 20,
+    "sandboxTimeSeconds": 60,
+    "tokenCostCeiling": {
+      "status": "candidate",
+      "meter": "max_turn_tokens_only_until_cost_meter",
+      "usdSoftCeiling": null
+    }
+  }
+}

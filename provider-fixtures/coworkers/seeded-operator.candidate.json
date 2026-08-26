@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "status": "candidate",
+  "ownerTask": "P0-000",
+  "decisionId": "OD-005",
+  "fixtureRole": "Operator",
+  "note": "Fixture role name only — not a hardcoded product class. Model preset remains blocked until TrueForge probe.",
+  "coworker": {
+    "name": "Operator",
+    "handle": "operator",
+    "title": "Demo operator coworker",
+    "standing_instructions": "Help with channel Tasks, sandbox artifacts and approved external updates. Use only granted tools. Never invent credentials or bypass approvals.",
+    "model_preset": null,
+    "model_preset_status": "blocked-on-secrets",
+    "native_subagents_enabled": false,
+    "sandbox": true,
+    "budget": {
+      "max_turn_tokens": 12000,
+      "max_tool_calls": 20
+    },
+    "expected_tool_roles": ["deterministic_write", "reconciliation_read", "sandbox_artifact"],
+    "service_account_badge": "fixed_workspace_service_account"
+  }
+}
