@@ -13,5 +13,10 @@
       "statusProbe": "pending"
     }
   ],
-  "forbiddenInGit": ["connectedAccountId", "COMPOSIO_API_KEY", "TRUEFORGE_API_KEY", "DAYTONA_API_KEY"]
+  "forbiddenInGit": [
+    "connectedAccountId",
+    "COMPOSIO_API_KEY",
+    "TRUEFORGE_API_KEY",
+    "DAYTONA_API_KEY"
+  ]
 }

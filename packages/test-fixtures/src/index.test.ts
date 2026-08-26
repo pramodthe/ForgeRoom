@@ -70,12 +70,11 @@ describe("P0-000 provider fixtures", () => {
     expect(apps.applications[0]?.status).toBe("candidate");
     expect(tools.verification).toBe("blocked-on-secrets");
     expect(tools.tools.every((tool) => tool.directToolSlug === null)).toBe(true);
+    expect(tools.tools.find((tool) => tool.role === "read")?.preferredCandidateSlug).toBe(
+      "GITHUB_GET_ISSUE",
+    );
     expect(
-      tools.tools.find((tool) => tool.role === "read")?.preferredCandidateSlug,
-    ).toBe("GITHUB_GET_ISSUE");
-    expect(
-      tools.tools.find((tool) => tool.role === "deterministic_write")
-        ?.preferredCandidateSlug,
+      tools.tools.find((tool) => tool.role === "deterministic_write")?.preferredCandidateSlug,
     ).toBeNull();
     expect(tools.observedDescriptorHashes.entries).toEqual([]);
   });

@@ -4,16 +4,16 @@ Do not commit secret values. Attach only redacted evidence to the task file.
 
 ## Required environment variables
 
-| Variable | Purpose |
-| --- | --- |
-| `COMPOSIO_API_KEY` | Hosted MCP / toolkit and account probes |
-| `COMPOSIO_CONNECTED_ACCOUNT_ID` | Exact pinned connected account (also record redacted suffix in fixtures) |
-| `TRUEFORGE_BASE_URL` | Harness base URL |
-| `TRUEFORGE_API_KEY` | Session/AgentSpec/Daytona probes |
-| `MODEL_PROVIDER_API_KEY` | Model through TrueForge for coworker preset reliability |
-| `DAYTONA_API_KEY` | Sandbox file produce + download |
-| `ARTIFACT_STORAGE_DIR` or demo object-storage credentials | Durable artifact retain/download |
-| `DATABASE_URL` | Fixture reset safety checks (P0-105) |
+| Variable                                                  | Purpose                                                                  |
+| --------------------------------------------------------- | ------------------------------------------------------------------------ |
+| `COMPOSIO_API_KEY`                                        | Hosted MCP / toolkit and account probes                                  |
+| `COMPOSIO_CONNECTED_ACCOUNT_ID`                           | Exact pinned connected account (also record redacted suffix in fixtures) |
+| `TRUEFORGE_BASE_URL`                                      | Harness base URL                                                         |
+| `TRUEFORGE_API_KEY`                                       | Session/AgentSpec/Daytona probes                                         |
+| `MODEL_PROVIDER_API_KEY`                                  | Model through TrueForge for coworker preset reliability                  |
+| `DAYTONA_API_KEY`                                         | Sandbox file produce + download                                          |
+| `ARTIFACT_STORAGE_DIR` or demo object-storage credentials | Durable artifact retain/download                                         |
+| `DATABASE_URL`                                            | Fixture reset safety checks (P0-105)                                     |
 
 Optional when probing optional CopilotKit later (P0-210 only): none required for P0-000; keep gateway disabled.
 

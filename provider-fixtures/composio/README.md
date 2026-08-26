@@ -13,9 +13,9 @@ Exact application slugs, direct-tool names, connected-account IDs and descriptor
 
 ## Files
 
-| File | Status |
-| --- | --- |
-| `applications.candidate.json` | Preferred pattern; no invented verified slugs |
-| `tools.candidate.json` | Role placeholders until live slug probe |
-| `accounts.redacted.template.json` | Suffix template only |
-| `descriptors/` | Empty until hashed exports land |
+| File                              | Status                                        |
+| --------------------------------- | --------------------------------------------- |
+| `applications.candidate.json`     | Preferred pattern; no invented verified slugs |
+| `tools.candidate.json`            | Role placeholders until live slug probe       |
+| `accounts.redacted.template.json` | Suffix template only                          |
+| `descriptors/`                    | Empty until hashed exports land               |

@@ -4,12 +4,12 @@ Safe, reproducible contract inputs for the ForgeRoom 0.1 demo. Credentials never
 
 ## Verification status labels
 
-| Label | Meaning |
-| --- | --- |
-| `frozen` | Documented P0 choice; implementation must honor it |
-| `candidate` | Preferred value pending live probe or P0-210 selection |
+| Label                | Meaning                                                       |
+| -------------------- | ------------------------------------------------------------- |
+| `frozen`             | Documented P0 choice; implementation must honor it            |
+| `candidate`          | Preferred value pending live probe or P0-210 selection        |
 | `blocked-on-secrets` | Requires human-provisioned credentials / live provider access |
-| `verified` | Live probe succeeded and evidence is attached to P0-000 |
+| `verified`           | Live probe succeeded and evidence is attached to P0-000       |
 
 Do not invent `verified` rows. Promote a `candidate` only after a redacted probe.
 

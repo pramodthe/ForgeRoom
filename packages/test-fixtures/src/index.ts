@@ -112,9 +112,7 @@ const propParsers = {
   ChoiceForm: choiceFormPropsSchema,
 } as const;
 
-export function assertControlledUiFixturesValid(
-  fixtures = loadControlledUiFixtures(),
-): void {
+export function assertControlledUiFixturesValid(fixtures = loadControlledUiFixtures()): void {
   for (const fixture of fixtures) {
     const parser = propParsers[fixture.componentName as keyof typeof propParsers];
     if (!parser) {
