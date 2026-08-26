@@ -20,5 +20,7 @@ export function isRecentAuthentication(
   if (!Number.isFinite(authenticatedMs) || !Number.isFinite(nowMs)) {
     return false;
   }
-  return nowMs - authenticatedMs <= maxAgeMs;
+  const ageMs = nowMs - authenticatedMs;
+  // Reject future authenticatedAt (e.g. clock skew) so the window cannot expand.
+  return ageMs >= 0 && ageMs <= maxAgeMs;
 }

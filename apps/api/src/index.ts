@@ -1,6 +1,6 @@
 import { serve } from "@hono/node-server";
 import { startWorker } from "@forgeroom/orchestration";
-import { databaseUrl, migrate } from "@forgeroom/db";
+import { migrate } from "@forgeroom/db";
 import { loadApiEnv } from "./env";
 import { createApiApp } from "./server";
 import { createAuthService } from "./auth/service";
@@ -10,25 +10,34 @@ export async function startApiProcess(env: NodeJS.ProcessEnv = process.env) {
   const config = loadApiEnv(env);
   const { store, sql, close } = createDefaultAuthStore({
     authStore: config.authStore,
-    databaseUrl: databaseUrl(),
+    databaseUrl: env.DATABASE_URL && env.DATABASE_URL.length > 0 ? env.DATABASE_URL : undefined,
   });
   const auth = createAuthService({ env: config, store });
   const app = createApiApp({ env: config, auth });
-  const worker = config.embedWorker ? startWorker({ embedded: true }) : undefined;
+  let worker: ReturnType<typeof startWorker> | undefined;
+  let server: ReturnType<typeof serve> | undefined;
 
-  if (config.authStore === "postgres") {
-    if (!sql) {
-      throw new Error("Postgres auth store requires a SQL client");
+  try {
+    worker = config.embedWorker ? startWorker({ embedded: true }) : undefined;
+
+    if (config.authStore === "postgres") {
+      if (!sql) {
+        throw new Error("Postgres auth store requires a SQL client");
+      }
+      await migrate(sql);
     }
-    await migrate(sql);
-  }
-  await auth.seedOwner();
+    await auth.seedOwner();
 
-  const server = serve({
-    fetch: app.fetch,
-    hostname: config.host,
-    port: config.port,
-  });
+    server = serve({
+      fetch: app.fetch,
+      hostname: config.host,
+      port: config.port,
+    });
+  } catch (error) {
+    await worker?.stop();
+    await close?.();
+    throw error;
+  }
 
   return {
     config,
@@ -38,16 +47,18 @@ export async function startApiProcess(env: NodeJS.ProcessEnv = process.env) {
     ready: Promise.resolve(),
     async stop() {
       await worker?.stop();
-      await close?.();
-      await new Promise<void>((resolve, reject) => {
-        server.close((error) => {
-          if (error) {
-            reject(error);
-            return;
-          }
-          resolve();
+      if (server) {
+        await new Promise<void>((resolve, reject) => {
+          server.close((closeError) => {
+            if (closeError) {
+              reject(closeError);
+              return;
+            }
+            resolve();
+          });
         });
-      });
+      }
+      await close?.();
     },
   };
 }

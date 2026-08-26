@@ -7,9 +7,11 @@ export function loginClientKey(c: Context, env: ApiEnv): string {
   if (env.trustProxy) {
     const forwarded = c.req.header("x-forwarded-for");
     if (forwarded) {
-      const first = forwarded.split(",")[0]?.trim();
-      if (first) {
-        return first;
+      // Proxies append; the rightmost hop is the immediate client of the trusted proxy.
+      const parts = forwarded.split(",");
+      const last = parts[parts.length - 1]?.trim();
+      if (last) {
+        return last;
       }
     }
   }

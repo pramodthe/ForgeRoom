@@ -17,5 +17,8 @@ describe("owner auth helpers", () => {
       false,
     );
     expect(isRecentAuthentication("not-a-date", "2026-08-26T16:00:00.000Z", 5_000)).toBe(false);
+    expect(
+      isRecentAuthentication("2026-08-26T16:01:00.000Z", "2026-08-26T16:00:00.000Z", 5 * 60_000),
+    ).toBe(false);
   });
 });

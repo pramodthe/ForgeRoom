@@ -42,12 +42,10 @@ export async function verifyPassword(password: string, encoded: string): Promise
   const p = Number.parseInt(parts[3]!, 10);
   const salt = parts[4]!;
   const expected = Buffer.from(parts[5]!, "base64url");
-  if (![n, r, p].every((value) => Number.isInteger(value) && value > 0) || expected.length === 0) {
+  // Only accept the parameters we write — rejects corrupted/malicious cost factors.
+  if (n !== SCRYPT_N || r !== SCRYPT_R || p !== SCRYPT_P || expected.length !== KEYLEN) {
     return false;
   }
-  const actual = await scryptHash(password, salt, expected.length, { N: n, r, p });
-  if (actual.length !== expected.length) {
-    return false;
-  }
+  const actual = await scryptHash(password, salt, KEYLEN, { N: n, r, p });
   return timingSafeEqual(actual, expected);
 }

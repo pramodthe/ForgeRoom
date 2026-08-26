@@ -8,17 +8,36 @@ export function createSlidingWindowRateLimiter(options: {
   limit: number;
   windowMs: number;
   now?: () => number;
+  /** Soft cap to bound memory under unique-key abuse. */
+  maxKeys?: number;
 }) {
   const hits = new Map<string, number[]>();
   const now = options.now ?? (() => Date.now());
+  const maxKeys = options.maxKeys ?? 10_000;
+
+  function prune(windowStart: number) {
+    for (const [key, stamps] of hits) {
+      const recent = stamps.filter((stamp) => stamp > windowStart);
+      if (recent.length === 0) {
+        hits.delete(key);
+      } else if (recent.length !== stamps.length) {
+        hits.set(key, recent);
+      }
+    }
+  }
 
   return {
     take(key: string): RateLimitResult {
       const current = now();
       const windowStart = current - options.windowMs;
-      const recent = (hits.get(key) ?? []).filter((stamp) => stamp > windowStart);
+      prune(windowStart);
+
+      if (!hits.has(key) && hits.size >= maxKeys) {
+        return { allowed: false, remaining: 0, retryAfterMs: options.windowMs };
+      }
+
+      const recent = hits.get(key) ?? [];
       if (recent.length >= options.limit) {
-        hits.set(key, recent);
         const retryAfterMs = Math.max(0, recent[0]! + options.windowMs - current);
         return { allowed: false, remaining: 0, retryAfterMs };
       }
@@ -32,6 +51,9 @@ export function createSlidingWindowRateLimiter(options: {
     },
     reset() {
       hits.clear();
+    },
+    size() {
+      return hits.size;
     },
   };
 }
