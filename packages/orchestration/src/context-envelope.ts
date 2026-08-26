@@ -183,11 +183,6 @@ export function buildChannelContextEnvelope(
         ...(entry.name
           ? { name: truncateChars(entry.name, Math.max(8, Math.floor(entry.name.length / 2))) }
           : {}),
-        ...(entry.handle
-          ? {
-              handle: truncateChars(entry.handle, Math.max(8, Math.floor(entry.handle.length / 2))),
-            }
-          : {}),
         ...(entry.role
           ? { role: truncateChars(entry.role, Math.max(8, Math.floor(entry.role.length / 2))) }
           : {}),
