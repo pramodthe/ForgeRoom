@@ -24,6 +24,8 @@ describe("extractMentionTokens", () => {
     ]);
     expect(extractMentionTokens("@Team please")).toEqual(["team"]);
     expect(extractMentionTokens("email me@host.test then @ops")).toEqual(["ops"]);
+    expect(extractMentionTokens("contact foo+@analyst.example then @builder")).toEqual(["builder"]);
+    expect(extractMentionTokens("please @ops.v2 now")).toEqual(["ops.v2"]);
   });
 });
 
@@ -162,6 +164,27 @@ describe("resolveMessageRecipients", () => {
       body: "@team go",
       coworkers: [coworker({ id: "c1", handle: "analyst", availableForNewWork: false }), builder],
       expect: { ok: true, routing_mode: "team", recipient_handles: ["builder"] },
+    },
+    {
+      name: "@team rejects case-insensitive handle collisions",
+      body: "@team go",
+      coworkers: [
+        coworker({ id: "c1", handle: "analyst" }),
+        coworker({ id: "c2", handle: "Analyst" }),
+      ],
+      expect: { ok: false, code: "validation_failed", reason: "ambiguous_handle" },
+    },
+    {
+      name: "dotted handle mention routes exactly",
+      body: "@ops.v2 please",
+      coworkers: [coworker({ id: "c9", handle: "ops.v2" })],
+      expect: { ok: true, routing_mode: "direct", recipient_handles: ["ops.v2"] },
+    },
+    {
+      name: "email local-part does not create a mention",
+      body: "ping foo+@analyst.example for details",
+      coworkers: [analyst, builder],
+      expect: { ok: false, code: "recipient_required", reason: "recipient_required" },
     },
   ];
 

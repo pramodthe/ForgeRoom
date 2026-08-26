@@ -9,10 +9,12 @@ import {
 export const TEAM_MENTION = "team" as const;
 
 /**
- * Mention token pattern: `@handle` where handle is letter/digit start, then
- * letter/digit/underscore/hyphen. Must not sit inside an email local-part.
+ * Mention token pattern: `@handle` where handle starts with a letter/digit and
+ * may continue with letter/digit/underscore/hyphen/dot. Only recognized after
+ * start-of-string or whitespace/opening punctuation so email local-parts and
+ * `+@` fragments are not treated as mentions.
  */
-const MENTION_RE = /(?:^|[^A-Za-z0-9_])@([A-Za-z0-9][A-Za-z0-9_-]*)/g;
+const MENTION_RE = /(?:^|[\s([{<"'])@([A-Za-z0-9][A-Za-z0-9_.-]*)/g;
 
 export type MentionRouterCoworker = {
   readonly id: string;
@@ -22,10 +24,10 @@ export type MentionRouterCoworker = {
   /** True when the coworker is an active channel participant. */
   readonly isChannelMember: boolean;
   /**
-   * False when the coworker cannot accept new work (e.g. session rotating).
-   * Defaults to true when omitted by callers that lack session state.
+   * True only when the coworker can accept new work.
+   * Callers must set this explicitly (e.g. false while a session is rotating).
    */
-  readonly availableForNewWork?: boolean;
+  readonly availableForNewWork: boolean;
 };
 
 export type ResolveMessageRecipientsInput = {
@@ -62,6 +64,29 @@ export function extractMentionTokens(body: string): string[] {
 
 function enabledMembers(coworkers: readonly MentionRouterCoworker[]): MentionRouterCoworker[] {
   return coworkers.filter((row) => row.status === "active" && row.isChannelMember);
+}
+
+function assertHandlesUnambiguous(
+  coworkers: readonly MentionRouterCoworker[],
+): RoutingResolution | null {
+  const byLower = new Map<string, string[]>();
+  for (const row of coworkers) {
+    const key = row.handle.toLowerCase();
+    const list = byLower.get(key) ?? [];
+    list.push(row.handle);
+    byLower.set(key, list);
+  }
+  for (const [key, handles] of byLower) {
+    if (handles.length > 1) {
+      return failure(
+        "validation_failed",
+        "ambiguous_handle",
+        "Channel coworker handles collide case-insensitively.",
+        { handle: key, handles: [...new Set(handles)] },
+      );
+    }
+  }
+  return null;
 }
 
 function resolveHandle(
@@ -101,7 +126,7 @@ function authorizeTarget(coworker: MentionRouterCoworker): RoutingResolution | n
       { handle: coworker.handle },
     );
   }
-  if (coworker.availableForNewWork === false) {
+  if (!coworker.availableForNewWork) {
     return failure(
       "recipient_unavailable",
       "recipient_unavailable",
@@ -131,9 +156,11 @@ export function resolveMessageRecipients(input: ResolveMessageRecipientsInput): 
   }
 
   if (hasTeam) {
-    const enabled = enabledMembers(input.coworkers).filter(
-      (row) => row.availableForNewWork !== false,
-    );
+    const ambiguity = assertHandlesUnambiguous(enabledMembers(input.coworkers));
+    if (ambiguity) {
+      return ambiguity;
+    }
+    const enabled = enabledMembers(input.coworkers).filter((row) => row.availableForNewWork);
     if (enabled.length === 0) {
       return failure(
         "recipient_required",
@@ -191,7 +218,7 @@ export function resolveMessageRecipients(input: ResolveMessageRecipientsInput): 
 
   // No mention: auto-route only when exactly one enabled, available coworker.
   const enabled = enabledMembers(input.coworkers);
-  const available = enabled.filter((row) => row.availableForNewWork !== false);
+  const available = enabled.filter((row) => row.availableForNewWork);
   if (available.length === 1) {
     return {
       ok: true,

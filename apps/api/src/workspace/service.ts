@@ -1075,6 +1075,8 @@ export function createWorkspaceService(options?: {
           handle: row.handle,
           status: row.status,
           isChannelMember: activeMemberIds.has(row.id),
+          // P0-208 will flip this false while a channel session is rotating.
+          availableForNewWork: true,
         })),
       });
       if (!routing.ok) {
