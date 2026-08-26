@@ -1,17 +1,23 @@
 {
   "schemaVersion": 1,
-  "status": "candidate",
+  "status": "verified",
   "ownerTask": "P0-000",
   "verificationOwner": "P0-310",
+  "probeDate": "2026-08-26",
   "localDevelopment": {
     "adapter": "local_directory",
     "env": "ARTIFACT_STORAGE_DIR",
-    "status": "frozen_for_local_dev"
+    "status": "verified",
+    "probeEvidence": {
+      "sampleObjectKey": "forgeroom-p0-probe-sample.md",
+      "sha256": "fe283ac9a23048f0b92e2217668dd7d3dcb855308bdf87dcf0e4a0196d9a9f53",
+      "retainVerified": true
+    }
   },
   "demoDeployment": {
     "adapter": "pending_live_probe",
     "candidates": ["local_directory_with_persistent_disk", "s3_compatible_object_storage"],
     "status": "candidate",
-    "note": "Do not claim durable demo storage until upload/download probe passes"
+    "note": "Local directory retain verified 2026-08-26. Demo durable object storage still blocked pending upload/download probe on target host."
   }
 }

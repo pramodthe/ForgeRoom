@@ -11,4 +11,4 @@ demo-rec-001 → open
 demo-rec-002 → ready
 ```
 
-Status: candidate pending live Daytona + storage download probe.
+Status: verified 2026-08-26 — Daytona SDK upload/download match (sha256 `1026610d…9c369`, sandbox suffix `4c94`). TrueForge→artifact-storage retain path still blocked on `TRUEFORGE_API_KEY`.

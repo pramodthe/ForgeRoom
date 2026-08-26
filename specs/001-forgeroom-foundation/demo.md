@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Status | P0-000 freezing in progress — safe/frozen rows below; live Composio/Daytona/TrueForge rows remain blocked-on-secrets until probes; P0-210 still selects the exact AG-UI lockfile |
+| Status | P0-000 live probes partial — Composio/Daytona/local storage verified; TrueForge model preset + DB fixture reset + demo deployment still blocked |
 | Duration | Three minutes maximum |
 | Product framing | General AI coworker channel; scenario is only a fixture |
 | Fixture root | `provider-fixtures/` |
@@ -11,7 +11,7 @@
 
 P0-000 replaces provider/demo TBDs with frozen choices or explicitly labeled candidates. P0-210 replaces the exact pure AG-UI package rows after compatibility evidence and records optional CopilotKit as disabled unless parity-proven.
 
-Verification labels: `frozen` (must honor), `candidate` (preferred pending probe/selection), `blocked-on-secrets` (needs live credentials), `verified` (probe evidence attached — none yet for provider rows).
+Verification labels: `frozen` (must honor), `candidate` (preferred pending probe/selection), `blocked-on-secrets` (needs live credentials), `verified` (probe evidence attached — Composio, Daytona, local artifact storage as of 2026-08-26).
 
 | Decision | Locked value | Status |
 | --- | --- | --- |
@@ -24,17 +24,17 @@ Verification labels: `frozen` (must honor), `candidate` (preferred pending probe
 | Controlled component demo | DataTable + bar chart + TaskCard + ArtifactCard + ChoiceForm/filter fixtures under `provider-fixtures/controlled-ui/` | candidate |
 | Task fixture | One TaskRecord title/transition in `provider-fixtures/tasks/task-record.candidate.json` | candidate |
 | Save-as-skill fixture | Instruction-only private SkillVersion from one successful Run; attachment rotates session; invocation begins in 0.2 | candidate |
-| Composio application 1 | Preferred candidate `github` (public docs); exact account availability blocked-on-secrets | candidate |
+| Composio application 1 | Verified `github` on pinned account (suffix `nizY`) | verified |
 | Composio application 2 | none (default) unless primary cannot cover read+write+reconcile | candidate |
-| Read tool slug | Preferred candidate `GITHUB_GET_ISSUE`; freeze only after descriptor export | candidate |
-| Deterministic write tool slug | TBD — must be update-on-existing synthetic issue field, not create/send | blocked-on-secrets |
-| Reconciliation read tool slug | Preferred candidate `GITHUB_GET_ISSUE` (may equal read) | candidate |
-| Pinned connected-account IDs | Stored only in secret configuration; record redacted suffixes in fixtures after probe | blocked-on-secrets |
-| Observed descriptor hashes | Empty until live export into `provider-fixtures/composio/descriptors/` | blocked-on-secrets |
-| Synthetic provider fixture | Structure ready; record IDs pending selected toolkit | candidate / blocked-on-secrets |
-| Fixture reset command | TBD — owned by P0-105 once synthetic IDs verified | blocked-on-secrets |
-| Artifact storage | Local directory via `ARTIFACT_STORAGE_DIR` for development (frozen); demo durable adapter candidate | frozen local; demo candidate |
-| Deployment topology | Local compose + embedded worker; demo = single web service + managed Postgres candidate | candidate |
+| Read tool slug | `GITHUB_GET_AN_ISSUE` (hash in `composio/descriptors/manifest.json`) | verified |
+| Deterministic write tool slug | `GITHUB_ADD_LABELS_TO_AN_ISSUE` — synthetic label on existing issue | verified |
+| Reconciliation read tool slug | `GITHUB_GET_AN_ISSUE` (same as read) | verified |
+| Pinned connected-account IDs | Secret env only; redacted suffix `nizY` in `composio/accounts.verified.json` | verified |
+| Observed descriptor hashes | `provider-fixtures/composio/descriptors/manifest.json` | verified |
+| Synthetic provider fixture | `pramodthe/Hi-Tuto#10`, label `forgeroom-p0-probe`; reset via remove-label tool | verified |
+| Fixture reset command | Provider: `GITHUB_REMOVE_A_LABEL_FROM_AN_ISSUE`; DB reset owned by P0-105 (schema not migrated locally) | verified provider / blocked DB |
+| Artifact storage | Local `ARTIFACT_STORAGE_DIR` retain verified; demo durable adapter candidate | verified local; demo candidate |
+| Deployment topology | Local preflight verified 2026-08-26; demo host candidate | partial verified |
 | Run wall-time limit | 180 seconds | candidate |
 | Token/cost limit | `max_turn_tokens` 12000; USD soft ceiling deferred until cost meter | candidate |
 | Tool-call limit | 20 | candidate |

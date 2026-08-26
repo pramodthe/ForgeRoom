@@ -1,50 +1,73 @@
 {
   "schemaVersion": 1,
-  "status": "candidate",
+  "status": "verified",
   "ownerTask": "P0-000",
-  "verification": "blocked-on-secrets",
+  "verification": "verified",
+  "probeDate": "2026-08-26",
   "decisionId": "OD-003",
   "tools": [
     {
       "role": "read",
-      "directToolSlug": null,
+      "directToolSlug": "GITHUB_GET_AN_ISSUE",
       "preferredCandidateSlug": "GITHUB_GET_ISSUE",
       "riskClass": "read",
-      "status": "candidate",
-      "note": "Public Composio session docs cite GITHUB_GET_ISSUE. Confirm slug + schema via live descriptor export before freezing."
+      "status": "verified",
+      "note": "Live slug is GITHUB_GET_AN_ISSUE (GITHUB_GET_ISSUE returns 404). Verified read on octocat/Hello-World#1 and pramodthe/Hi-Tuto#10."
     },
     {
       "role": "deterministic_write",
-      "directToolSlug": null,
+      "directToolSlug": "GITHUB_ADD_LABELS_TO_AN_ISSUE",
       "preferredCandidateSlug": null,
       "riskClass": "write",
       "idempotency": "required",
-      "status": "blocked-on-secrets",
-      "constraint": "Must set a uniquely identifiable synthetic field to a known value. Do not use GITHUB_CREATE_ISSUE or message/email creation to claim exactly-once behavior. Prefer an update-on-existing-issue tool discovered live (e.g. label/state/body field)."
+      "status": "verified",
+      "constraint": "Adds synthetic label forgeroom-p0-probe on existing non-production demo issue; reset via GITHUB_REMOVE_A_LABEL_FROM_AN_ISSUE.",
+      "note": "Verified 2026-08-26: label write + GET reconcile on pramodthe/Hi-Tuto#10."
     },
     {
       "role": "reconciliation_read",
-      "directToolSlug": null,
+      "directToolSlug": "GITHUB_GET_AN_ISSUE",
       "preferredCandidateSlug": "GITHUB_GET_ISSUE",
       "riskClass": "read",
-      "status": "candidate",
-      "note": "May equal the primary read slug when one tool can distinguish expected vs failed state"
+      "status": "verified",
+      "note": "Same slug as read; reconcile checks labels array for expected synthetic marker."
     }
   ],
   "observedDescriptorHashes": {
-    "status": "blocked-on-secrets",
+    "status": "verified",
     "exportsDir": "descriptors/",
-    "entries": []
+    "manifest": "descriptors/manifest.json",
+    "entries": [
+      {
+        "role": "read",
+        "directToolSlug": "GITHUB_GET_AN_ISSUE",
+        "sha256": "c5b2dac56410d0576d400324aee0cd1d53a5ebc167f1a6b6f3066822c827ba1e"
+      },
+      {
+        "role": "deterministic_write",
+        "directToolSlug": "GITHUB_ADD_LABELS_TO_AN_ISSUE",
+        "sha256": "ff40ac2f1e6015f6aa280e2056790551ba651b6a755651c130af181846a02855"
+      },
+      {
+        "role": "reconciliation_read",
+        "directToolSlug": "GITHUB_GET_AN_ISSUE",
+        "sha256": "c5b2dac56410d0576d400324aee0cd1d53a5ebc167f1a6b6f3066822c827ba1e"
+      }
+    ]
   },
   "syntheticProviderFixture": {
-    "status": "candidate",
+    "status": "verified",
     "recordKind": "github_issue_in_dedicated_demo_repo",
-    "owner": null,
-    "repo": null,
-    "issueNumber": null,
-    "resetCommand": null,
+    "owner": "pramodthe",
+    "repo": "Hi-Tuto",
+    "issueNumber": 10,
+    "syntheticMarker": {
+      "kind": "label",
+      "value": "forgeroom-p0-probe"
+    },
+    "resetToolSlug": "GITHUB_REMOVE_A_LABEL_FROM_AN_ISSUE",
     "resetIdempotent": true,
     "productionImpact": "forbidden",
-    "note": "P0-105 implements reset once slug + synthetic record IDs are verified against a non-production demo repository"
+    "note": "Non-production demo issue used for label write/reconcile/reset probe. P0-105 owns DB fixture reset; provider reset is label removal."
   }
 }

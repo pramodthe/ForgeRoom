@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "status": "verified",
+  "ownerTask": "P0-000",
+  "decisionId": "OD-004",
+  "probeDate": "2026-08-26",
+  "accounts": [
+    {
+      "toolkitSlot": 1,
+      "composioToolkitSlug": "github",
+      "envVar": "COMPOSIO_CONNECTED_ACCOUNT_ID",
+      "connectedAccountId": null,
+      "redactedSuffix": "nizY",
+      "connectedAccountIdLength": 15,
+      "statusProbe": "ACTIVE",
+      "userIdEnvVar": "COMPOSIO_USER_ID",
+      "note": "Full ID only in local .env / secret store. Verified via GET /api/v3.1/connected_accounts/{id}."
+    }
+  ],
+  "forbiddenInGit": [
+    "connectedAccountId",
+    "COMPOSIO_API_KEY",
+    "TRUEFORGE_API_KEY",
+    "DAYTONA_API_KEY"
+  ]
+}

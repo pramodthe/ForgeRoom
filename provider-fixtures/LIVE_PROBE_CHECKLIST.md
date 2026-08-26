@@ -17,17 +17,17 @@ Do not commit secret values. Attach only redacted evidence to the task file.
 
 Optional when probing optional CopilotKit later (P0-210 only): none required for P0-000; keep gateway disabled.
 
-## Probe steps (blocked until secrets exist)
+## Probe steps (2026-08-26 run on `codex/p0-000-live-probes`)
 
-- [ ] List Composio toolkits/accounts; choose ≤2 apps; pin account; record redacted suffix.
-- [ ] Export read / deterministic-write / reconciliation-read direct-tool descriptors; check in hashes under `composio/descriptors/`.
-- [ ] Run synthetic write then reconciliation read on fixture data; confirm expected state.
-- [ ] Run fixture reset twice with zero duplicates and zero production impact.
-- [ ] Seed Operator coworker with a reliable model preset; record preset id.
-- [ ] Resolve Research draft prompt to exact permission preview/denials (no writes).
-- [ ] Produce one Daytona sample file; download via TrueForge; retain in artifact storage; open preview.
-- [ ] Confirm local + demo deployment topology preflight (DB, auth, TrueForge, Daytona, Composio, storage, worker).
-- [ ] Record verified run-limit watchdog behavior or adjust candidates with evidence.
+- [x] List Composio toolkits/accounts; choose ≤2 apps; pin account; record redacted suffix (`nizY`, github ACTIVE).
+- [x] Export read / deterministic-write / reconciliation-read direct-tool descriptors; check in hashes under `composio/descriptors/manifest.json`.
+- [x] Run synthetic write then reconciliation read on fixture data; confirm expected state (label `forgeroom-p0-probe` on `pramodthe/Hi-Tuto#10`).
+- [x] Provider fixture reset twice — label removal idempotent (2nd remove returns expected provider error; label absent after both).
+- [ ] Seed Operator coworker with a reliable model preset; record preset id — **blocked: `TRUEFORGE_API_KEY`, `MODEL_PROVIDER_API_KEY` missing**.
+- [ ] Resolve Research draft prompt to exact permission preview/denials (no writes) — **blocked: TrueForge harness + model preset**.
+- [x] Produce one Daytona sample file; download via Daytona SDK; retain in local artifact storage — **TrueForge download path blocked on `TRUEFORGE_API_KEY`**.
+- [x] Confirm local deployment topology preflight (DB, auth env, Composio, Daytona, storage) — partial; TrueForge/model keys missing.
+- [ ] Record verified run-limit watchdog behavior or adjust candidates with evidence — **blocked: TrueForge hard enforcement (P0-204)**.
 
 ## Explicit non-goals for the human probe
 
