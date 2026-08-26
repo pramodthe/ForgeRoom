@@ -2,10 +2,10 @@
 
 | Field | Current value |
 | --- | --- |
-| Overall | P0-101–P0-104, P0-106–P0-107, P0-205 complete; P0-108 in review; P0-000 in progress; P0-401 in progress |
+| Overall | P0-101–P0-104, P0-106–P0-107, P0-205 complete; P0-108 in review; P0-401 app shell in review; P0-000 in progress |
 | Current phase | Phase 1 — Foundation |
-| Active task | P0-108 (in_review); P0-000 (in_progress); P0-401 (in_progress); P0-210 in flight |
-| Next task | Land P0-108 PR #10; review P0-000 PR #12; P0-105 waits on P0-000 completion |
+| Active task | P0-401 (in_review); P0-108 (in_review); P0-000 (in_progress); P0-210 in flight |
+| Next task | Review P0-401 PR #15; land P0-108 PR #10; review P0-000 PR #12; P0-105 waits on P0-000 completion |
 | P0 blockers | Live Composio tools/account/descriptor hashes, Daytona+storage probe, model presets, remaining OD-002–OD-012 verified rows, controlled-GenUI/Task/skill demo fixture, storage/deployment choices, and PD-002 before public release |
 | Last updated | 2026-08-26 |
 
