@@ -666,14 +666,18 @@ describe("P0-108 channel context and pins", () => {
         session,
         channelAgentSessionId: "cas_mono",
         deliveredThroughSequence: Math.min(2, highWater),
-        envelopeRecentDeltas: Array.from({ length: highWater }, (_, index) => ({ sequence: index + 1 })),
+        envelopeRecentDeltas: Array.from({ length: highWater }, (_, index) => ({
+          sequence: index + 1,
+        })),
         turnCreation: "confirmed",
       }),
       workspace.advanceSessionDeliveryCursor({
         session,
         channelAgentSessionId: "cas_mono",
         deliveredThroughSequence: highWater,
-        envelopeRecentDeltas: Array.from({ length: highWater }, (_, index) => ({ sequence: index + 1 })),
+        envelopeRecentDeltas: Array.from({ length: highWater }, (_, index) => ({
+          sequence: index + 1,
+        })),
         turnCreation: "confirmed",
       }),
     ]);
@@ -937,20 +941,56 @@ describe("P0-108 channel context and pins", () => {
   it("replays create-pin after unpin without recreating", async () => {
     const { app, env } = await createTestApp();
     const { session, cookie } = await login(app, env);
-    const channel = await createChannel(app, env, cookie, session.csrf_token, "UnpinReplay", "idem_unpin_replay_ch");
+    const channel = await createChannel(
+      app,
+      env,
+      cookie,
+      session.csrf_token,
+      "UnpinReplay",
+      "idem_unpin_replay_ch",
+    );
     const message = await app.request(`/api/channels/${channel.id}/messages`, {
       method: "POST",
       headers: mutationHeaders(env, cookie, session.csrf_token),
-      body: JSON.stringify({ body: "Replay me", recipient_handles: [], routing_mode: "direct", parent_message_id: null }),
+      body: JSON.stringify({
+        body: "Replay me",
+        recipient_handles: [],
+        routing_mode: "direct",
+        parent_message_id: null,
+      }),
     });
     const messageBody = (await message.json()) as { message_id: string };
-    const body = { schemaVersion: 1, source_message_id: messageBody.message_id, source_artifact_id: null, label: "Replay", idempotency_key: "idem_unpin_replay" };
-    const created = await app.request(`/api/channels/${channel.id}/pins`, { method: "POST", headers: mutationHeaders(env, cookie, session.csrf_token), body: JSON.stringify(body) });
-    const first = withoutRequestId(await created.json()) as { pin: { id: string }; sequence: number };
-    await app.request(`/api/channels/${channel.id}/pins/${first.pin.id}`, { method: "DELETE", headers: mutationHeaders(env, cookie, session.csrf_token), body: JSON.stringify({ schemaVersion: 1, idempotency_key: "idem_unpin_replay_remove" }) });
-    const replay = await app.request(`/api/channels/${channel.id}/pins`, { method: "POST", headers: mutationHeaders(env, cookie, session.csrf_token), body: JSON.stringify(body) });
+    const body = {
+      schemaVersion: 1,
+      source_message_id: messageBody.message_id,
+      source_artifact_id: null,
+      label: "Replay",
+      idempotency_key: "idem_unpin_replay",
+    };
+    const created = await app.request(`/api/channels/${channel.id}/pins`, {
+      method: "POST",
+      headers: mutationHeaders(env, cookie, session.csrf_token),
+      body: JSON.stringify(body),
+    });
+    const first = withoutRequestId(await created.json()) as {
+      pin: { id: string };
+      sequence: number;
+    };
+    await app.request(`/api/channels/${channel.id}/pins/${first.pin.id}`, {
+      method: "DELETE",
+      headers: mutationHeaders(env, cookie, session.csrf_token),
+      body: JSON.stringify({ schemaVersion: 1, idempotency_key: "idem_unpin_replay_remove" }),
+    });
+    const replay = await app.request(`/api/channels/${channel.id}/pins`, {
+      method: "POST",
+      headers: mutationHeaders(env, cookie, session.csrf_token),
+      body: JSON.stringify(body),
+    });
     expect(replay.status).toBe(201);
-    const second = withoutRequestId(await replay.json()) as { pin: { id: string }; sequence: number };
+    const second = withoutRequestId(await replay.json()) as {
+      pin: { id: string };
+      sequence: number;
+    };
     expect(second.pin.id).toBe(first.pin.id);
     expect(second.sequence).toBe(first.sequence);
   });
