@@ -565,7 +565,9 @@ export function createPostgresWorkspaceStore(sql: SqlClient): WorkspaceCatalogSt
         .select()
         .from(channelAgentSessions)
         .where(eq(channelAgentSessions.channelId, channelId));
-      return rows.map(mapAgentSession).sort((a, b) => a.agentProfileId.localeCompare(b.agentProfileId));
+      return rows
+        .map(mapAgentSession)
+        .sort((a, b) => a.agentProfileId.localeCompare(b.agentProfileId));
     },
     async upsertChannelAgentSession(session: ChannelAgentSessionUpsertInput) {
       const now = new Date().toISOString();

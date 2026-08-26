@@ -16,7 +16,12 @@ import type {
   SafeJsonObject,
   SessionResponse,
 } from "@forgeroom/contracts";
-import { channelPinSchema, channelSchema, coworkerProfileSchema, isReservedCoworkerHandle } from "@forgeroom/contracts";
+import {
+  channelPinSchema,
+  channelSchema,
+  coworkerProfileSchema,
+  isReservedCoworkerHandle,
+} from "@forgeroom/contracts";
 import {
   buildChannelContextEnvelope,
   envelopeDeliveredThroughSequence,
