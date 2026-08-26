@@ -8,6 +8,21 @@ import {
 /** Reserved team fan-out mention token (case-insensitive). */
 export const TEAM_MENTION = "team" as const;
 
+/** Channel agent session states that may receive new work. */
+export const AVAILABLE_CHANNEL_AGENT_SESSION_STATES = new Set(["active"]);
+
+/**
+ * Map durable channel_agent_sessions.state to routing eligibility.
+ * Unknown/missing sessions (TrueForge not provisioned yet) default available;
+ * known rotating/disabled states fail closed.
+ */
+export function isChannelAgentSessionAvailable(state: string | null | undefined): boolean {
+  if (state == null || state === "") {
+    return true;
+  }
+  return AVAILABLE_CHANNEL_AGENT_SESSION_STATES.has(state);
+}
+
 /**
  * Mention token pattern: `@handle` where handle starts with a letter/digit and
  * may continue with letter/digit/underscore/hyphen/dot. Only recognized after
@@ -155,12 +170,14 @@ export function resolveMessageRecipients(input: ResolveMessageRecipientsInput): 
     );
   }
 
+  // Ambiguous case-insensitive handles are rejected for every routing mode.
+  const enabled = enabledMembers(input.coworkers);
+  const ambiguity = assertHandlesUnambiguous(enabled);
+  if (ambiguity) {
+    return ambiguity;
+  }
+
   if (hasTeam) {
-    const ambiguity = assertHandlesUnambiguous(enabledMembers(input.coworkers));
-    if (ambiguity) {
-      return ambiguity;
-    }
-    const enabled = enabledMembers(input.coworkers).filter((row) => row.availableForNewWork);
     if (enabled.length === 0) {
       return failure(
         "recipient_required",
@@ -176,7 +193,16 @@ export function resolveMessageRecipients(input: ResolveMessageRecipientsInput): 
         { enabled_count: enabled.length },
       );
     }
-    const handles = [...enabled]
+    const available = enabled.filter((row) => row.availableForNewWork);
+    if (available.length === 0) {
+      return failure(
+        "recipient_unavailable",
+        "recipient_unavailable",
+        "@team recipients are unavailable for new work.",
+        { enabled_count: enabled.length },
+      );
+    }
+    const handles = [...available]
       .sort((a, b) => a.handle.localeCompare(b.handle))
       .map((row) => row.handle);
     return { ok: true, routing_mode: "team", recipient_handles: handles };
@@ -216,23 +242,23 @@ export function resolveMessageRecipients(input: ResolveMessageRecipientsInput): 
     return { ok: true, routing_mode: "direct", recipient_handles: resolved };
   }
 
-  // No mention: auto-route only when exactly one enabled, available coworker.
-  const enabled = enabledMembers(input.coworkers);
-  const available = enabled.filter((row) => row.availableForNewWork);
-  if (available.length === 1) {
+  // No mention: auto-route only for a single-enabled channel coworker who is available.
+  // Multiple enabled members always require an explicit recipient, even if only one is currently available.
+  if (enabled.length === 1) {
+    const only = enabled[0]!;
+    if (!only.availableForNewWork) {
+      return failure(
+        "recipient_unavailable",
+        "recipient_unavailable",
+        "The only channel coworker is unavailable for new work.",
+        { handle: only.handle },
+      );
+    }
     return {
       ok: true,
       routing_mode: "direct",
-      recipient_handles: [available[0]!.handle],
+      recipient_handles: [only.handle],
     };
-  }
-  if (available.length === 0 && enabled.length === 1) {
-    return failure(
-      "recipient_unavailable",
-      "recipient_unavailable",
-      "The only channel coworker is unavailable for new work.",
-      { handle: enabled[0]!.handle },
-    );
   }
   return failure(
     "recipient_required",

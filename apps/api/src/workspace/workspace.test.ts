@@ -1332,7 +1332,7 @@ describe("channel and coworker API", () => {
   });
 
   it("reparses mention and @team recipients instead of trusting client arrays", async () => {
-    const { app, env, workspace } = await createTestApp();
+    const { app, env, workspace, workspaceStore } = await createTestApp();
     const { session, cookie } = await login(app, env);
     const channelRes = await app.request(`/api/workspaces/${env.workspaceId}/channels`, {
       method: "POST",
@@ -1435,6 +1435,80 @@ describe("channel and coworker API", () => {
     expect(unknown.status).toBe(400);
     expect(errorEnvelopeSchema.parse(await unknown.json()).error.details).toMatchObject({
       reason: "unknown_handle",
+    });
+
+    await workspaceStore.upsertChannelAgentSession({
+      id: "cas_analyst_rotating",
+      workspaceId: env.workspaceId,
+      channelId: channel.id,
+      agentProfileId: analyst.id,
+      state: "rotating",
+    });
+    const rotating = await app.request(`/api/channels/${channel.id}/messages`, {
+      method: "POST",
+      headers: mutationHeaders(env, cookie, session.csrf_token),
+      body: JSON.stringify({
+        body: "@analyst hi",
+        recipient_handles: [],
+        routing_mode: "direct",
+        parent_message_id: null,
+      }),
+    });
+    expect(rotating.status).toBe(400);
+    expect(errorEnvelopeSchema.parse(await rotating.json()).error).toMatchObject({
+      code: "recipient_unavailable",
+      details: { reason: "recipient_unavailable" },
+    });
+
+    const teamWhileRotating = await app.request(`/api/channels/${channel.id}/messages`, {
+      method: "POST",
+      headers: mutationHeaders(env, cookie, session.csrf_token),
+      body: JSON.stringify({
+        body: "@team go again",
+        recipient_handles: [],
+        routing_mode: "direct",
+        parent_message_id: null,
+      }),
+    });
+    expect(teamWhileRotating.status).toBe(201);
+    await expect(teamWhileRotating.json()).resolves.toMatchObject({
+      recipient_handles: ["builder"],
+      routing_mode: "team",
+    });
+
+    const dotted = await workspace.seedCoworker({
+      workspaceId: env.workspaceId,
+      createdBy: env.ownerUserId,
+      handle: "ops.v2",
+      name: "Ops V2",
+      title: "O",
+    });
+    const dottedAdded = await app.request(`/api/channels/${channel.id}/participants`, {
+      method: "POST",
+      headers: mutationHeaders(env, cookie, session.csrf_token),
+      body: JSON.stringify({
+        schemaVersion: 1,
+        participant_type: "coworker",
+        participant_id: dotted.id,
+        role: "member",
+        idempotency_key: "idem_route_add_ops_v2",
+      }),
+    });
+    expect(dottedAdded.status).toBe(200);
+    const dottedMsg = await app.request(`/api/channels/${channel.id}/messages`, {
+      method: "POST",
+      headers: mutationHeaders(env, cookie, session.csrf_token),
+      body: JSON.stringify({
+        body: "@ops.v2 please",
+        recipient_handles: [],
+        routing_mode: "direct",
+        parent_message_id: null,
+      }),
+    });
+    expect(dottedMsg.status).toBe(201);
+    await expect(dottedMsg.json()).resolves.toMatchObject({
+      recipient_handles: ["ops.v2"],
+      routing_mode: "direct",
     });
   });
 

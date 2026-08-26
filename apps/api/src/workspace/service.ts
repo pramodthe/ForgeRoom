@@ -13,7 +13,7 @@ import type {
   SessionResponse,
 } from "@forgeroom/contracts";
 import { channelSchema, coworkerProfileSchema } from "@forgeroom/contracts";
-import { resolveMessageRecipients } from "@forgeroom/orchestration";
+import { resolveMessageRecipients, isChannelAgentSessionAvailable } from "@forgeroom/orchestration";
 import { randomOpaqueId } from "../auth/crypto";
 import { customAguiEvent } from "./event-builders";
 import { ChannelEventPersistenceError } from "./event-guard";
@@ -1067,7 +1067,13 @@ export function createWorkspaceService(options?: {
           .map((row) => row.participantId),
       );
       const coworkers = await store.listCoworkers(loaded.value.workspaceId);
+      const sessions = await store.listChannelAgentSessions(channelId);
+      const sessionStateByCoworker = new Map(
+        sessions.map((row) => [row.agentProfileId, row.state] as const),
+      );
       // Authoritative recipients come from body mentions / @team rules — never trust client arrays.
+      // Availability is derived from channel_agent_sessions when present (rotating/disabled fail closed);
+      // missing sessions (pre-P0-201) default available.
       const routing = resolveMessageRecipients({
         body: command.body,
         coworkers: coworkers.map((row) => ({
@@ -1075,8 +1081,7 @@ export function createWorkspaceService(options?: {
           handle: row.handle,
           status: row.status,
           isChannelMember: activeMemberIds.has(row.id),
-          // P0-208 will flip this false while a channel session is rotating.
-          availableForNewWork: true,
+          availableForNewWork: isChannelAgentSessionAvailable(sessionStateByCoworker.get(row.id)),
         })),
       });
       if (!routing.ok) {

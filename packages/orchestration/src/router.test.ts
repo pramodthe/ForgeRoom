@@ -166,6 +166,12 @@ describe("resolveMessageRecipients", () => {
       expect: { ok: true, routing_mode: "team", recipient_handles: ["builder"] },
     },
     {
+      name: "no-mention with multiple enabled does not auto-route to sole available",
+      body: "no mention",
+      coworkers: [coworker({ id: "c1", handle: "analyst", availableForNewWork: false }), builder],
+      expect: { ok: false, code: "recipient_required", reason: "recipient_required" },
+    },
+    {
       name: "@team rejects case-insensitive handle collisions",
       body: "@team go",
       coworkers: [
