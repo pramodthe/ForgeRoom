@@ -22,7 +22,7 @@ Each task file is authoritative for its status and evidence. Keep this index and
 | [ ] | [P0-105](./tasks/P0-105-demo-fixtures.md) | Idempotent demo fixtures | blocked | P0-000, P0-103, P0-104 |
 | [x] | [P0-106](./tasks/P0-106-channel-coworker-api.md) | Channel and coworker API | done | P0-103, P0-104 |
 | [x] | [P0-107](./tasks/P0-107-event-log-sse.md) | Canonical event log and SSE | done | P0-106 |
-| [ ] | [P0-108](./tasks/P0-108-context-pins.md) | Channel context and pins | in_progress | P0-107 |
+| [ ] | [P0-108](./tasks/P0-108-context-pins.md) | Channel context and pins | in_review | P0-107 |
 | [ ] | [P0-109](./tasks/P0-109-task-record.md) | Application-owned TaskRecord | blocked | P0-103, P0-104, P0-107, P0-203, P0-208 |
 | [ ] | [P0-201](./tasks/P0-201-trueforge-sessions.md) | TrueForge adapter and sessions | blocked | P0-000, P0-103, P0-105 |
 | [ ] | [P0-202](./tasks/P0-202-turn-queue.md) | Per-session serial turn queue | blocked | P0-103, P0-201 |

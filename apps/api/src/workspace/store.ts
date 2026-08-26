@@ -826,6 +826,10 @@ export function createMemoryWorkspaceStore(): WorkspaceCatalogStore {
       if (!existing) {
         return null;
       }
+      // Monotonic: never move the cursor backwards under concurrent writers.
+      if (nextSequence < existing.lastDeliveredChannelSequence) {
+        return structuredClone(existing);
+      }
       const next = {
         ...existing,
         lastDeliveredChannelSequence: nextSequence,

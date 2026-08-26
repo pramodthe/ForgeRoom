@@ -1,10 +1,5 @@
 import { z } from "zod";
-import {
-  nonNegativeIntSchema,
-  opaqueIdSchema,
-  schemaVersion1,
-  sha256Schema,
-} from "./primitives";
+import { nonNegativeIntSchema, opaqueIdSchema, schemaVersion1, sha256Schema } from "./primitives";
 
 export const channelContextRosterEntrySchema = z
   .object({

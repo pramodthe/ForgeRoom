@@ -67,10 +67,7 @@ function toChannel(row: ChannelRecord): Channel {
   });
 }
 
-async function toChannelPin(
-  store: WorkspaceCatalogStore,
-  row: PinRecord,
-): Promise<ChannelPin> {
+async function toChannelPin(store: WorkspaceCatalogStore, row: PinRecord): Promise<ChannelPin> {
   let sourceMessageId: string | null = null;
   if (row.sourceEventId) {
     const message = await store.getMessageByEventId(row.sourceEventId);
@@ -1276,12 +1273,23 @@ export function createWorkspaceService(options?: {
         commandKind: "channel.pin.create",
         idempotencyKey: command.idempotency_key,
         resultId: pinId,
+        assertReceipt: (receipt) => {
+          if (receipt.resultId !== pinId) {
+            return {
+              code: "conflict",
+              message: "Idempotency key is bound to a different pin.",
+              details: { pin_id: pinId, bound_pin_id: receipt.resultId },
+            };
+          }
+          return null;
+        },
         reload: async (id) => {
           const row = await store.getPin(id);
           if (!row || row.removedAt !== null) {
             return null;
           }
           const pin = await toChannelPin(store, row);
+          // Sequence is not stored on the receipt yet; -1 signals replay without a cursor claim.
           return { pin, sequence: -1 };
         },
         run: async () => {
@@ -1304,7 +1312,12 @@ export function createWorkspaceService(options?: {
           try {
             const appended = await store.createPinWithEvent({
               channelId,
-              event: pinEvent("pin.created", session.user.id, createdAt, sourceMessageId ?? undefined),
+              event: pinEvent(
+                "pin.created",
+                session.user.id,
+                createdAt,
+                sourceMessageId ?? undefined,
+              ),
               pin: {
                 id: pinId,
                 channelId,
@@ -1376,11 +1389,22 @@ export function createWorkspaceService(options?: {
         commandKind: "channel.pin.remove",
         idempotencyKey: command.idempotency_key,
         resultId: pinId,
+        assertReceipt: (receipt) => {
+          if (receipt.resultId !== pinId) {
+            return {
+              code: "conflict",
+              message: "Idempotency key is bound to a different pin.",
+              details: { pin_id: pinId, bound_pin_id: receipt.resultId },
+            };
+          }
+          return null;
+        },
         reload: async (id) => {
           const row = await store.getPin(id);
           if (!row || row.channelId !== channelId || row.removedAt === null) {
             return null;
           }
+          // Sequence is not stored on the receipt yet; -1 signals replay without a cursor claim.
           return { pin: await toChannelPin(store, row), sequence: -1 };
         },
         run: async () => {
@@ -1557,6 +1581,25 @@ export function createWorkspaceService(options?: {
       if (denied) {
         return { ok: false, error: denied };
       }
+      const channel = await store.getChannel(agentSession.channelId);
+      if (!channel) {
+        return { ok: false, error: { code: "not_found", message: "Channel not found." } };
+      }
+      // nextSequence is the next free slot; max durable event sequence is nextSequence - 1.
+      const maxDelivered = Math.max(0, channel.nextSequence - 1);
+      if (input.deliveredThroughSequence > maxDelivered) {
+        return {
+          ok: false,
+          error: {
+            code: "validation_failed",
+            message: "deliveredThroughSequence cannot exceed the channel event high-water mark.",
+            details: {
+              delivered_through_sequence: input.deliveredThroughSequence,
+              max_delivered_sequence: maxDelivered,
+            },
+          },
+        };
+      }
       const decision = nextDeliveryCursor({
         current_sequence: agentSession.lastDeliveredChannelSequence,
         delivered_through_sequence: input.deliveredThroughSequence,
@@ -1583,12 +1626,13 @@ export function createWorkspaceService(options?: {
           error: { code: "not_found", message: "Channel agent session not found." },
         };
       }
+      const advanced = updated.lastDeliveredChannelSequence === decision.next_sequence;
       return {
         ok: true,
         value: {
-          advanced: true,
+          advanced,
           last_delivered_channel_sequence: updated.lastDeliveredChannelSequence,
-          reason: decision.reason,
+          reason: advanced ? decision.reason : "sequence_not_forward",
         },
       };
     },

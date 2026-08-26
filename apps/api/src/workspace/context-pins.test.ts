@@ -110,7 +110,14 @@ describe("P0-108 channel context and pins", () => {
   it("pins and unpins a message while retaining the source link and emitting events", async () => {
     const { app, env, workspaceStore } = await createTestApp();
     const { session, cookie } = await login(app, env);
-    const channel = await createChannel(app, env, cookie, session.csrf_token, "Pins", "idem_pin_ch");
+    const channel = await createChannel(
+      app,
+      env,
+      cookie,
+      session.csrf_token,
+      "Pins",
+      "idem_pin_ch",
+    );
 
     const message = await app.request(`/api/channels/${channel.id}/messages`, {
       method: "POST",

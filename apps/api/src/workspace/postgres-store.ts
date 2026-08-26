@@ -968,9 +968,7 @@ export function createPostgresWorkspaceStore(sql: SqlClient): WorkspaceCatalogSt
         .select()
         .from(channelPins)
         .where(and(eq(channelPins.channelId, channelId), isNull(channelPins.removedAt)));
-      return rows
-        .map(mapPin)
-        .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+      return rows.map(mapPin).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
     },
     async findActivePinBySource(input) {
       const rows = await db
@@ -994,9 +992,7 @@ export function createPostgresWorkspaceStore(sql: SqlClient): WorkspaceCatalogSt
     },
     async listSafeArtifacts(channelId) {
       const rows = await db.select().from(artifacts).where(eq(artifacts.channelId, channelId));
-      return rows
-        .map(mapSafeArtifact)
-        .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+      return rows.map(mapSafeArtifact).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
     },
     async insertArtifact(artifact) {
       await sql`
@@ -1078,11 +1074,13 @@ export function createPostgresWorkspaceStore(sql: SqlClient): WorkspaceCatalogSt
         SET last_delivered_channel_sequence = ${nextSequence},
             updated_at = ${updatedAt}
         WHERE id = ${sessionId}
+          AND last_delivered_channel_sequence <= ${nextSequence}
         RETURNING *
       `;
       const row = rows[0];
       if (!row) {
-        return null;
+        // Missing session, or a concurrent writer already advanced past nextSequence.
+        return this.getChannelAgentSession(sessionId);
       }
       return {
         id: row.id,
@@ -1424,9 +1422,7 @@ export function createPostgresWorkspaceStore(sql: SqlClient): WorkspaceCatalogSt
         if (current.status === "archived") {
           throw new Error("channel_archived");
         }
-        const conflict = await tx<
-          { id: string }[]
-        >`
+        const conflict = await tx<{ id: string }[]>`
           SELECT id
           FROM channel_pins
           WHERE channel_id = ${input.channelId}

@@ -47,12 +47,7 @@ export type BuildChannelContextInput = {
   foreign_channel_ids?: string[];
 };
 
-export type TurnCreationStatus =
-  | "confirmed"
-  | "reconciled"
-  | "pending"
-  | "uncertain"
-  | "failed";
+export type TurnCreationStatus = "confirmed" | "reconciled" | "pending" | "uncertain" | "failed";
 
 export type DeliveryCursorAdvanceInput = {
   current_sequence: number;
@@ -130,7 +125,8 @@ export function buildChannelContextEnvelope(
     summary: truncateChars(input.channel.summary ?? "", MAX_CONTEXT_SUMMARY_CHARS),
     recent_deltas: input.recent_deltas
       .filter((delta) => delta.sequence > input.last_delivered_channel_sequence)
-      .slice(-MAX_RECENT_DELTAS)
+      // Keep the oldest pending contiguous window from the cursor (never skip earlier deltas).
+      .slice(0, MAX_RECENT_DELTAS)
       .map((delta) => ({
         sequence: delta.sequence,
         type: delta.type,
@@ -143,35 +139,81 @@ export function buildChannelContextEnvelope(
 
   let envelope = channelContextEnvelopeSchema.parse(cleaned);
 
-  // Shrink recent deltas until under the soft byte budget (never drop mission/roster/pins first).
+  // Shrink until under the soft byte budget. Prefer dropping recent deltas first,
+  // then shorten text, then drop artifacts/pins, then truncate mission/roster/assignment.
   while (utf8Bytes(JSON.stringify(envelope)) > MAX_CHANNEL_CONTEXT_BYTES) {
-    if (envelope.recent_deltas.length === 0) {
+    if (envelope.recent_deltas.length > 0) {
       envelope = {
         ...envelope,
-        summary: truncateChars(envelope.summary, Math.max(64, Math.floor(envelope.summary.length / 2))),
+        recent_deltas: envelope.recent_deltas.slice(0, -1),
+      };
+      continue;
+    }
+    if (envelope.summary.length > 64 || envelope.human_request.length > 64) {
+      envelope = {
+        ...envelope,
+        summary: truncateChars(
+          envelope.summary,
+          Math.max(64, Math.floor(envelope.summary.length / 2)),
+        ),
         human_request: truncateChars(
           envelope.human_request,
           Math.max(64, Math.floor(envelope.human_request.length / 2)),
         ),
       };
-      if (utf8Bytes(JSON.stringify(envelope)) <= MAX_CHANNEL_CONTEXT_BYTES) {
-        break;
-      }
-      // Final hard clamp: drop artifacts then pins if still oversized.
-      if (envelope.artifacts.length > 0) {
-        envelope = { ...envelope, artifacts: envelope.artifacts.slice(0, -1) };
-        continue;
-      }
-      if (envelope.pins.length > 0) {
-        envelope = { ...envelope, pins: envelope.pins.slice(0, -1) };
-        continue;
-      }
-      break;
+      continue;
     }
+    if (envelope.artifacts.length > 0) {
+      envelope = { ...envelope, artifacts: envelope.artifacts.slice(0, -1) };
+      continue;
+    }
+    if (envelope.pins.length > 0) {
+      envelope = { ...envelope, pins: envelope.pins.slice(0, -1) };
+      continue;
+    }
+    if (envelope.roster.length > 1) {
+      envelope = { ...envelope, roster: envelope.roster.slice(0, -1) };
+      continue;
+    }
+    // Last resort: truncate mission/name/assignment text fields.
+    const mission = truncateChars(
+      envelope.channel.mission_brief,
+      Math.max(32, Math.floor(envelope.channel.mission_brief.length / 2)),
+    );
+    const name = truncateChars(
+      envelope.channel.name,
+      Math.max(16, Math.floor(envelope.channel.name.length / 2)),
+    );
+    const assignment = envelope.assignment
+      ? {
+          ...envelope.assignment,
+          goal: envelope.assignment.goal
+            ? truncateChars(
+                envelope.assignment.goal,
+                Math.max(32, Math.floor(envelope.assignment.goal.length / 2)),
+              )
+            : null,
+          objective: envelope.assignment.objective
+            ? truncateChars(
+                envelope.assignment.objective,
+                Math.max(32, Math.floor(envelope.assignment.objective.length / 2)),
+              )
+            : null,
+        }
+      : null;
+    const before = utf8Bytes(JSON.stringify(envelope));
     envelope = {
       ...envelope,
-      recent_deltas: envelope.recent_deltas.slice(1),
+      channel: { ...envelope.channel, name, mission_brief: mission },
+      assignment,
     };
+    if (utf8Bytes(JSON.stringify(envelope)) >= before) {
+      throw new Error("channel context exceeded byte budget after hard clamp");
+    }
+  }
+
+  if (utf8Bytes(JSON.stringify(envelope)) > MAX_CHANNEL_CONTEXT_BYTES) {
+    throw new Error("channel context exceeded byte budget");
   }
 
   return channelContextEnvelopeSchema.parse(envelope);
@@ -201,9 +243,7 @@ export function renderChannelContextText(envelope: ChannelContextEnvelope): stri
  * Advance `last_delivered_channel_sequence` only after remote turn creation is
  * confirmed or reconciled. Pending/uncertain/failed turns leave the cursor unchanged.
  */
-export function nextDeliveryCursor(
-  input: DeliveryCursorAdvanceInput,
-): DeliveryCursorAdvanceResult {
+export function nextDeliveryCursor(input: DeliveryCursorAdvanceInput): DeliveryCursorAdvanceResult {
   if (
     !Number.isInteger(input.current_sequence) ||
     input.current_sequence < 0 ||
