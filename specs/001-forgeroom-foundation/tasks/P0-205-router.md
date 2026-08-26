@@ -1,7 +1,7 @@
 ---
 id: P0-205
 title: Implement mention and team router
-status: in_progress
+status: in_review
 owner: cursor-agent
 started: 2026-08-26
 depends_on: [P0-102, P0-106]
