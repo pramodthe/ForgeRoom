@@ -1048,6 +1048,7 @@ export const customApplicationEventSchema = z
         schemaVersion: schemaVersion1,
         lifecycle: runLifecycleSchema.optional(),
         activity: runActivityCountersSchema.optional(),
+        pin_id: opaqueIdSchema.optional(),
         routing_mode: z.enum(["direct", "team"]).optional(),
         recipient_handles: z.array(z.string().min(1)).min(1).max(2).optional(),
       })

@@ -6,7 +6,9 @@ export type CustomSourceEventName =
   | "channel.archived"
   | "participant.added"
   | "participant.removed"
-  | "message.created";
+  | "message.created"
+  | "pin.created"
+  | "pin.removed";
 
 export function customAguiEvent(name: CustomSourceEventName): P0PersistedAguiEvent {
   if (name === "message.created") {
@@ -16,6 +18,17 @@ export function customAguiEvent(name: CustomSourceEventName): P0PersistedAguiEve
     type: "CUSTOM",
     name,
     payload: { schemaVersion: 1 },
+  };
+}
+
+export function pinAguiEvent(
+  name: "pin.created" | "pin.removed",
+  pinId: string,
+): P0PersistedAguiEvent {
+  return {
+    type: "CUSTOM",
+    name,
+    payload: { schemaVersion: 1, pin_id: pinId },
   };
 }
 

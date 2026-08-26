@@ -8,6 +8,8 @@ import {
   channelMessageCommandSchema,
   channelParticipantAddCommandSchema,
   channelParticipantRemoveCommandSchema,
+  channelPinCreateCommandSchema,
+  channelPinRemoveCommandSchema,
   channelUpdateCommandSchema,
   coworkerDisableCommandSchema,
   coworkerUpdateCommandSchema,
@@ -262,6 +264,56 @@ export function mountWorkspaceRoutes(
       return fail(c, result.error);
     }
     return okJson(c, result.value, 201);
+  });
+
+  app.post("/api/channels/:channelId/pins", async (c) => {
+    const authed = await requireMutationSession(c, env, auth);
+    if (authed instanceof Response) {
+      return authed;
+    }
+    const channelId = requireParam(c, "channelId");
+    if (channelId instanceof Response) {
+      return channelId;
+    }
+    const parsed = channelPinCreateCommandSchema.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) {
+      const failure = errorResponse("validation_failed", "Invalid channel pin create command.", {
+        status: 400,
+      });
+      return c.json(failure.body, failure.status);
+    }
+    const result = await workspace.createPin(authed.session, channelId, parsed.data);
+    if (!result.ok) {
+      return fail(c, result.error);
+    }
+    return okJson(c, result.value, 201);
+  });
+
+  app.delete("/api/channels/:channelId/pins/:pinId", async (c) => {
+    const authed = await requireMutationSession(c, env, auth);
+    if (authed instanceof Response) {
+      return authed;
+    }
+    const channelId = requireParam(c, "channelId");
+    if (channelId instanceof Response) {
+      return channelId;
+    }
+    const pinId = requireParam(c, "pinId");
+    if (pinId instanceof Response) {
+      return pinId;
+    }
+    const parsed = channelPinRemoveCommandSchema.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) {
+      const failure = errorResponse("validation_failed", "Invalid channel pin remove command.", {
+        status: 400,
+      });
+      return c.json(failure.body, failure.status);
+    }
+    const result = await workspace.removePin(authed.session, channelId, pinId, parsed.data);
+    if (!result.ok) {
+      return fail(c, result.error);
+    }
+    return okJson(c, result.value, 200);
   });
 
   app.get("/api/channels/:channelId/events", async (c) => {
