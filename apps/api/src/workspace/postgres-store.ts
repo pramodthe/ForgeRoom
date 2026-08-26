@@ -24,7 +24,12 @@ import type {
   TaskGrantRecord,
   WorkspaceCatalogStore,
 } from "./store";
-import { createMemoryWorkspaceStore, emptyEditableConfig } from "./store";
+import {
+  createMemoryWorkspaceStore,
+  decodeReceiptResultId,
+  emptyEditableConfig,
+  encodeReceiptResultId,
+} from "./store";
 
 type SqlClient = ReturnType<typeof createSql>;
 
@@ -342,12 +347,14 @@ export function createPostgresWorkspaceStore(sql: SqlClient): WorkspaceCatalogSt
             ? [...new Set([...config.channel_ids, input.channelOp.channelId])]
             : config.channel_ids.filter((id) => id !== input.channelOp.channelId);
         const nextConfig = { ...config, channel_ids: channelIds };
+        const nextRevision = row.config_revision + 1;
         await tx.unsafe(
           `UPDATE agent_profiles
            SET editable_config_json = $1::jsonb,
-               updated_at = $2
-           WHERE id = $3`,
-          [JSON.stringify(nextConfig), input.coworkerUpdatedAt, input.coworkerId],
+               config_revision = $2,
+               updated_at = $3
+           WHERE id = $4`,
+          [JSON.stringify(nextConfig), nextRevision, input.coworkerUpdatedAt, input.coworkerId],
         );
         return {
           ok: true,
@@ -362,7 +369,7 @@ export function createPostgresWorkspaceStore(sql: SqlClient): WorkspaceCatalogSt
             status: row.status as CoworkerRecord["status"],
             editableConfigJson: nextConfig,
             currentVersionId: row.current_version_id,
-            configRevision: row.config_revision,
+            configRevision: nextRevision,
             nativeSubagentsEnabled: false as const,
             createdAt: asIso(row.created_at),
             updatedAt: input.coworkerUpdatedAt,
@@ -558,9 +565,13 @@ export function createPostgresWorkspaceStore(sql: SqlClient): WorkspaceCatalogSt
           } satisfies CoworkerMutationResult;
         }
 
-        for (const membership of input.memberships) {
-          await upsertParticipantSql(tx as unknown as SqlClient, membership);
-        }
+        await tx`
+          UPDATE channel_participants
+          SET removed_at = ${input.revokeAt}
+          WHERE participant_type = 'coworker'
+            AND participant_id = ${input.coworker.id}
+            AND removed_at IS NULL
+        `;
         await replaceGrantsSql(
           tx as unknown as SqlClient,
           sql,
@@ -626,11 +637,13 @@ export function createPostgresWorkspaceStore(sql: SqlClient): WorkspaceCatalogSt
       if (!row) {
         return null;
       }
+      const decoded = decodeReceiptResultId(row.resultId);
       return {
         workspaceId: row.workspaceId,
         commandKind: row.commandKind,
         idempotencyKey: row.idempotencyKey,
-        resultId: row.resultId,
+        resultId: decoded.resultId,
+        leaseOwner: decoded.leaseOwner,
         resultJson: null,
         createdAt: asIso(row.createdAt),
       } satisfies CommandReceipt;
@@ -644,7 +657,7 @@ export function createPostgresWorkspaceStore(sql: SqlClient): WorkspaceCatalogSt
           ${receipt.workspaceId},
           ${receipt.commandKind},
           ${receipt.idempotencyKey},
-          ${receipt.resultId},
+          ${encodeReceiptResultId(receipt.resultId, receipt.leaseOwner)},
           ${receipt.createdAt}
         )
         ON CONFLICT (workspace_id, command_kind, idempotency_key) DO NOTHING
@@ -652,13 +665,14 @@ export function createPostgresWorkspaceStore(sql: SqlClient): WorkspaceCatalogSt
       `;
       return inserted.length > 0;
     },
-    async touchCommandReceipt(workspaceId, commandKind, idempotencyKey, touchedAt) {
+    async touchCommandReceipt(workspaceId, commandKind, idempotencyKey, leaseOwner, touchedAt) {
       const updated = await sql`
         UPDATE workspace_command_receipts
         SET created_at = ${touchedAt}
         WHERE workspace_id = ${workspaceId}
           AND command_kind = ${commandKind}
           AND idempotency_key = ${idempotencyKey}
+          AND result_id LIKE ${"%\u001f" + leaseOwner}
         RETURNING result_id
       `;
       return updated.length > 0;
@@ -674,16 +688,14 @@ export function createPostgresWorkspaceStore(sql: SqlClient): WorkspaceCatalogSt
       `;
       return deleted.length > 0;
     },
-    async deleteCommandReceipt(workspaceId, commandKind, idempotencyKey) {
-      await db
-        .delete(workspaceCommandReceipts)
-        .where(
-          and(
-            eq(workspaceCommandReceipts.workspaceId, workspaceId),
-            eq(workspaceCommandReceipts.commandKind, commandKind),
-            eq(workspaceCommandReceipts.idempotencyKey, idempotencyKey),
-          ),
-        );
+    async deleteCommandReceipt(workspaceId, commandKind, idempotencyKey, leaseOwner) {
+      await sql`
+        DELETE FROM workspace_command_receipts
+        WHERE workspace_id = ${workspaceId}
+          AND command_kind = ${commandKind}
+          AND idempotency_key = ${idempotencyKey}
+          AND result_id LIKE ${"%\u001f" + leaseOwner}
+      `;
     },
     async insertChannelWithOwner(channel, owner) {
       await db.transaction(async (tx) => {

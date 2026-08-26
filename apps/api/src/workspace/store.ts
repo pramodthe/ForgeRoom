@@ -116,9 +116,29 @@ export type CommandReceipt = {
   commandKind: string;
   idempotencyKey: string;
   resultId: string;
+  /** Fencing token that owns the in-progress lease. */
+  leaseOwner: string;
   resultJson: unknown;
   createdAt: string;
 };
+
+/** Separates business resultId from lease owner inside the durable result_id column. */
+export const RECEIPT_LEASE_SEP = "\u001f";
+
+export function encodeReceiptResultId(resultId: string, leaseOwner: string): string {
+  return `${resultId}${RECEIPT_LEASE_SEP}${leaseOwner}`;
+}
+
+export function decodeReceiptResultId(stored: string): { resultId: string; leaseOwner: string } {
+  const index = stored.lastIndexOf(RECEIPT_LEASE_SEP);
+  if (index === -1) {
+    return { resultId: stored, leaseOwner: "" };
+  }
+  return {
+    resultId: stored.slice(0, index),
+    leaseOwner: stored.slice(index + RECEIPT_LEASE_SEP.length),
+  };
+}
 
 export type MembershipWriteResult =
   | { ok: true; coworker: CoworkerRecord; channel: ChannelRecord }
@@ -176,12 +196,11 @@ export type WorkspaceCatalogStore = {
     expectedStatus: "active";
   }): Promise<CoworkerMutationResult>;
   /**
-   * Atomically locks the profile, requires expected revision, then disables and
-   * clears membership/grants. Wins over concurrent stale edits.
+   * Atomically locks the profile, requires expected revision, then disables,
+   * revokes grants, and removes every active coworker membership under that lock.
    */
   disableCoworkerCleanup(input: {
     coworker: CoworkerRecord;
-    memberships: ParticipantRecord[];
     revokeAt: string;
     expectedConfigRevision: number;
   }): Promise<CoworkerMutationResult>;
@@ -202,11 +221,12 @@ export type WorkspaceCatalogStore = {
   ): Promise<CommandReceipt | null>;
   /** Insert receipt; returns false if the idempotency key already exists. */
   tryClaimCommandReceipt(receipt: CommandReceipt): Promise<boolean>;
-  /** Heartbeat: refresh created_at so the claim lease stays alive while work runs. */
+  /** Heartbeat: refresh created_at only when leaseOwner still owns the claim. */
   touchCommandReceipt(
     workspaceId: string,
     commandKind: string,
     idempotencyKey: string,
+    leaseOwner: string,
     touchedAt: string,
   ): Promise<boolean>;
   /**
@@ -219,10 +239,12 @@ export type WorkspaceCatalogStore = {
     idempotencyKey: string,
     olderThanIso: string,
   ): Promise<boolean>;
+  /** Delete only when leaseOwner matches the current claim owner. */
   deleteCommandReceipt(
     workspaceId: string,
     commandKind: string,
     idempotencyKey: string,
+    leaseOwner: string,
   ): Promise<void>;
 
   insertChannelWithOwner(channel: ChannelRecord, owner: ParticipantRecord): Promise<void>;
@@ -358,6 +380,7 @@ export function createMemoryWorkspaceStore(): WorkspaceCatalogStore {
           ...coworker.editableConfigJson,
           channel_ids: mergeChannelIds(coworker.editableConfigJson.channel_ids, input.channelOp),
         },
+        configRevision: coworker.configRevision + 1,
         updatedAt: input.coworkerUpdatedAt,
       };
       coworkers.set(updated.id, structuredClone(updated));
@@ -435,8 +458,14 @@ export function createMemoryWorkspaceStore(): WorkspaceCatalogStore {
           actualStatus: current.status,
         };
       }
-      for (const membership of input.memberships) {
-        writeParticipant(membership);
+      for (const [key, row] of participants) {
+        if (
+          row.participantType === "coworker" &&
+          row.participantId === input.coworker.id &&
+          row.removedAt === null
+        ) {
+          participants.set(key, { ...row, removedAt: input.revokeAt });
+        }
       }
       replaceGrants(input.coworker.id, [], input.revokeAt);
       coworkers.set(input.coworker.id, structuredClone(input.coworker));
@@ -454,7 +483,8 @@ export function createMemoryWorkspaceStore(): WorkspaceCatalogStore {
       return messages.get(id) ?? null;
     },
     async getCommandReceipt(workspaceId, commandKind, idempotencyKey) {
-      return receipts.get(receiptKey(workspaceId, commandKind, idempotencyKey)) ?? null;
+      const existing = receipts.get(receiptKey(workspaceId, commandKind, idempotencyKey));
+      return existing ? structuredClone(existing) : null;
     },
     async tryClaimCommandReceipt(receipt) {
       const key = receiptKey(receipt.workspaceId, receipt.commandKind, receipt.idempotencyKey);
@@ -464,10 +494,10 @@ export function createMemoryWorkspaceStore(): WorkspaceCatalogStore {
       receipts.set(key, structuredClone(receipt));
       return true;
     },
-    async touchCommandReceipt(workspaceId, commandKind, idempotencyKey, touchedAt) {
+    async touchCommandReceipt(workspaceId, commandKind, idempotencyKey, leaseOwner, touchedAt) {
       const key = receiptKey(workspaceId, commandKind, idempotencyKey);
       const existing = receipts.get(key);
-      if (!existing) {
+      if (!existing || existing.leaseOwner !== leaseOwner) {
         return false;
       }
       receipts.set(key, { ...existing, createdAt: touchedAt });
@@ -485,8 +515,13 @@ export function createMemoryWorkspaceStore(): WorkspaceCatalogStore {
       receipts.delete(key);
       return true;
     },
-    async deleteCommandReceipt(workspaceId, commandKind, idempotencyKey) {
-      receipts.delete(receiptKey(workspaceId, commandKind, idempotencyKey));
+    async deleteCommandReceipt(workspaceId, commandKind, idempotencyKey, leaseOwner) {
+      const key = receiptKey(workspaceId, commandKind, idempotencyKey);
+      const existing = receipts.get(key);
+      if (!existing || existing.leaseOwner !== leaseOwner) {
+        return;
+      }
+      receipts.delete(key);
     },
     async insertChannelWithOwner(channel, owner) {
       channels.set(channel.id, structuredClone(channel));

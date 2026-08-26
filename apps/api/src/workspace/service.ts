@@ -265,12 +265,14 @@ export function createWorkspaceService(options?: {
     assertReceipt?: (receipt: { resultId: string }) => WorkspaceServiceError | null;
     run: () => Promise<WorkspaceServiceResult<T>>;
   }): Promise<WorkspaceServiceResult<T>> {
+    const leaseOwner = randomOpaqueId("lease");
     const tryOnce = async (): Promise<{ claimed: boolean; result?: WorkspaceServiceResult<T> }> => {
       const claimed = await store.tryClaimCommandReceipt({
         workspaceId: input.workspaceId,
         commandKind: input.commandKind,
         idempotencyKey: input.idempotencyKey,
         resultId: input.resultId,
+        leaseOwner,
         resultJson: null,
         createdAt: now().toISOString(),
       });
@@ -337,6 +339,7 @@ export function createWorkspaceService(options?: {
           input.workspaceId,
           input.commandKind,
           input.idempotencyKey,
+          leaseOwner,
           now().toISOString(),
         );
       },
@@ -353,12 +356,18 @@ export function createWorkspaceService(options?: {
           input.workspaceId,
           input.commandKind,
           input.idempotencyKey,
+          leaseOwner,
         );
         return result;
       }
       return result;
     } catch (error) {
-      await store.deleteCommandReceipt(input.workspaceId, input.commandKind, input.idempotencyKey);
+      await store.deleteCommandReceipt(
+        input.workspaceId,
+        input.commandKind,
+        input.idempotencyKey,
+        leaseOwner,
+      );
       throw error;
     } finally {
       clearInterval(heartbeat);
@@ -1159,14 +1168,6 @@ export function createWorkspaceService(options?: {
             return { ok: true, value: toCoworker(loaded.value) };
           }
           const updatedAt = now().toISOString();
-          const channels = await store.listChannels(loaded.value.workspaceId);
-          const memberships: ParticipantRecord[] = [];
-          for (const channel of channels) {
-            const existing = await store.getParticipant(channel.id, "coworker", coworkerId);
-            if (existing && existing.removedAt === null) {
-              memberships.push({ ...existing, removedAt: updatedAt });
-            }
-          }
           const updated: CoworkerRecord = {
             ...loaded.value,
             status: "disabled",
@@ -1180,7 +1181,6 @@ export function createWorkspaceService(options?: {
           };
           const disabled = await store.disableCoworkerCleanup({
             coworker: updated,
-            memberships,
             revokeAt: updatedAt,
             expectedConfigRevision: loaded.value.configRevision,
           });

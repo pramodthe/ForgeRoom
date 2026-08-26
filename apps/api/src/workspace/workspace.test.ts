@@ -604,12 +604,13 @@ describe("channel and coworker API", () => {
       component_version_ids: [],
     });
 
+    const beforeDisable = await workspaceStore.getCoworker(coworker.id);
     const disabled = await app.request(`/api/coworkers/${coworker.id}/disable`, {
       method: "POST",
       headers: mutationHeaders(env, cookie, session.csrf_token),
       body: JSON.stringify({
         schemaVersion: 1,
-        expected_config_revision: 2,
+        expected_config_revision: beforeDisable?.configRevision,
         reason: "done",
         idempotency_key: "idem_disable_cleanup",
       }),
@@ -625,7 +626,7 @@ describe("channel and coworker API", () => {
   });
 
   it("replays disable and removeParticipant via idempotency before conflict/not-found", async () => {
-    const { app, env, workspace } = await createTestApp();
+    const { app, env, workspace, workspaceStore } = await createTestApp();
     const { session, cookie } = await login(app, env);
     const channelRes = await app.request(`/api/workspaces/${env.workspaceId}/channels`, {
       method: "POST",
@@ -674,9 +675,10 @@ describe("channel and coworker API", () => {
     );
     expect(removeRetry.status).toBe(200);
 
+    const afterMembership = await workspaceStore.getCoworker(coworker.id);
     const disableBody = {
       schemaVersion: 1,
-      expected_config_revision: 1,
+      expected_config_revision: afterMembership?.configRevision,
       reason: "done",
       idempotency_key: "idem_disable_replay",
     };
@@ -741,6 +743,7 @@ describe("channel and coworker API", () => {
       commandKind: "channel.create",
       idempotencyKey: "idem_stale_claim",
       resultId: "channel_orphan",
+      leaseOwner: "lease_orphan",
       resultJson: null,
       createdAt: clock.toISOString(),
     });
@@ -768,6 +771,7 @@ describe("channel and coworker API", () => {
       commandKind: "channel.create",
       idempotencyKey: "idem_alive",
       resultId: "channel_alive",
+      leaseOwner: "lease_alive",
       resultJson: null,
       createdAt: clock.toISOString(),
     });
@@ -776,6 +780,7 @@ describe("channel and coworker API", () => {
       "workspace_1",
       "channel.create",
       "idem_alive",
+      "lease_alive",
       clock.toISOString(),
     );
     clock = new Date(clock.getTime() + IDEMPOTENCY_CLAIM_LEASE_MS);
@@ -793,6 +798,206 @@ describe("channel and coworker API", () => {
       "idem_alive",
     );
     expect(stillHeld).toBeTruthy();
+  });
+
+  it("fences receipt touch and delete to the owning lease token", async () => {
+    const { workspaceStore } = await createTestApp();
+    await workspaceStore.tryClaimCommandReceipt({
+      workspaceId: "workspace_1",
+      commandKind: "channel.create",
+      idempotencyKey: "idem_fence",
+      resultId: "channel_fence",
+      leaseOwner: "lease_owner_a",
+      resultJson: null,
+      createdAt: new Date("2026-08-26T12:00:00.000Z").toISOString(),
+    });
+
+    const foreignTouch = await workspaceStore.touchCommandReceipt(
+      "workspace_1",
+      "channel.create",
+      "idem_fence",
+      "lease_owner_b",
+      new Date("2026-08-26T12:01:00.000Z").toISOString(),
+    );
+    expect(foreignTouch).toBe(false);
+
+    await workspaceStore.deleteCommandReceipt(
+      "workspace_1",
+      "channel.create",
+      "idem_fence",
+      "lease_owner_b",
+    );
+    const stillPresent = await workspaceStore.getCommandReceipt(
+      "workspace_1",
+      "channel.create",
+      "idem_fence",
+    );
+    expect(stillPresent?.leaseOwner).toBe("lease_owner_a");
+
+    await workspaceStore.deleteCommandReceipt(
+      "workspace_1",
+      "channel.create",
+      "idem_fence",
+      "lease_owner_a",
+    );
+    await expect(
+      workspaceStore.getCommandReceipt("workspace_1", "channel.create", "idem_fence"),
+    ).resolves.toBeNull();
+  });
+
+  it("bumps config_revision on membership so stale coworker PATCH conflicts", async () => {
+    const { app, env, workspace, workspaceStore } = await createTestApp();
+    const { session, cookie } = await login(app, env);
+    const channelRes = await app.request(`/api/workspaces/${env.workspaceId}/channels`, {
+      method: "POST",
+      headers: mutationHeaders(env, cookie, session.csrf_token),
+      body: JSON.stringify({
+        schemaVersion: 1,
+        name: "Rev",
+        mission_brief: "Rev",
+        idempotency_key: "idem_rev_ch",
+      }),
+    });
+    const channel = channelSchema.parse(withoutRequestId(await channelRes.json()));
+    const coworker = await workspace.seedCoworker({
+      workspaceId: env.workspaceId,
+      createdBy: env.ownerUserId,
+      handle: "revvy",
+      name: "Revvy",
+      title: "R",
+    });
+    const snapshotRevision = coworker.configRevision;
+
+    const added = await app.request(`/api/channels/${channel.id}/participants`, {
+      method: "POST",
+      headers: mutationHeaders(env, cookie, session.csrf_token),
+      body: JSON.stringify({
+        schemaVersion: 1,
+        participant_type: "coworker",
+        participant_id: coworker.id,
+        role: "member",
+        idempotency_key: "idem_rev_add",
+      }),
+    });
+    expect(added.status).toBe(200);
+    const afterAdd = await workspaceStore.getCoworker(coworker.id);
+    expect(afterAdd?.configRevision).toBe(snapshotRevision + 1);
+    expect(afterAdd?.editableConfigJson.channel_ids).toEqual([channel.id]);
+
+    const stalePatch = await workspaceStore.commitCoworkerUpdate({
+      coworker: {
+        ...coworker,
+        name: "Stale",
+        configRevision: snapshotRevision + 1,
+        editableConfigJson: {
+          ...coworker.editableConfigJson,
+          channel_ids: [],
+        },
+        updatedAt: new Date().toISOString(),
+      },
+      version: {
+        id: "av_stale_rev",
+        agentProfileId: coworker.id,
+        version: snapshotRevision + 1,
+        configJson: { name: "Stale" },
+        specHash: "sha256:stale",
+        createdBy: env.ownerUserId,
+        createdAt: new Date().toISOString(),
+      },
+      memberships: [],
+      taskGrants: [],
+      revokeGrantsAt: new Date().toISOString(),
+      expectedConfigRevision: snapshotRevision,
+      expectedStatus: "active",
+    });
+    expect(stalePatch.ok).toBe(false);
+    if (!stalePatch.ok) {
+      expect(stalePatch.reason).toBe("conflict");
+    }
+    const preserved = await workspaceStore.getCoworker(coworker.id);
+    expect(preserved?.editableConfigJson.channel_ids).toEqual([channel.id]);
+  });
+
+  it("disable under lock clears memberships added after the pre-disable snapshot", async () => {
+    const { env, workspace, workspaceStore } = await createTestApp();
+    const channelId = "channel_snap";
+    await workspaceStore.insertChannel({
+      id: channelId,
+      workspaceId: env.workspaceId,
+      name: "Snap",
+      missionBrief: "Snap",
+      summary: null,
+      policyJson: {},
+      nextSequence: 0,
+      status: "active",
+      createdBy: env.ownerUserId,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
+    const coworker = await workspace.seedCoworker({
+      workspaceId: env.workspaceId,
+      createdBy: env.ownerUserId,
+      handle: "snap",
+      name: "Snap",
+      title: "S",
+    });
+
+    // Membership that would be missed by a stale pre-lock snapshot.
+    await workspaceStore.upsertParticipantMembership({
+      participant: {
+        channelId,
+        participantType: "coworker",
+        participantId: coworker.id,
+        role: "member",
+        joinedAt: new Date().toISOString(),
+        removedAt: null,
+      },
+      coworkerId: coworker.id,
+      coworkerUpdatedAt: new Date().toISOString(),
+      channelOp: { type: "add", channelId },
+    });
+    const current = await workspaceStore.getCoworker(coworker.id);
+    expect(current?.editableConfigJson.channel_ids).toEqual([channelId]);
+
+    const disabled = await workspaceStore.disableCoworkerCleanup({
+      coworker: {
+        ...current!,
+        status: "disabled",
+        editableConfigJson: {
+          ...current!.editableConfigJson,
+          channel_ids: [],
+          task_record_grants: [],
+        },
+        configRevision: current!.configRevision + 1,
+        updatedAt: new Date().toISOString(),
+      },
+      revokeAt: new Date().toISOString(),
+      // Intentionally omit the concurrent membership from any snapshot — cleanup
+      // must discover and clear it under the profile lock.
+      expectedConfigRevision: current!.configRevision,
+    });
+    expect(disabled.ok).toBe(true);
+
+    const participant = await workspaceStore.getParticipant(channelId, "coworker", coworker.id);
+    expect(participant?.removedAt).toBeTruthy();
+    const after = await workspaceStore.getCoworker(coworker.id);
+    expect(after?.status).toBe("disabled");
+    expect(after?.editableConfigJson.channel_ids).toEqual([]);
+
+    const lateAdd = await workspaceStore.upsertParticipantMembership({
+      participant: {
+        channelId,
+        participantType: "coworker",
+        participantId: coworker.id,
+        role: "member",
+        joinedAt: new Date().toISOString(),
+        removedAt: null,
+      },
+      coworkerId: coworker.id,
+      coworkerUpdatedAt: new Date().toISOString(),
+      channelOp: { type: "add", channelId },
+    });
+    expect(lateAdd).toEqual({ ok: false, reason: "coworker_inactive" });
   });
 
   it("rejects removeParticipant idempotency key reuse for a different target", async () => {
