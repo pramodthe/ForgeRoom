@@ -108,11 +108,10 @@ describe("postLoginDestination", () => {
     );
   });
 
-
   it("falls back when redirect workspace id is malformed", () => {
     expect(parseWorkspaceIdFromPath("/w/%E0%A4%A/tasks")).toBeNull();
-    expect(
-      postLoginDestination("/w/%E0%A4%A/tasks", MOCK_WORKSPACE_ID, "ch_general_001"),
-    ).toBe("/w/workspace_1/channels/ch_general_001");
+    expect(postLoginDestination("/w/%E0%A4%A/tasks", MOCK_WORKSPACE_ID, "ch_general_001")).toBe(
+      "/w/workspace_1/channels/ch_general_001",
+    );
   });
 });
