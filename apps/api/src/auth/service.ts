@@ -1,7 +1,7 @@
 import type { ApiEnv } from "../env";
 import type { AuthStore } from "./store";
 import { createMemoryAuthStore } from "./store";
-import { hashPassword, verifyPassword } from "./passwords";
+import { DUMMY_PASSWORD_HASH, hashPassword, verifyPassword } from "./passwords";
 import {
   deriveCsrfToken,
   formatSessionCookie,
@@ -135,9 +135,10 @@ export function createAuthService(options: {
         return { ok: false, reason: "rate_limited", retryAfterMs: limited.retryAfterMs };
       }
       const user = await store.getUserByEmail(input.email);
-      const dummyHash =
-        "scrypt$16384$8$1$dGltbmdfcGFkX3NhbHQ$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
-      const passwordOk = await verifyPassword(input.password, user?.passwordHash ?? dummyHash);
+      const passwordOk = await verifyPassword(
+        input.password,
+        user?.passwordHash ?? DUMMY_PASSWORD_HASH,
+      );
       if (!user || !passwordOk) {
         return { ok: false, reason: "invalid_credentials" };
       }

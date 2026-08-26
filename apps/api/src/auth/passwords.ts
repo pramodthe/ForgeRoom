@@ -22,6 +22,9 @@ function scryptHash(
   });
 }
 
+/** Valid-format hash used only for constant-time login padding (never a real password). */
+export const DUMMY_PASSWORD_HASH = `scrypt$${SCRYPT_N}$${SCRYPT_R}$${SCRYPT_P}$dGltbmdfcGFkX3NhbHQ$${Buffer.alloc(KEYLEN).toString("base64url")}`;
+
 export async function hashPassword(password: string): Promise<string> {
   const salt = randomBytes(16).toString("base64url");
   const derived = await scryptHash(password, salt, KEYLEN, {

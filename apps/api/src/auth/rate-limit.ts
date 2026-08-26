@@ -15,7 +15,7 @@ export function createSlidingWindowRateLimiter(options: {
   const now = options.now ?? (() => Date.now());
   const maxKeys = options.maxKeys ?? 10_000;
 
-  function prune(windowStart: number) {
+  function pruneExpired(windowStart: number) {
     for (const [key, stamps] of hits) {
       const recent = stamps.filter((stamp) => stamp > windowStart);
       if (recent.length === 0) {
@@ -30,13 +30,22 @@ export function createSlidingWindowRateLimiter(options: {
     take(key: string): RateLimitResult {
       const current = now();
       const windowStart = current - options.windowMs;
-      prune(windowStart);
 
+      // Cheap path: only filter this key. Full prune only when near capacity.
+      const recent = (hits.get(key) ?? []).filter((stamp) => stamp > windowStart);
+      if (recent.length === 0) {
+        hits.delete(key);
+      } else {
+        hits.set(key, recent);
+      }
+
+      if (!hits.has(key) && hits.size >= maxKeys) {
+        pruneExpired(windowStart);
+      }
       if (!hits.has(key) && hits.size >= maxKeys) {
         return { allowed: false, remaining: 0, retryAfterMs: options.windowMs };
       }
 
-      const recent = hits.get(key) ?? [];
       if (recent.length >= options.limit) {
         const retryAfterMs = Math.max(0, recent[0]! + options.windowMs - current);
         return { allowed: false, remaining: 0, retryAfterMs };

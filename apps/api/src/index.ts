@@ -46,19 +46,35 @@ export async function startApiProcess(env: NodeJS.ProcessEnv = process.env) {
     auth,
     ready: Promise.resolve(),
     async stop() {
-      await worker?.stop();
-      if (server) {
-        await new Promise<void>((resolve, reject) => {
-          server.close((closeError) => {
-            if (closeError) {
-              reject(closeError);
-              return;
-            }
-            resolve();
-          });
-        });
+      const errors: unknown[] = [];
+      try {
+        await worker?.stop();
+      } catch (error) {
+        errors.push(error);
       }
-      await close?.();
+      if (server) {
+        try {
+          await new Promise<void>((resolve, reject) => {
+            server.close((closeError) => {
+              if (closeError) {
+                reject(closeError);
+                return;
+              }
+              resolve();
+            });
+          });
+        } catch (error) {
+          errors.push(error);
+        }
+      }
+      try {
+        await close?.();
+      } catch (error) {
+        errors.push(error);
+      }
+      if (errors.length > 0) {
+        throw errors[0];
+      }
     },
   };
 }
