@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { join } from "node:path";
+import { describe, expect, it, vi } from "vitest";
 import {
   assertControlledUiFixturesValid,
   assertP0FeatureProfileFrozen,
@@ -34,6 +35,18 @@ describe("findRepoRoot", () => {
         env: { FORGEROOM_REPO_ROOT: actualRoot },
       }),
     ).not.toThrow();
+  });
+
+  it("prefers the module path over an unrelated cwd workspace", () => {
+    const actualRoot = findRepoRoot();
+    const cwdSpy = vi.spyOn(process, "cwd").mockReturnValue("/tmp");
+    try {
+      expect(findRepoRoot({ from: join(actualRoot, "packages/test-fixtures/src") })).toBe(
+        actualRoot,
+      );
+    } finally {
+      cwdSpy.mockRestore();
+    }
   });
 });
 

@@ -21,19 +21,27 @@ export function isForbiddenP0101Dependency(name: string, packageName?: string): 
   return FORBIDDEN_P0_101_DEPENDENCY_PATTERNS.some((pattern) => pattern.test(name));
 }
 
+function isForgeRoomRoot(dir: string): boolean {
+  try {
+    readFileSync(join(dir, "pnpm-workspace.yaml"));
+    readFileSync(join(dir, "provider-fixtures/p0-feature-profile.json"));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function walkUpForRepoRoot(start: string): string | null {
   let dir = start;
   for (;;) {
-    try {
-      readFileSync(join(dir, "pnpm-workspace.yaml"));
+    if (isForgeRoomRoot(dir)) {
       return dir;
-    } catch {
-      const parent = dirname(dir);
-      if (parent === dir) {
-        return null;
-      }
-      dir = parent;
     }
+    const parent = dirname(dir);
+    if (parent === dir) {
+      return null;
+    }
+    dir = parent;
   }
 }
 
@@ -49,8 +57,8 @@ export function findRepoRoot(options?: RepoRootOptions): string {
   if (env.FORGEROOM_REPO_ROOT && env.FORGEROOM_REPO_ROOT.length > 0) {
     starts.push(env.FORGEROOM_REPO_ROOT);
   }
-  starts.push(process.cwd());
   starts.push(options?.from ?? dirname(fileURLToPath(import.meta.url)));
+  starts.push(process.cwd());
 
   for (const start of starts) {
     const root = walkUpForRepoRoot(start);

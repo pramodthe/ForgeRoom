@@ -31,7 +31,7 @@ Each task file is authoritative for its status and evidence. Keep this index and
 | [ ] | [P0-205](./tasks/P0-205-router.md) | Direct mention/team router | in_review | P0-102, P0-106 |
 | [ ] | [P0-206](./tasks/P0-206-multi-agent-run.md) | Direct multi-agent Run engine | blocked | P0-202, P0-203, P0-205 |
 | [ ] | [P0-208](./tasks/P0-208-session-rotation.md) | Capability/skill intersection and rotation | blocked | P0-202, P0-302, P0-314 |
-| [x] | [P0-210](./tasks/P0-210-agui-compatibility-spike.md) | Freeze AG-UI and prove bridge | done | P0-000, P0-101 |
+| [ ] | [P0-210](./tasks/P0-210-agui-compatibility-spike.md) | Freeze AG-UI and prove bridge | in_review | P0-000, P0-101 |
 | [ ] | [P0-211](./tasks/P0-211-trueforge-agui-adapter.md) | TrueForge-to-AG-UI adapter | blocked | P0-102, P0-203, P0-210 |
 | [ ] | [P0-212](./tasks/P0-212-agui-persistence-state-replay.md) | AG-UI persistence and replay | blocked | P0-103, P0-107, P0-211 |
 | [ ] | [P0-213](./tasks/P0-213-conversational-coworker-drafts.md) | Conversational CoworkerDraft provisioning | blocked | P0-106, P0-208 |
