@@ -23,7 +23,7 @@ Every provider- and demo-specific TBD is replaced by a verified, safe, reproduci
 - [ ] Deterministic write and reconciliation read succeed on synthetic fixture data.
 - [ ] Fixture reset runs twice without duplicates or production impact.
 - [x] One seeded coworker and the exact conversational prompt/permission-draft fixture for creating the second coworker are frozen.
-- [x] The fixed TaskRecord fixture and one successful Run suitable for Save-as-skill are deterministic.
+- [ ] The fixed TaskRecord fixture and one successful Run suitable for Save-as-skill are deterministic (TaskRecord candidate frozen; successful Run binding still requires live probe — see save-as-skill.candidate.json).
 - [ ] Daytona produces and artifact storage retains one sample file.
 - [x] Run limits and deployment topology are recorded.
 - [x] Pure AG-UI baseline candidates/fixtures and the optional-CopilotKit coherent-graph/no-canary/no-forced-override policy are frozen for P0-210 selection.
@@ -64,7 +64,7 @@ Run redacted live probes for Composio read/write/read-back, fixture reset, a man
 
 - 2026-08-26 — Rebased onto `origin/main` after P0-104 merge (`aec014c`). Recorded preferred Composio candidates from public docs only: toolkit `github`, read/reconcile `GITHUB_GET_ISSUE`; write slug intentionally unset until live discovery. Unit tests green for contracts + test-fixtures.
 
-- 2026-08-26 — **blocked-on-secrets** acceptance criteria (human checklist in `provider-fixtures/LIVE_PROBE_CHECKLIST.md`):
+- 2026-08-26 — Qodo remediation: assert `coordinator_planning` unsupported; allow repo-root checkout detection; uncheck premature successful-Run acceptance until live binding exists.
   - [ ] Exact Composio apps/slugs confirmed on pinned account (`OD-002`/`OD-003`)
   - [ ] Pinned account redacted suffixes (`OD-004`)
   - [ ] Descriptor hash exports

@@ -22,12 +22,16 @@ export function isForbiddenP0101Dependency(name: string): boolean {
 
 function findRepoRoot(start: string): string {
   let dir = start;
-  while (dir !== dirname(dir)) {
+  for (;;) {
     try {
       readFileSync(join(dir, "pnpm-workspace.yaml"));
       return dir;
     } catch {
-      dir = dirname(dir);
+      const parent = dirname(dir);
+      if (parent === dir) {
+        break;
+      }
+      dir = parent;
     }
   }
   throw new Error("Could not find repository root");
@@ -80,6 +84,7 @@ export function assertP0FeatureProfileFrozen(profile = loadP0FeatureProfile()): 
   for (const capability of [
     "native_subagent",
     "coordinator_synthesis",
+    "coordinator_planning",
     "component_catalogue",
     "iframe_v1",
   ]) {
