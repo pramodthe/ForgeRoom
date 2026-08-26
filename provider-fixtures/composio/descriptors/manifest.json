@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "status": "verified",
+  "ownerTask": "P0-000",
+  "probeDate": "2026-08-26",
+  "apiVersion": "v3.1",
+  "exportsDir": "descriptors/",
+  "note": "Full descriptor bodies are not committed (size + drift). Hashes were computed from GET /api/v3.1/tools/{tool_slug} responses during live probe.",
+  "entries": [
+    {
+      "role": "read",
+      "directToolSlug": "GITHUB_GET_AN_ISSUE",
+      "sha256": "c5b2dac56410d0576d400324aee0cd1d53a5ebc167f1a6b6f3066822c827ba1e",
+      "responseBytes": 34247
+    },
+    {
+      "role": "deterministic_write",
+      "directToolSlug": "GITHUB_ADD_LABELS_TO_AN_ISSUE",
+      "sha256": "ff40ac2f1e6015f6aa280e2056790551ba651b6a755651c130af181846a02855",
+      "responseBytes": 5788,
+      "writeMechanism": "add synthetic label on existing issue (idempotent reconcile via labels array)"
+    },
+    {
+      "role": "reconciliation_read",
+      "directToolSlug": "GITHUB_GET_AN_ISSUE",
+      "sha256": "c5b2dac56410d0576d400324aee0cd1d53a5ebc167f1a6b6f3066822c827ba1e",
+      "responseBytes": 34247
+    },
+    {
+      "role": "fixture_reset",
+      "directToolSlug": "GITHUB_REMOVE_A_LABEL_FROM_AN_ISSUE",
+      "sha256": "b6c618fc6702ea82bffe53605ed5ef93c5cf41ff7a02fe24d7c9e034a59d6bbb",
+      "responseBytes": null
+    }
+  ]
+}

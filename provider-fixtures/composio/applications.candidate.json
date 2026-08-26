@@ -1,8 +1,9 @@
 {
   "schemaVersion": 1,
-  "status": "candidate",
+  "status": "verified",
   "ownerTask": "P0-000",
-  "verification": "blocked-on-secrets",
+  "verification": "verified",
+  "probeDate": "2026-08-26",
   "decisionId": "OD-002",
   "preference": {
     "applicationCount": "one_preferred_two_max",
@@ -14,13 +15,13 @@
       "slot": 1,
       "role": "primary_demo_toolkit",
       "composioToolkitSlug": "github",
-      "status": "candidate",
-      "preferredBecause": "Public Composio docs document a github toolkit with direct tools such as GITHUB_GET_ISSUE / GITHUB_CREATE_ISSUE (SCREAMING_SNAKE_CASE). Exact connected-account availability and descriptor hashes remain blocked-on-secrets.",
+      "status": "verified",
+      "preferredBecause": "Live probe 2026-08-26: github toolkit ACTIVE on pinned account (suffix nizY). Direct tools GITHUB_GET_AN_ISSUE / GITHUB_ADD_LABELS_TO_AN_ISSUE verified.",
       "sources": [
         "https://docs.composio.dev/docs/sessions-vs-direct-execution",
         "https://docs.composio.dev/docs/configuring-sessions"
       ],
-      "note": "Promote to verified only after COMPOSIO_API_KEY lists this toolkit on the pinned demo account"
+      "note": "Verified 2026-08-26 via Composio connected_accounts + tool execute probes."
     },
     {
       "slot": 2,

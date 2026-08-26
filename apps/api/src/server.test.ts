@@ -295,9 +295,9 @@ describe("owner authentication", () => {
     });
   });
 
-  it("exposes no registration or password-reset path", async () => {
+  it("exposes no registration, password-reset, or CopilotKit gateway path", async () => {
     const { app } = await createTestApp();
-    for (const path of ["/api/auth/register", "/api/auth/password-reset"]) {
+    for (const path of ["/api/auth/register", "/api/auth/password-reset", "/api/copilotkit"]) {
       const response = await app.request(path, { method: "POST" });
       expect(response.status).toBe(404);
     }
