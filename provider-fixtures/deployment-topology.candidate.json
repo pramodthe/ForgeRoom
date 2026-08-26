@@ -11,8 +11,9 @@
     "artifacts": "ARTIFACT_STORAGE_DIR local directory"
   },
   "localPreflightProbe": {
-    "status": "verified",
+    "status": "partial",
     "probeDate": "2026-08-26",
+    "note": "Env presence checks only; aggregate partial because TRUEFORGE_API_KEY and MODEL_PROVIDER_API_KEY are blocked.",
     "checks": [
       {
         "name": "DATABASE_URL",

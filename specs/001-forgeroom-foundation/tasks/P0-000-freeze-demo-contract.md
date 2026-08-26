@@ -25,7 +25,7 @@ Every provider- and demo-specific TBD is replaced by a verified, safe, reproduci
 - [x] One seeded coworker and the exact conversational prompt/permission-draft fixture for creating the second coworker are frozen.
 - [ ] The fixed TaskRecord fixture and one successful Run suitable for Save-as-skill are deterministic (TaskRecord candidate frozen; successful Run binding still requires TrueForge live probe — see save-as-skill.candidate.json).
 - [x] Daytona produces sample file (SDK upload/download verified); local artifact adapter retain verified separately. TrueForge→storage path blocked on `TRUEFORGE_API_KEY`.
-- [x] Run limits and deployment topology are recorded (local preflight verified; demo host candidate).
+- [x] Run limits and deployment topology are recorded (local preflight partial — TrueForge/model keys blocked; demo host candidate).
 - [x] Pure AG-UI baseline candidates/fixtures and the optional-CopilotKit coherent-graph/no-canary/no-forced-override policy are frozen for P0-210 selection.
 - [x] Controlled DataTable, bar/line chart, TaskCard, ArtifactCard and ChoiceForm/filter fixtures are deterministic, bounded and visually useful.
 - [x] Native subagents, coordinator synthesis, component catalogue and `iframe_v1` are disabled in the P0 feature profile and rejected as unsupported.
