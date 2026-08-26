@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { routingModeSchema } from "./channels";
+import { schemaVersion1 } from "./primitives";
 
 /** Stable reasons for failed mention/team recipient resolution. */
 export const routingFailureReasonSchema = z.enum([
@@ -52,6 +53,16 @@ export const routingResolutionSchema = z.discriminatedUnion("ok", [
 export type RoutingResolutionSuccess = z.infer<typeof routingResolutionSuccessSchema>;
 export type RoutingResolutionFailure = z.infer<typeof routingResolutionFailureSchema>;
 export type RoutingResolution = z.infer<typeof routingResolutionSchema>;
+export type MessageCreatedRoutingPayload = z.infer<typeof messageCreatedRoutingPayloadSchema>;
 
 /** P0 hard cap for mention/@team fan-out. */
 export const P0_MAX_ROUTING_RECIPIENTS = 2 as const;
+
+/** Authoritative routing persisted on durable message.created envelopes. */
+export const messageCreatedRoutingPayloadSchema = z
+  .object({
+    schemaVersion: schemaVersion1,
+    routing_mode: routingModeSchema,
+    recipient_handles: z.array(z.string().min(1)).min(1).max(2),
+  })
+  .strict();

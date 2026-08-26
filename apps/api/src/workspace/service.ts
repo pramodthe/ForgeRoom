@@ -12,10 +12,14 @@ import type {
   SafeJsonObject,
   SessionResponse,
 } from "@forgeroom/contracts";
-import { channelSchema, coworkerProfileSchema } from "@forgeroom/contracts";
+import {
+  channelSchema,
+  coworkerProfileSchema,
+  isReservedCoworkerHandle,
+} from "@forgeroom/contracts";
 import { resolveMessageRecipients, isChannelAgentSessionAvailable } from "@forgeroom/orchestration";
 import { randomOpaqueId } from "../auth/crypto";
-import { customAguiEvent } from "./event-builders";
+import { customAguiEvent, messageCreatedAguiEvent } from "./event-builders";
 import { ChannelEventPersistenceError } from "./event-guard";
 import { createChannelEventHub, type ChannelEventHub } from "./event-hub";
 import { DEFAULT_EVENT_PAGE_SIZE, envelopeFromStoredEvent } from "./event-read";
@@ -1110,7 +1114,10 @@ export function createWorkspaceService(options?: {
             draft: {
               actorKind: "human",
               sourceMessageId: messageId,
-              aguiEvent: customAguiEvent("message.created"),
+              aguiEvent: messageCreatedAguiEvent({
+                routing_mode: routing.routing_mode,
+                recipient_handles: routing.recipient_handles,
+              }),
             },
           },
           message: {
@@ -1478,6 +1485,9 @@ export function createWorkspaceService(options?: {
     },
 
     async seedCoworker(input) {
+      if (isReservedCoworkerHandle(input.handle)) {
+        throw new Error(`Coworker handle "${input.handle}" is reserved for routing syntax.`);
+      }
       const createdAt = now().toISOString();
       const id = input.id ?? randomOpaqueId("cw");
       const versionId = randomOpaqueId("av");

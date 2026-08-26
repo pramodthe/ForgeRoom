@@ -73,7 +73,17 @@ describe("resolveMessageRecipients", () => {
       expect: { ok: true, routing_mode: "team", recipient_handles: ["analyst", "builder"] },
     },
     {
-      name: "@team with three enabled coworkers rejected",
+      name: "@team with three enabled but one unavailable succeeds",
+      body: "@team go",
+      coworkers: [
+        coworker({ id: "c1", handle: "analyst", availableForNewWork: false }),
+        builder,
+        researcher,
+      ],
+      expect: { ok: true, routing_mode: "team", recipient_handles: ["builder", "researcher"] },
+    },
+    {
+      name: "@team with three available enabled coworkers rejected",
       body: "@team all",
       coworkers: [analyst, builder, researcher],
       expect: { ok: false, code: "validation_failed", reason: "team_too_large" },

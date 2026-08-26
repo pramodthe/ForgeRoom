@@ -12,7 +12,7 @@ import { createAuthService } from "../auth/service";
 import { createMemoryAuthStore } from "../auth/store";
 import { createPostgresAuthStore } from "../auth/postgres-store";
 import { assertPersistableChannelEnvelope, ChannelEventPersistenceError } from "./event-guard";
-import { buildEnvelope, customAguiEvent } from "./event-builders";
+import { buildEnvelope, customAguiEvent, messageCreatedAguiEvent } from "./event-builders";
 import { createChannelEventHub } from "./event-hub";
 import { createPostgresWorkspaceStore } from "./postgres-store";
 import { createWorkspaceService, type WorkspaceService } from "./service";
@@ -456,7 +456,10 @@ describe("P0-107 channel event log and SSE", () => {
           channelId: "ch",
           actorKind: "human",
           sourceMessageId: "msg_2",
-          aguiEvent: customAguiEvent("message.created"),
+          aguiEvent: messageCreatedAguiEvent({
+            routing_mode: "direct",
+            recipient_handles: ["analyst"],
+          }),
         }),
       ],
     ]);
@@ -713,7 +716,7 @@ describe("P0-107 channel event log and SSE", () => {
         runId: null,
         payloadJson: {
           body: "old body",
-          recipient_handles: [],
+          recipient_handles: ["analyst"],
           routing_mode: "direct",
         },
         aguiEventType: null,
@@ -729,7 +732,15 @@ describe("P0-107 channel event log and SSE", () => {
       channelSequence: 3,
       sourceMessageId: "msg_legacy",
       actorKind: "human",
-      aguiEvent: { type: "CUSTOM", name: "message.created" },
+      aguiEvent: {
+        type: "CUSTOM",
+        name: "message.created",
+        payload: {
+          schemaVersion: 1,
+          routing_mode: "direct",
+          recipient_handles: ["analyst"],
+        },
+      },
     });
 
     expect(

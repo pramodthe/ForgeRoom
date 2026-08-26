@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  agentChannelEnvelopeSchema,
   channelSchema,
   coworkerProfileSchema,
   errorEnvelopeSchema,
@@ -1506,10 +1507,57 @@ describe("channel and coworker API", () => {
       }),
     });
     expect(dottedMsg.status).toBe(201);
-    await expect(dottedMsg.json()).resolves.toMatchObject({
+    const dottedBody = (await dottedMsg.json()) as { message_id: string };
+    await expect(dottedBody).toMatchObject({
       recipient_handles: ["ops.v2"],
       routing_mode: "direct",
     });
+
+    const eventsRes = await app.request(`/api/channels/${channel.id}/events?afterSequence=0`, {
+      headers: { cookie: `${env.sessionCookieName}=${cookie}` },
+    });
+    expect(eventsRes.status).toBe(200);
+    const eventsBody = (await eventsRes.json()) as { events: unknown[] };
+    const messageEnvelope = eventsBody.events
+      .map((event) => agentChannelEnvelopeSchema.safeParse(event))
+      .find(
+        (parsed) =>
+          parsed.success &&
+          parsed.data.aguiEvent.name === "message.created" &&
+          parsed.data.sourceMessageId === dottedBody.message_id,
+      );
+    expect(messageEnvelope?.success).toBe(true);
+    if (messageEnvelope?.success) {
+      expect(messageEnvelope.data.aguiEvent).toMatchObject({
+        type: "CUSTOM",
+        name: "message.created",
+        payload: {
+          schemaVersion: 1,
+          routing_mode: "direct",
+          recipient_handles: ["ops.v2"],
+        },
+      });
+    }
+
+    const reserved = await app.request(`/api/coworkers/${builder.id}`, {
+      method: "PATCH",
+      headers: mutationHeaders(env, cookie, session.csrf_token),
+      body: JSON.stringify({
+        name: "Builder",
+        handle: "TEAM",
+        title: "B",
+        standing_instructions: "",
+        model_preset: "default",
+        native_subagents_enabled: false,
+        channel_ids: [channel.id],
+        budget: { max_turn_tokens: 1000, max_tool_calls: 5 },
+        task_record_grants: [],
+        tool_grants: [],
+        skill_version_ids: [],
+        component_version_ids: [],
+      }),
+    });
+    expect(reserved.status).toBe(400);
   });
 
   it("rejects cross-workspace channel and coworker access", async () => {

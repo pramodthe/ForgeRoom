@@ -65,6 +65,7 @@ export {
   routingResolutionSuccessSchema,
   routingResolutionFailureSchema,
   routingResolutionSchema,
+  messageCreatedRoutingPayloadSchema,
 } from "./routing";
 export type {
   RoutingFailureReason,
@@ -72,6 +73,7 @@ export type {
   RoutingResolutionSuccess,
   RoutingResolutionFailure,
   RoutingResolution,
+  MessageCreatedRoutingPayload,
 } from "./routing";
 
 export {
@@ -86,6 +88,8 @@ export {
   coworkerProposalSchema,
   coworkerEffectivePreviewSchema,
   coworkerProfileSchema,
+  RESERVED_COWORKER_HANDLES,
+  isReservedCoworkerHandle,
 } from "./coworkers";
 export type {
   CoworkerDraft,

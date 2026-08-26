@@ -185,14 +185,6 @@ export function resolveMessageRecipients(input: ResolveMessageRecipientsInput): 
         "@team requires at least one enabled channel coworker.",
       );
     }
-    if (enabled.length > P0_MAX_ROUTING_RECIPIENTS) {
-      return failure(
-        "validation_failed",
-        "team_too_large",
-        "@team fans out to at most two enabled channel coworkers.",
-        { enabled_count: enabled.length },
-      );
-    }
     const available = enabled.filter((row) => row.availableForNewWork);
     if (available.length === 0) {
       return failure(
@@ -200,6 +192,14 @@ export function resolveMessageRecipients(input: ResolveMessageRecipientsInput): 
         "recipient_unavailable",
         "@team recipients are unavailable for new work.",
         { enabled_count: enabled.length },
+      );
+    }
+    if (available.length > P0_MAX_ROUTING_RECIPIENTS) {
+      return failure(
+        "validation_failed",
+        "team_too_large",
+        "@team fans out to at most two enabled channel coworkers.",
+        { enabled_count: enabled.length, available_count: available.length },
       );
     }
     const handles = [...available]
