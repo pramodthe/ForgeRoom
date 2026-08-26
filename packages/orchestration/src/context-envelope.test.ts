@@ -232,11 +232,7 @@ describe("delivery cursor", () => {
     expect(
       envelopeDeliveredThroughSequence({
         ...envelope,
-        recent_deltas: [
-          { sequence: 3, type: "message.created", summary: "a" },
-          { sequence: 4, type: "message.created", summary: "b" },
-          { sequence: 5, type: "pin.created", summary: "c" },
-        ],
+        recent_deltas: [{ sequence: 3 }, { sequence: 4 }, { sequence: 5 }],
       }),
     ).toBe(5);
     expect(
