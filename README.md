@@ -81,6 +81,10 @@ infra/compose.yaml  Local PostgreSQL
 
 Exact `@ag-ui/*` package versions are not selected in this scaffold. That freeze is owned by P0-210.
 
+## Merge policy
+
+Merge pull requests into `main` with a **merge commit** (`gh pr merge --merge`, or GitHub’s **Create a merge commit**). Do not squash or rebase unless explicitly requested.
+
 ## Specs
 
 The canonical product contracts and implementation tasks are published under `specs/`.

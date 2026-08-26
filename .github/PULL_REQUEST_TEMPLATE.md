@@ -42,3 +42,4 @@
 - [ ] Every valid High-severity Qodo finding is fixed, or dismissed with a documented reason.
 - [ ] A follow-up Qodo review covers the final pushed commit.
 - [ ] A human reviewer made the merge decision and approved the PR.
+- [ ] Merge uses a merge commit (`gh pr merge --merge`), not squash or rebase, unless the user asked otherwise.
