@@ -2,10 +2,10 @@
 
 | Field | Current value |
 | --- | --- |
-| Overall | P0-101–P0-108 foundation API complete (incl. P0-205 router); P0-401 app shell in review; P0-210 in review; P0-000 in progress |
+| Overall | P0-101–P0-108 foundation API complete (incl. P0-205 router); P0-401 app shell in review; P0-210 AG-UI spike merged; P0-000 in progress |
 | Current phase | Phase 1 — Foundation |
 | Active task | P0-401 (in_review); P0-210 (in_review); P0-000 (in_progress) |
-| Next task | Merge P0-401 PR #15; review P0-210 PR #16; finish P0-000 TrueForge probes (PR #12); P0-105 waits on P0-000 completion |
+| Next task | Merge P0-401 PR #15; finish P0-000 TrueForge probes (PR #12); P0-105 waits on P0-000 completion |
 | P0 blockers | TrueForge model presets, Research permission preview, Save-as-skill Run binding, TrueForge→artifact path, DB fixture reset (migrations), demo durable storage — Composio/Daytona SDK/local adapter verified 2026-08-26 |
 | Last updated | 2026-08-26 |
 
