@@ -108,7 +108,7 @@ export async function ensureLocalPostgres(): Promise<string> {
   throw lastError;
 }
 
-export async function withMigratedDatabase<T>(fn: (sql: postgres.Sql) => Promise<T>): Promise<T> {
+export async function withTemporaryDatabase<T>(fn: (url: string) => Promise<T>): Promise<T> {
   const url = await ensureLocalPostgres();
   const admin = postgres(adminUrl(url), { max: 1, prepare: false, onnotice: () => undefined });
   const dbName = `forgeroom_p0103_${process.pid}_${Date.now()}`;
@@ -116,17 +116,23 @@ export async function withMigratedDatabase<T>(fn: (sql: postgres.Sql) => Promise
     await admin.unsafe(`CREATE DATABASE ${dbName}`);
     const testUrl = new URL(url);
     testUrl.pathname = `/${dbName}`;
-    const sql = createSql(testUrl.toString());
+    return await fn(testUrl.toString());
+  } finally {
+    await admin.unsafe(`DROP DATABASE IF EXISTS ${dbName} WITH (FORCE)`);
+    await admin.end({ timeout: 5 });
+  }
+}
+
+export async function withMigratedDatabase<T>(fn: (sql: postgres.Sql) => Promise<T>): Promise<T> {
+  return withTemporaryDatabase(async (url) => {
+    const sql = createSql(url);
     try {
       await migrate(sql);
       return await fn(sql);
     } finally {
       await sql.end({ timeout: 5 });
     }
-  } finally {
-    await admin.unsafe(`DROP DATABASE IF EXISTS ${dbName} WITH (FORCE)`);
-    await admin.end({ timeout: 5 });
-  }
+  });
 }
 
 export async function seedRuntime(sql: postgres.Sql): Promise<void> {

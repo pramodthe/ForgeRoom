@@ -50,6 +50,15 @@ BEGIN
     RAISE EXCEPTION 'channel_agent_session_generations history is immutable'
       USING ERRCODE = 'restrict_violation';
   END IF;
+  IF OLD.retired_at IS NOT NULL
+    AND (
+      NEW.state IS DISTINCT FROM OLD.state
+      OR NEW.retired_at IS DISTINCT FROM OLD.retired_at
+    )
+  THEN
+    RAISE EXCEPTION 'retired channel_agent_session_generations cannot be reopened'
+      USING ERRCODE = 'restrict_violation';
+  END IF;
   RETURN NEW;
 END;
 $$;
@@ -60,13 +69,14 @@ LANGUAGE plpgsql
 AS $$
 DECLARE
   generation_session_id text;
+  generation_state text;
   generation_retired_at timestamptz;
 BEGIN
   IF NEW.current_generation_id IS NULL THEN
     RETURN NEW;
   END IF;
-  SELECT channel_agent_session_id, retired_at
-    INTO generation_session_id, generation_retired_at
+  SELECT channel_agent_session_id, state, retired_at
+    INTO generation_session_id, generation_state, generation_retired_at
     FROM channel_agent_session_generations
     WHERE id = NEW.current_generation_id;
   IF generation_session_id IS NULL THEN
@@ -77,9 +87,116 @@ BEGIN
     RAISE EXCEPTION 'current_generation_id must belong to the same stable session'
       USING ERRCODE = 'check_violation';
   END IF;
-  IF generation_retired_at IS NOT NULL THEN
-    RAISE EXCEPTION 'current_generation_id cannot point at a retired generation'
+  IF generation_state NOT IN ('ready', 'rotating') OR generation_retired_at IS NOT NULL THEN
+    RAISE EXCEPTION 'current_generation_id must point at a live generation'
       USING ERRCODE = 'check_violation';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+CREATE FUNCTION forgeroom_generation_cannot_invalidate_current()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  IF (NEW.state NOT IN ('ready', 'rotating') OR NEW.retired_at IS NOT NULL)
+    AND EXISTS (
+      SELECT 1
+      FROM channel_agent_sessions
+      WHERE current_generation_id = OLD.id
+    )
+  THEN
+    RAISE EXCEPTION 'current generation must be replaced before it is retired or failed'
+      USING ERRCODE = 'check_violation';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+CREATE FUNCTION forgeroom_action_proposals_protect()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  IF (
+    to_jsonb(NEW) - ARRAY[
+      'state',
+      'provider_idempotency_key',
+      'decided_by',
+      'decision_reason',
+      'decided_at',
+      'executed_at',
+      'provider_receipt_json'
+    ]
+  ) IS DISTINCT FROM (
+    to_jsonb(OLD) - ARRAY[
+      'state',
+      'provider_idempotency_key',
+      'decided_by',
+      'decision_reason',
+      'decided_at',
+      'executed_at',
+      'provider_receipt_json'
+    ]
+  )
+  THEN
+    RAISE EXCEPTION 'action_proposals approval authority is immutable'
+      USING ERRCODE = 'restrict_violation';
+  END IF;
+
+  IF NEW.state IS DISTINCT FROM OLD.state
+    AND NOT (
+      (OLD.state = 'proposed' AND NEW.state IN ('allowed', 'denied', 'expired', 'stale'))
+      OR (OLD.state = 'allowed' AND NEW.state = 'executing')
+      OR (OLD.state = 'executing' AND NEW.state IN ('succeeded', 'failed', 'unknown'))
+      OR (OLD.state = 'unknown' AND NEW.state IN ('reconciled_succeeded', 'reconciled_failed'))
+    )
+  THEN
+    RAISE EXCEPTION 'action_proposals decision and execution state cannot be reassigned'
+      USING ERRCODE = 'check_violation';
+  END IF;
+
+  IF OLD.state <> 'proposed'
+    AND (
+      NEW.decided_by IS DISTINCT FROM OLD.decided_by
+      OR NEW.decision_reason IS DISTINCT FROM OLD.decision_reason
+      OR NEW.decided_at IS DISTINCT FROM OLD.decided_at
+    )
+  THEN
+    RAISE EXCEPTION 'action_proposals decision is single-assignment'
+      USING ERRCODE = 'restrict_violation';
+  END IF;
+
+  IF OLD.provider_idempotency_key IS NOT NULL
+    AND NEW.provider_idempotency_key IS DISTINCT FROM OLD.provider_idempotency_key
+  THEN
+    RAISE EXCEPTION 'action_proposals provider idempotency binding is single-assignment'
+      USING ERRCODE = 'restrict_violation';
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+
+CREATE FUNCTION forgeroom_ui_surface_grants_protect()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  IF (to_jsonb(NEW) - ARRAY['use_count', 'revoked_at'])
+    IS DISTINCT FROM (to_jsonb(OLD) - ARRAY['use_count', 'revoked_at'])
+  THEN
+    RAISE EXCEPTION 'ui_surface_grants authority is immutable'
+      USING ERRCODE = 'restrict_violation';
+  END IF;
+  IF NEW.use_count < OLD.use_count THEN
+    RAISE EXCEPTION 'ui_surface_grants use_count cannot decrease'
+      USING ERRCODE = 'check_violation';
+  END IF;
+  IF OLD.revoked_at IS NOT NULL AND NEW.revoked_at IS DISTINCT FROM OLD.revoked_at THEN
+    RAISE EXCEPTION 'ui_surface_grants revocation is single-assignment'
+      USING ERRCODE = 'restrict_violation';
   END IF;
   RETURN NEW;
 END;
@@ -462,16 +579,21 @@ CREATE TABLE channel_agent_session_generations (
   created_at timestamptz NOT NULL DEFAULT now(),
   retired_at timestamptz,
   CONSTRAINT channel_agent_session_generations_unique UNIQUE (channel_agent_session_id, generation),
+  CONSTRAINT channel_agent_session_generations_id_session_uidx UNIQUE (id, channel_agent_session_id),
   CONSTRAINT channel_agent_session_generations_trueforge_uidx UNIQUE (trueforge_session_id),
   CONSTRAINT channel_agent_session_generations_generation_check CHECK (generation >= 1),
   CONSTRAINT channel_agent_session_generations_state_check CHECK (
     state IN ('provisioning', 'ready', 'rotating', 'retired', 'failed')
+  ),
+  CONSTRAINT channel_agent_session_generations_retirement_check CHECK (
+    (state = 'retired') = (retired_at IS NOT NULL)
   )
 );
 
 ALTER TABLE channel_agent_sessions
-  ADD CONSTRAINT channel_agent_sessions_current_generation_fk
-  FOREIGN KEY (current_generation_id) REFERENCES channel_agent_session_generations (id)
+  ADD CONSTRAINT channel_agent_sessions_current_generation_owner_fk
+  FOREIGN KEY (current_generation_id, id)
+  REFERENCES channel_agent_session_generations (id, channel_agent_session_id)
   DEFERRABLE INITIALLY DEFERRED;
 
 CREATE TRIGGER channel_agent_sessions_current_generation_live
@@ -483,6 +605,16 @@ CREATE TRIGGER channel_agent_session_generations_protect_history
   BEFORE UPDATE ON channel_agent_session_generations
   FOR EACH ROW
   EXECUTE FUNCTION forgeroom_session_generations_protect_history();
+
+CREATE TRIGGER channel_agent_session_generations_keep_current_live
+  BEFORE UPDATE OF state, retired_at ON channel_agent_session_generations
+  FOR EACH ROW
+  EXECUTE FUNCTION forgeroom_generation_cannot_invalidate_current();
+
+CREATE TRIGGER channel_agent_session_generations_no_delete
+  BEFORE DELETE ON channel_agent_session_generations
+  FOR EACH ROW
+  EXECUTE FUNCTION forgeroom_forbid_mutation();
 
 CREATE TABLE runs (
   id text PRIMARY KEY,
@@ -559,6 +691,13 @@ CREATE TABLE turn_queue_items (
   claimed_at timestamptz,
   completed_at timestamptz,
   CONSTRAINT turn_queue_items_fifo_uidx UNIQUE (channel_agent_session_id, fifo_sequence),
+  CONSTRAINT turn_queue_items_turn_binding_uidx UNIQUE (
+    id,
+    channel_agent_session_id,
+    bound_session_generation_id,
+    run_step_id,
+    input_type
+  ),
   CONSTRAINT turn_queue_items_fifo_check CHECK (fifo_sequence >= 0),
   CONSTRAINT turn_queue_items_input_type_check CHECK (
     input_type IN (
@@ -572,8 +711,12 @@ CREATE TABLE turn_queue_items (
     state IN ('queued', 'claimed', 'completed', 'cancelled', 'failed')
   ),
   CONSTRAINT turn_queue_items_bound_generation_check CHECK (
-    input_type = 'normal' OR bound_session_generation_id IS NOT NULL
-  )
+    bound_session_generation_id IS NOT NULL OR (input_type = 'normal' AND state = 'queued')
+  ),
+  CONSTRAINT turn_queue_items_bound_generation_owner_fk FOREIGN KEY (
+    bound_session_generation_id,
+    channel_agent_session_id
+  ) REFERENCES channel_agent_session_generations (id, channel_agent_session_id)
 );
 
 CREATE TABLE agent_turns (
@@ -619,6 +762,23 @@ CREATE TABLE agent_turns (
   ),
   CONSTRAINT agent_turns_sequence_check CHECK (
     last_trueforge_sequence >= 0 AND context_through_channel_sequence >= 0
+  ),
+  CONSTRAINT agent_turns_generation_session_fk FOREIGN KEY (
+    session_generation_id,
+    channel_agent_session_id
+  ) REFERENCES channel_agent_session_generations (id, channel_agent_session_id),
+  CONSTRAINT agent_turns_queue_binding_fk FOREIGN KEY (
+    queue_item_id,
+    channel_agent_session_id,
+    session_generation_id,
+    run_step_id,
+    input_type
+  ) REFERENCES turn_queue_items (
+    id,
+    channel_agent_session_id,
+    bound_session_generation_id,
+    run_step_id,
+    input_type
   )
 );
 
@@ -926,6 +1086,11 @@ CREATE TABLE ui_instance_revisions (
   )
 );
 
+CREATE TRIGGER ui_instance_revisions_append_only
+  BEFORE UPDATE OR DELETE ON ui_instance_revisions
+  FOR EACH ROW
+  EXECUTE FUNCTION forgeroom_forbid_mutation();
+
 CREATE TABLE ui_surface_grants (
   id text PRIMARY KEY,
   ui_instance_id text NOT NULL REFERENCES ui_instances (id),
@@ -1020,6 +1185,16 @@ CREATE TABLE ui_surface_grants (
     )
   )
 );
+
+CREATE TRIGGER ui_surface_grants_protect
+  BEFORE UPDATE ON ui_surface_grants
+  FOR EACH ROW
+  EXECUTE FUNCTION forgeroom_ui_surface_grants_protect();
+
+CREATE TRIGGER ui_surface_grants_no_delete
+  BEFORE DELETE ON ui_surface_grants
+  FOR EACH ROW
+  EXECUTE FUNCTION forgeroom_forbid_mutation();
 
 ALTER TABLE ui_instances
   ADD CONSTRAINT ui_instances_render_grant_fk
@@ -1223,6 +1398,16 @@ CREATE TABLE action_proposals (
     )
   )
 );
+
+CREATE TRIGGER action_proposals_protect
+  BEFORE UPDATE ON action_proposals
+  FOR EACH ROW
+  EXECUTE FUNCTION forgeroom_action_proposals_protect();
+
+CREATE TRIGGER action_proposals_no_delete
+  BEFORE DELETE ON action_proposals
+  FOR EACH ROW
+  EXECUTE FUNCTION forgeroom_forbid_mutation();
 
 CREATE TABLE questions (
   id text PRIMARY KEY,

@@ -13,7 +13,9 @@ pnpm --filter @forgeroom/db migrate
 
 `0001_p0_foundation.sql` creates the complete P0 physical schema: identity, coworkers/drafts, skills, channels/events, Tasks, stable ChannelAgentSession + immutable generation history, Runs/RunSteps/queue/turns, canonical TrueForge and AG-UI event records, connectors/grants, controlled-registry UI, PauseGroups, artifacts, and append-only audit events.
 
-Re-running `migrate` is idempotent through `forgeroom_schema_migrations`.
+Re-running `migrate` is idempotent through `forgeroom_schema_migrations`. Forward and rollback
+operations hold the same transaction-scoped PostgreSQL advisory lock, so concurrent deployers
+serialize before reading or changing the migration journal.
 
 ## Rollback
 

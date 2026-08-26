@@ -1,7 +1,16 @@
 import { describe, expect, it } from "vitest";
+import { createSql } from "./client";
 import { P0_TABLES } from "./schema";
-import { HASH, NOW, seedRuntime, withMigratedDatabase } from "./test-harness";
-import { rollbackLast, migrate } from "./migrate";
+import {
+  HASH,
+  NOW,
+  seedRuntime,
+  withMigratedDatabase,
+  withTemporaryDatabase,
+} from "./test-harness";
+import { appliedMigrations, rollbackLast, migrate } from "./migrate";
+
+const ALT_HASH = `sha256:${"cd".repeat(32)}`;
 
 const EXCLUDED_COLUMN =
   /iframe|csp_|bootstrap|sanitizer|delivery_body|delivery_headers|delivery_security|verifier_|request_agent_turn|open_existing_hitl|confirmation_challenge|confirmation_summary|confirmed_by|confirmed_at|prepared_auth_session|requires_trusted_confirmation|target_coworker|intent_template|historical_replay|generated_origin|context_classification|iframe_context|agui_source_ref|default_coordinator|parent_run_step|source_blob|source_kind/;
@@ -39,6 +48,26 @@ describe("P0 foundation migration", () => {
         WHERE table_schema = 'public' AND table_name = 'channels'
       `;
       expect(afterUp).toHaveLength(1);
+    });
+  }, 60_000);
+
+  it("serializes concurrent forward and rollback operations", async () => {
+    await withTemporaryDatabase(async (url) => {
+      const first = createSql(url);
+      const second = createSql(url);
+      try {
+        const forwardResults = await Promise.all([migrate(first), migrate(second)]);
+        expect(forwardResults.flat()).toEqual(["0001_p0_foundation.sql"]);
+        expect(await appliedMigrations(first)).toEqual(["0001_p0_foundation.sql"]);
+
+        const rollbackResults = await Promise.all([rollbackLast(first), rollbackLast(second)]);
+        expect(
+          rollbackResults.filter((result) => result === "0001_p0_foundation.sql"),
+        ).toHaveLength(1);
+        expect(rollbackResults.filter((result) => result === null)).toHaveLength(1);
+      } finally {
+        await Promise.all([first.end({ timeout: 5 }), second.end({ timeout: 5 })]);
+      }
     });
   }, 60_000);
 });
@@ -188,19 +217,81 @@ describe("concurrency-critical constraints", () => {
       await expect(
         sql`UPDATE channel_agent_session_generations SET trueforge_session_id = 'tf_other' WHERE id = 'gen_1'`,
       ).rejects.toThrow(/immutable/i);
+
+      await expect(
+        sql`
+          UPDATE channel_agent_session_generations
+          SET state = 'retired', retired_at = ${NOW}
+          WHERE id = 'gen_1'
+        `,
+      ).rejects.toThrow(/current generation must be replaced/i);
+      await sql`
+        INSERT INTO channel_agent_session_generations (
+          id, channel_agent_session_id, generation, agent_version_id, session_revision_id,
+          trueforge_session_id, effective_spec_hash, approval_policy_hash, state, created_at
+        )
+        VALUES (
+          'gen_2', 'cas_1', 2, 'av_1', 'sr_1',
+          'tf_sess_2', ${HASH}, ${HASH}, 'ready', ${NOW}
+        )
+      `;
+      await sql`UPDATE channel_agent_sessions SET current_generation_id = 'gen_2' WHERE id = 'cas_1'`;
+      await sql`
+        UPDATE channel_agent_session_generations
+        SET state = 'retired', retired_at = ${NOW}
+        WHERE id = 'gen_1'
+      `;
+      await expect(
+        sql`
+          UPDATE channel_agent_session_generations
+          SET state = 'ready', retired_at = NULL
+          WHERE id = 'gen_1'
+        `,
+      ).rejects.toThrow(/cannot be reopened/i);
     });
   }, 60_000);
 
   it("allows one remote-active turn and unique PauseGroup/Resume/decision rows", async () => {
     await withMigratedDatabase(async (sql) => {
       await seedRuntime(sql);
+      await expect(
+        sql`
+          INSERT INTO turn_queue_items (
+            id, channel_agent_session_id, run_step_id, input_type,
+            input_payload_redacted_json, fifo_sequence, state, created_at
+          )
+          VALUES ('q_unbound', 'cas_1', 'step_1', 'normal', '{}'::jsonb, 1, 'claimed', ${NOW})
+        `,
+      ).rejects.toThrow(/turn_queue_items_bound_generation_check/i);
       await sql`
         INSERT INTO turn_queue_items (
           id, channel_agent_session_id, run_step_id, bound_session_generation_id, input_type,
           input_payload_redacted_json, fifo_sequence, state, created_at
         )
-        VALUES ('q_2', 'cas_1', 'step_1', 'gen_1', 'normal', '{}'::jsonb, 1, 'claimed', ${NOW})
+        VALUES ('q_2', 'cas_1', 'step_1', 'gen_1', 'normal', '{}'::jsonb, 2, 'claimed', ${NOW})
       `;
+      await sql`
+        INSERT INTO channel_agent_session_generations (
+          id, channel_agent_session_id, generation, agent_version_id, session_revision_id,
+          trueforge_session_id, effective_spec_hash, approval_policy_hash, state, created_at
+        )
+        VALUES (
+          'gen_other', 'cas_1', 2, 'av_1', 'sr_1',
+          'tf_sess_other', ${HASH}, ${HASH}, 'ready', ${NOW}
+        )
+      `;
+      await expect(
+        sql`
+          INSERT INTO agent_turns (
+            id, run_step_id, channel_agent_session_id, session_generation_id, queue_item_id,
+            application_run_token, agui_run_id, input_type, state
+          )
+          VALUES (
+            'turn_crossed', 'step_1', 'cas_1', 'gen_other', 'q_2',
+            'token_crossed', 'agui_run_crossed', 'normal', 'intended'
+          )
+        `,
+      ).rejects.toThrow(/agent_turns_queue_binding_fk|foreign key/i);
       await expect(
         sql`
           INSERT INTO agent_turns (
@@ -287,6 +378,20 @@ describe("concurrency-critical constraints", () => {
         `,
       ]);
       expect(first.length + second.length).toBe(1);
+
+      await expect(
+        sql`UPDATE action_proposals SET arguments_hash = ${ALT_HASH} WHERE id = 'ap_1'`,
+      ).rejects.toThrow(/approval authority is immutable/i);
+      const decision = await sql<{ state: string }[]>`
+        SELECT state FROM action_proposals WHERE id = 'ap_1'
+      `;
+      const oppositeDecision = decision[0]?.state === "allowed" ? "denied" : "allowed";
+      await expect(
+        sql`UPDATE action_proposals SET state = ${oppositeDecision} WHERE id = 'ap_1'`,
+      ).rejects.toThrow(/cannot be reassigned/i);
+      await expect(sql`DELETE FROM action_proposals WHERE id = 'ap_1'`).rejects.toThrow(
+        /append-only/i,
+      );
     });
   }, 60_000);
 
@@ -336,6 +441,12 @@ describe("concurrency-critical constraints", () => {
           )
         `,
       ).rejects.toThrow(/ui_instance_revisions_kind_shape_check/i);
+      await expect(
+        sql`UPDATE ui_instance_revisions SET content_hash = ${ALT_HASH} WHERE id = 'uir_1'`,
+      ).rejects.toThrow(/append-only/i);
+      await expect(sql`DELETE FROM ui_instance_revisions WHERE id = 'uir_1'`).rejects.toThrow(
+        /append-only/i,
+      );
 
       await sql`
         INSERT INTO ui_interactions (
@@ -396,6 +507,20 @@ describe("concurrency-critical constraints", () => {
       await expect(
         sql`UPDATE ui_surface_grants SET use_count = 9 WHERE id = 'ag_1'`,
       ).rejects.toThrow(/ui_surface_grants_use_check/i);
+      await expect(
+        sql`UPDATE ui_surface_grants SET handler_key = 'other_handler' WHERE id = 'ag_1'`,
+      ).rejects.toThrow(/authority is immutable/i);
+      await sql`UPDATE ui_surface_grants SET use_count = 1 WHERE id = 'ag_1'`;
+      await expect(
+        sql`UPDATE ui_surface_grants SET use_count = 0 WHERE id = 'ag_1'`,
+      ).rejects.toThrow(/use_count cannot decrease/i);
+      await sql`UPDATE ui_surface_grants SET revoked_at = ${NOW} WHERE id = 'ag_1'`;
+      await expect(
+        sql`UPDATE ui_surface_grants SET revoked_at = NULL WHERE id = 'ag_1'`,
+      ).rejects.toThrow(/revocation is single-assignment/i);
+      await expect(sql`DELETE FROM ui_surface_grants WHERE id = 'ag_1'`).rejects.toThrow(
+        /append-only/i,
+      );
 
       await sql`
         INSERT INTO audit_events (

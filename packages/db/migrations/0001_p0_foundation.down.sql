@@ -48,6 +48,9 @@ DROP TABLE IF EXISTS workspaces CASCADE;
 DROP TABLE IF EXISTS users CASCADE;
 
 DROP FUNCTION IF EXISTS forgeroom_current_generation_is_live();
+DROP FUNCTION IF EXISTS forgeroom_generation_cannot_invalidate_current();
+DROP FUNCTION IF EXISTS forgeroom_action_proposals_protect();
+DROP FUNCTION IF EXISTS forgeroom_ui_surface_grants_protect();
 DROP FUNCTION IF EXISTS forgeroom_session_generations_protect_history();
 DROP FUNCTION IF EXISTS forgeroom_coworker_drafts_protect_body();
 DROP FUNCTION IF EXISTS forgeroom_forbid_mutation();
