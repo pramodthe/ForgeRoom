@@ -1,7 +1,7 @@
 ---
 id: P0-106
 title: Implement channel and coworker API
-status: in_review
+status: done
 owner: cursor-agent
 started: 2026-08-26
 depends_on: [P0-103, P0-104]
@@ -42,6 +42,7 @@ Run contract, authorization, validation and database integration tests for every
 - Files changed: `apps/api/src/workspace/*`, `apps/api/src/http-guards.ts`, `apps/api/src/server.ts`, `apps/api/src/index.ts`, `packages/contracts` type exports, `packages/db/package.json` test-harness export, task/STATUS index.
 - Commands: `pnpm --filter @forgeroom/api typecheck` (pass); `pnpm --filter @forgeroom/api test` (38 pass, including 22 workspace tests and postgres integration); `pnpm --filter @forgeroom/contracts typecheck` (pass).
 - Qodo pre-PR review: fixed atomic channel+owner create, row-locked message sequence allocation, and claim-first idempotency receipts.
+- Independent review: fixed and regression-tested the archived-channel coworker PATCH race; full repository CI and Qodo exact-head review passed before closeout.
 - Endpoint tests: `src/workspace/workspace.test.ts` covers channel CRUD, coworker list/get/edit/disable, absent create (404), coordinator rejection, grant isolation, archive blocks, CSRF/unauth, cross-workspace forbid, and migrated-postgres persistence.
 - Known limitations: capability-affecting coworker updates return empty `session_rotations` / `stale_proposal_ids` until P0-208; tool grants are stored on coworker editable config (connector-bound `tool_grants` rows remain later tasks); message POST persists channel event/message only (no turn dispatch).
 

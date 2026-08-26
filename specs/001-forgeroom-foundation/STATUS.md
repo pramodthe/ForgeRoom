@@ -2,10 +2,10 @@
 
 | Field | Current value |
 | --- | --- |
-| Overall | P0-101 through P0-104 complete; P0-000 demo/tool contract in progress; P0-106 channel/coworker API in_review |
+| Overall | P0-101 through P0-104 and P0-106 complete; P0-000 demo/tool contract in progress |
 | Current phase | Phase 1 — Foundation |
-| Active task | P0-000 (in_progress); P0-106 (in_review, owner cursor-agent) |
-| Next task | Finish P0-000 live probes when secrets exist; independent review of P0-106; P0-105 waits on P0-000 + P0-103/P0-104; P0-107 waits on P0-106 done |
+| Active task | P0-000 (in_progress) |
+| Next task | P0-107 canonical event log/SSE; P0-205 mention/team router is also ready; P0-105 waits on P0-000 live probes |
 | P0 blockers | Live Composio tools/account/descriptor hashes, Daytona+storage probe, model presets, remaining OD-002–OD-012 verified rows, controlled-GenUI/Task/skill demo fixture, storage/deployment choices, and PD-002 before public release |
 | Last updated | 2026-08-26 |
 
@@ -41,6 +41,7 @@ Never put credentials in this file.
 
 ## Recently completed
 
+- P0-106 channel/coworker API accepted via PR #7 after archive-race remediation, full CI, and exact-head Qodo review.
 - P0-104 owner authentication and authorization merged to `main` (`ea3db05` via PR #5) after Qodo-clean head and green CI.
 - P0-103 database schema and session workspace boundary merged to `main` (`d7b6273`).
 - P0-102 shared contracts merged to `main`.

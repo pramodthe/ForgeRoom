@@ -1,7 +1,7 @@
 ---
 id: P0-107
 title: Implement canonical event log and resumable SSE
-status: blocked
+status: ready
 owner: unassigned
 depends_on: [P0-106]
 requirements: [CH-004, CH-005, RUN-005, AGUI-003]
