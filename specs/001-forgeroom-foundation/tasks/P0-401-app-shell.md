@@ -1,8 +1,8 @@
 ---
 id: P0-401
 title: Build authenticated three-pane application shell
-status: blocked
-owner: unassigned
+status: in_review
+owner: cursor-agent
 depends_on: [P0-102, P0-104]
 requirements: [CH-006]
 specs: [../ux.md#p0-navigation, ../ux.md#channel-workroom]
