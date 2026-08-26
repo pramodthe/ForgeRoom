@@ -9,6 +9,22 @@ jobs:
   check:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: forgeroom
+          POSTGRES_PASSWORD: forgeroom
+          POSTGRES_DB: forgeroom
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U forgeroom -d forgeroom"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgres://forgeroom:forgeroom@localhost:5432/forgeroom
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4

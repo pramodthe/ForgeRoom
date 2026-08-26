@@ -1,7 +1,7 @@
 ---
 id: P0-102
 title: Create shared domain and API contracts
-status: in_review
+status: done
 owner: cursor-agent
 started: 2026-08-25
 depends_on: [P0-101]
@@ -65,6 +65,7 @@ Run typecheck, contract parse/reject unit tests and public-package boundary test
 - 2026-08-25 — Addressed all 11 Qodo findings: hardened payload and prototype-key safety; bound activity/state revisions and authority lanes; completed command, PauseGroup, approval, controlled-UI and replay contracts; and routed worker dispatch through the shared discriminated command union.
 - 2026-08-25 — Two independent adversarial audits reported no remaining code blockers in the P0-102/Qodo scope; contracts and worker typechecks plus 59 targeted tests passed.
 - 2026-08-25 — Addressed two follow-up Qodo correctness findings: invariant-coupled activity and channel-state deltas now prove their base fields with JSON Patch tests and validate the reconstructed final PauseGroup or controlled-UI state; contracts and worker now have 61 targeted tests.
+- 2026-08-25 — Independent review accepted after merge to `main` (`995f847`); moved to `done`.
 
 ## Handoff
 
