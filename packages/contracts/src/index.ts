@@ -59,6 +59,24 @@ export type {
 } from "./channels";
 
 export {
+  P0_MAX_ROUTING_RECIPIENTS,
+  routingFailureReasonSchema,
+  routingFailureCodeSchema,
+  routingResolutionSuccessSchema,
+  routingResolutionFailureSchema,
+  routingResolutionSchema,
+  messageCreatedRoutingPayloadSchema,
+} from "./routing";
+export type {
+  RoutingFailureReason,
+  RoutingFailureCode,
+  RoutingResolutionSuccess,
+  RoutingResolutionFailure,
+  RoutingResolution,
+  MessageCreatedRoutingPayload,
+} from "./routing";
+
+export {
   coworkerDraftSchema,
   coworkerDraftConfirmCommandSchema,
   coworkerDraftCreateCommandSchema,
@@ -70,6 +88,8 @@ export {
   coworkerProposalSchema,
   coworkerEffectivePreviewSchema,
   coworkerProfileSchema,
+  RESERVED_COWORKER_HANDLES,
+  isReservedCoworkerHandle,
 } from "./coworkers";
 export type {
   CoworkerDraft,

@@ -1,6 +1,7 @@
 import {
   agentProfiles,
   agentVersions,
+  channelAgentSessions,
   channelParticipants,
   channels,
   createDb,
@@ -15,6 +16,8 @@ import { clampEventLimit } from "./event-read";
 import { hashAguiEvent, materializeChannelEvent } from "./event-persist";
 import type {
   AppendChannelEventResult,
+  ChannelAgentSessionRecord,
+  ChannelAgentSessionState,
   ChannelEventInsert,
   ChannelEventRecord,
   ChannelPatch,
@@ -506,6 +509,45 @@ export function createPostgresWorkspaceStore(sql: SqlClient): WorkspaceCatalogSt
         .from(agentProfiles)
         .where(eq(agentProfiles.workspaceId, workspaceId));
       return rows.map(mapCoworker).sort((a, b) => a.handle.localeCompare(b.handle));
+    },
+    async listChannelAgentSessions(channelId) {
+      const rows = await db
+        .select()
+        .from(channelAgentSessions)
+        .where(eq(channelAgentSessions.channelId, channelId));
+      return rows
+        .map((row): ChannelAgentSessionRecord => ({
+          id: row.id,
+          workspaceId: row.workspaceId,
+          channelId: row.channelId,
+          agentProfileId: row.agentProfileId,
+          state: row.state as ChannelAgentSessionState,
+        }))
+        .sort((a, b) => a.agentProfileId.localeCompare(b.agentProfileId));
+    },
+    async upsertChannelAgentSession(session) {
+      const now = new Date().toISOString();
+      await db
+        .insert(channelAgentSessions)
+        .values({
+          id: session.id,
+          workspaceId: session.workspaceId,
+          channelId: session.channelId,
+          agentProfileId: session.agentProfileId,
+          logicalAguiThreadId: `thread_${session.channelId}_${session.agentProfileId}`,
+          currentGenerationId: null,
+          lastDeliveredChannelSequence: 0,
+          state: session.state,
+          createdAt: now,
+          updatedAt: now,
+        })
+        .onConflictDoUpdate({
+          target: [channelAgentSessions.channelId, channelAgentSessions.agentProfileId],
+          set: {
+            state: session.state,
+            updatedAt: now,
+          },
+        });
     },
     async insertCoworker(coworker, version) {
       await db.insert(agentProfiles).values({

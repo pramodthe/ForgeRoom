@@ -19,3 +19,12 @@ export function startWorker(options: WorkerStartOptions = {}): WorkerHandle {
     },
   };
 }
+
+export {
+  TEAM_MENTION,
+  AVAILABLE_CHANNEL_AGENT_SESSION_STATES,
+  extractMentionTokens,
+  isChannelAgentSessionAvailable,
+  resolveMessageRecipients,
+} from "./router";
+export type { MentionRouterCoworker, ResolveMessageRecipientsInput } from "./router";

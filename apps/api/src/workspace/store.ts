@@ -8,6 +8,15 @@ import { materializeChannelEvent } from "./event-persist";
 
 export type ChannelStatus = "active" | "archived";
 export type CoworkerStatus = "active" | "disabled";
+export type ChannelAgentSessionState = "active" | "rotating" | "disabled";
+
+export type ChannelAgentSessionRecord = {
+  id: string;
+  workspaceId: string;
+  channelId: string;
+  agentProfileId: string;
+  state: ChannelAgentSessionState;
+};
 
 export type CoworkerEditableConfig = {
   standing_instructions: string;
@@ -238,6 +247,10 @@ export type WorkspaceCatalogStore = {
 
   getCoworker(id: string): Promise<CoworkerRecord | null>;
   listCoworkers(workspaceId: string): Promise<CoworkerRecord[]>;
+  /** Current channel/coworker session rows used for routing availability (may be empty pre-P0-201). */
+  listChannelAgentSessions(channelId: string): Promise<ChannelAgentSessionRecord[]>;
+  /** Test/seed helper; production writers arrive with P0-201 session creation. */
+  upsertChannelAgentSession(session: ChannelAgentSessionRecord): Promise<void>;
   insertCoworker(coworker: CoworkerRecord, version: AgentVersionRecord): Promise<void>;
   updateCoworker(coworker: CoworkerRecord, version?: AgentVersionRecord): Promise<void>;
   /**
@@ -366,6 +379,7 @@ export function createMemoryWorkspaceStore(): WorkspaceCatalogStore {
   const receipts = new Map<string, CommandReceipt>();
   const events = new Map<string, ChannelEventRecord>();
   const messages = new Map<string, MessageRecord>();
+  const channelAgentSessions = new Map<string, ChannelAgentSessionRecord>();
   /** Serialize per-channel appends so concurrent callers preserve unique monotonic sequences. */
   const channelLocks = new Map<string, Promise<void>>();
 
@@ -567,6 +581,16 @@ export function createMemoryWorkspaceStore(): WorkspaceCatalogStore {
       return [...coworkers.values()]
         .filter((row) => row.workspaceId === workspaceId)
         .sort((a, b) => a.handle.localeCompare(b.handle));
+    },
+    async listChannelAgentSessions(channelId) {
+      return [...channelAgentSessions.values()]
+        .filter((row) => row.channelId === channelId)
+        .sort((a, b) => a.agentProfileId.localeCompare(b.agentProfileId));
+    },
+    async upsertChannelAgentSession(session) {
+      channelAgentSessions.set(`${session.channelId}:${session.agentProfileId}`, {
+        ...session,
+      });
     },
     async insertCoworker(coworker, version) {
       coworkers.set(coworker.id, structuredClone(coworker));
