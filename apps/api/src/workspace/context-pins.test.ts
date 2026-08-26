@@ -939,7 +939,7 @@ describe("P0-108 channel context and pins", () => {
   });
 
   it("replays create-pin after unpin without recreating", async () => {
-    const { app, env } = await createTestApp();
+    const { app, env, workspaceStore } = await createTestApp();
     const { session, cookie } = await login(app, env);
     const channel = await createChannel(
       app,
@@ -976,11 +976,14 @@ describe("P0-108 channel context and pins", () => {
       pin: { id: string };
       sequence: number;
     };
-    await app.request(`/api/channels/${channel.id}/pins/${first.pin.id}`, {
+    const removed = await app.request(`/api/channels/${channel.id}/pins/${first.pin.id}`, {
       method: "DELETE",
       headers: mutationHeaders(env, cookie, session.csrf_token),
       body: JSON.stringify({ schemaVersion: 1, idempotency_key: "idem_unpin_replay_remove" }),
     });
+    expect(removed.status).toBe(200);
+    const afterRemove = await workspaceStore.listActivePins(channel.id);
+    expect(afterRemove).toHaveLength(0);
     const replay = await app.request(`/api/channels/${channel.id}/pins`, {
       method: "POST",
       headers: mutationHeaders(env, cookie, session.csrf_token),
