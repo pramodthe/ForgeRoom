@@ -175,6 +175,19 @@ export function buildChannelContextEnvelope(
       envelope = { ...envelope, roster: envelope.roster.slice(0, -1) };
       continue;
     }
+    if (envelope.roster.length === 1) {
+      const entry = envelope.roster[0]!;
+      envelope = {
+        ...envelope,
+        roster: [{
+          ...entry,
+          participant_id: truncateChars(entry.participant_id, Math.max(8, Math.floor(entry.participant_id.length / 2))),
+          ...(entry.name ? { name: truncateChars(entry.name, Math.max(8, Math.floor(entry.name.length / 2))) } : {}),
+          ...(entry.handle ? { handle: truncateChars(entry.handle, Math.max(8, Math.floor(entry.handle.length / 2))) } : {}),
+        }],
+      };
+      continue;
+    }
     // Last resort: truncate mission/name/assignment text fields.
     const mission = truncateChars(
       envelope.channel.mission_brief,
@@ -245,7 +258,7 @@ export function renderChannelContextText(envelope: ChannelContextEnvelope): stri
  */
 /** Highest contiguous channel event sequence included in a built envelope (after truncation). */
 export function envelopeDeliveredThroughSequence(envelope: {
-  recent_deltas: ChannelContextDelta[];
+  recent_deltas: Array<{ sequence: number }>;
   last_delivered_channel_sequence: number;
 }): number {
   const pending = envelope.recent_deltas
@@ -283,7 +296,7 @@ export function nextDeliveryCursor(input: DeliveryCursorAdvanceInput): DeliveryC
       reason: "turn_not_confirmed",
     };
   }
-  if (input.delivered_through_sequence < input.current_sequence) {
+  if (input.delivered_through_sequence <= input.current_sequence) {
     return {
       advanced: false,
       next_sequence: input.current_sequence,

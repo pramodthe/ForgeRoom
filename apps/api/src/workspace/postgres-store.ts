@@ -986,6 +986,18 @@ export function createPostgresWorkspaceStore(sql: SqlClient): WorkspaceCatalogSt
       });
       return match ? mapPin(match) : null;
     },
+    async findPinBySource(input) {
+      const rows = await db
+        .select()
+        .from(channelPins)
+        .where(eq(channelPins.channelId, input.channelId));
+      const match = rows.find((row) => {
+        if (input.sourceEventId) return row.sourceEventId === input.sourceEventId;
+        if (input.sourceArtifactId) return row.sourceArtifactId === input.sourceArtifactId;
+        return false;
+      });
+      return match ? mapPin(match) : null;
+    },
     async getArtifact(id) {
       const rows = await db.select().from(artifacts).where(eq(artifacts.id, id)).limit(1);
       return rows[0] ? mapSafeArtifact(rows[0]) : null;

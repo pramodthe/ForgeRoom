@@ -19,6 +19,7 @@ import type {
 import { channelPinSchema, channelSchema, coworkerProfileSchema } from "@forgeroom/contracts";
 import {
   buildChannelContextEnvelope,
+  envelopeDeliveredThroughSequence,
   MAX_RECENT_DELTAS,
   nextDeliveryCursor,
   type TurnCreationStatus,
@@ -281,7 +282,7 @@ export type WorkspaceService = {
     session: SessionResponse;
     channelAgentSessionId: string;
     deliveredThroughSequence: number;
-    envelopeDeliveredThroughSequence: number;
+    envelopeRecentDeltas: Array<{ sequence: number }>;
     turnCreation: TurnCreationStatus;
   }): Promise<
     WorkspaceServiceResult<{
@@ -1389,7 +1390,7 @@ export function createWorkspaceService(options?: {
                 },
               });
             }
-            const row = await store.findActivePinBySource({
+            const row = await store.findPinBySource({
               channelId,
               sourceEventId,
               sourceArtifactId,
@@ -1405,7 +1406,7 @@ export function createWorkspaceService(options?: {
           }
           const parsed = parsePinReceiptResultId(resultId);
           const row = await store.getPin(parsed.pinId);
-          if (!row || row.removedAt !== null) {
+          if (!row) {
             return null;
           }
           if (row.channelId !== channelId) {
@@ -1785,33 +1786,25 @@ export function createWorkspaceService(options?: {
       }
       // nextSequence is the next free slot; max durable event sequence is nextSequence - 1.
       const maxDelivered = Math.max(0, channel.nextSequence - 1);
-      if (
-        !Number.isInteger(input.envelopeDeliveredThroughSequence) ||
-        input.envelopeDeliveredThroughSequence < 0
-      ) {
-        return {
-          ok: false,
-          error: {
-            code: "validation_failed",
-            message: "envelopeDeliveredThroughSequence must be a nonnegative integer.",
-          },
-        };
-      }
-      if (input.envelopeDeliveredThroughSequence > maxDelivered) {
+      const envelopeCap = envelopeDeliveredThroughSequence({
+        recent_deltas: input.envelopeRecentDeltas,
+        last_delivered_channel_sequence: agentSession.lastDeliveredChannelSequence,
+      });
+      if (envelopeCap > maxDelivered) {
         return {
           ok: false,
           error: {
             code: "validation_failed",
             message:
-              "envelopeDeliveredThroughSequence cannot exceed the channel event high-water mark.",
+              "Envelope recent deltas cannot claim sequences beyond the channel event high-water mark.",
             details: {
-              envelope_delivered_through_sequence: input.envelopeDeliveredThroughSequence,
+              envelope_delivered_through_sequence: envelopeCap,
               max_delivered_sequence: maxDelivered,
             },
           },
         };
       }
-      if (input.deliveredThroughSequence > input.envelopeDeliveredThroughSequence) {
+      if (input.deliveredThroughSequence > envelopeCap) {
         return {
           ok: false,
           error: {
@@ -1820,7 +1813,7 @@ export function createWorkspaceService(options?: {
               "deliveredThroughSequence cannot exceed what the context envelope actually delivered.",
             details: {
               delivered_through_sequence: input.deliveredThroughSequence,
-              envelope_delivered_through_sequence: input.envelopeDeliveredThroughSequence,
+              envelope_delivered_through_sequence: envelopeCap,
             },
           },
         };

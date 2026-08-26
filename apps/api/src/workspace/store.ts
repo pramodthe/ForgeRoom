@@ -366,6 +366,11 @@ export type WorkspaceCatalogStore = {
     sourceEventId?: string | null;
     sourceArtifactId?: string | null;
   }): Promise<PinRecord | null>;
+  findPinBySource(input: {
+    channelId: string;
+    sourceEventId?: string | null;
+    sourceArtifactId?: string | null;
+  }): Promise<PinRecord | null>;
 
   getArtifact(id: string): Promise<SafeArtifactRecord | null>;
   listSafeArtifacts(channelId: string, workspaceId: string): Promise<SafeArtifactRecord[]>;
@@ -843,6 +848,22 @@ export function createMemoryWorkspaceStore(): WorkspaceCatalogStore {
       return (
         [...pins.values()].find((row) => {
           if (row.channelId !== input.channelId || row.removedAt !== null) {
+            return false;
+          }
+          if (input.sourceEventId) {
+            return row.sourceEventId === input.sourceEventId;
+          }
+          if (input.sourceArtifactId) {
+            return row.sourceArtifactId === input.sourceArtifactId;
+          }
+          return false;
+        }) ?? null
+      );
+    },
+    async findPinBySource(input) {
+      return (
+        [...pins.values()].find((row) => {
+          if (row.channelId !== input.channelId) {
             return false;
           }
           if (input.sourceEventId) {
