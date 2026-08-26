@@ -3,7 +3,7 @@ import {
   messageCreatedRoutingPayloadSchema,
   type AgentChannelEnvelope,
 } from "@forgeroom/contracts";
-import { buildEnvelope } from "./event-builders";
+import { buildEnvelope, customAguiEvent } from "./event-builders";
 import type { ChannelEventRecord } from "./store";
 
 export const DEFAULT_EVENT_PAGE_SIZE = 500;

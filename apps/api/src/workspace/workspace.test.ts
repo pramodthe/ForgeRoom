@@ -1523,6 +1523,7 @@ describe("channel and coworker API", () => {
       .find(
         (parsed) =>
           parsed.success &&
+          parsed.data.aguiEvent.type === "CUSTOM" &&
           parsed.data.aguiEvent.name === "message.created" &&
           parsed.data.sourceMessageId === dottedBody.message_id,
       );
