@@ -1047,6 +1047,7 @@ export const customApplicationEventSchema = z
         schemaVersion: schemaVersion1,
         lifecycle: runLifecycleSchema.optional(),
         activity: runActivityCountersSchema.optional(),
+        pin_id: opaqueIdSchema.optional(),
       })
       .strict(),
   })

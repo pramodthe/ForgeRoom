@@ -243,15 +243,24 @@ export function renderChannelContextText(envelope: ChannelContextEnvelope): stri
  * Advance `last_delivered_channel_sequence` only after remote turn creation is
  * confirmed or reconciled. Pending/uncertain/failed turns leave the cursor unchanged.
  */
-/** Highest channel event sequence included in a built envelope (after truncation). */
+/** Highest contiguous channel event sequence included in a built envelope (after truncation). */
 export function envelopeDeliveredThroughSequence(envelope: {
   recent_deltas: ChannelContextDelta[];
   last_delivered_channel_sequence: number;
 }): number {
-  if (envelope.recent_deltas.length === 0) {
-    return envelope.last_delivered_channel_sequence;
+  const pending = envelope.recent_deltas
+    .map((delta) => delta.sequence)
+    .filter((sequence) => sequence > envelope.last_delivered_channel_sequence)
+    .sort((a, b) => a - b);
+
+  let deliveredThrough = envelope.last_delivered_channel_sequence;
+  for (const sequence of pending) {
+    if (sequence !== deliveredThrough + 1) {
+      break;
+    }
+    deliveredThrough = sequence;
   }
-  return Math.max(...envelope.recent_deltas.map((delta) => delta.sequence));
+  return deliveredThrough;
 }
 
 export function nextDeliveryCursor(input: DeliveryCursorAdvanceInput): DeliveryCursorAdvanceResult {

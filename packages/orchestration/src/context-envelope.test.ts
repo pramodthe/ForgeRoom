@@ -209,7 +209,7 @@ describe("delivery cursor", () => {
     });
   });
 
-  it("reports the highest sequence included in an envelope", () => {
+  it("reports the highest contiguous sequence included in an envelope", () => {
     const envelope = buildChannelContextEnvelope({
       channel: {
         id: "channel_1",
@@ -228,7 +228,17 @@ describe("delivery cursor", () => {
       human_request: "Hi",
       last_delivered_channel_sequence: 2,
     });
-    expect(envelopeDeliveredThroughSequence(envelope)).toBe(5);
+    expect(envelopeDeliveredThroughSequence(envelope)).toBe(3);
+    expect(
+      envelopeDeliveredThroughSequence({
+        ...envelope,
+        recent_deltas: [
+          { sequence: 3, type: "message.created", summary: "a" },
+          { sequence: 4, type: "message.created", summary: "b" },
+          { sequence: 5, type: "pin.created", summary: "c" },
+        ],
+      }),
+    ).toBe(5);
     expect(
       envelopeDeliveredThroughSequence({
         ...envelope,

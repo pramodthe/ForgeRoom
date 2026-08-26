@@ -18,6 +18,17 @@ export function customAguiEvent(name: CustomSourceEventName): P0PersistedAguiEve
   };
 }
 
+export function pinAguiEvent(
+  name: "pin.created" | "pin.removed",
+  pinId: string,
+): P0PersistedAguiEvent {
+  return {
+    type: "CUSTOM",
+    name,
+    payload: { schemaVersion: 1, pin_id: pinId },
+  };
+}
+
 export type EnvelopeDraft = {
   channelId: string;
   actorKind: AgentChannelEnvelope["actorKind"];

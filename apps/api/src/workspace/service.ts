@@ -24,7 +24,7 @@ import {
   type TurnCreationStatus,
 } from "@forgeroom/orchestration";
 import { randomOpaqueId } from "../auth/crypto";
-import { customAguiEvent } from "./event-builders";
+import { customAguiEvent, pinAguiEvent } from "./event-builders";
 import { ChannelEventPersistenceError } from "./event-guard";
 import { createChannelEventHub, type ChannelEventHub } from "./event-hub";
 import { DEFAULT_EVENT_PAGE_SIZE, envelopeFromStoredEvent } from "./event-read";
@@ -179,22 +179,29 @@ function pinSourceMatchesCommand(
 async function resolvePinEventSequence(
   store: WorkspaceCatalogStore,
   channelId: string,
-  pin: PinRecord,
-  sourceMessageId: string | null,
+  pinId: string,
 ): Promise<number | null> {
-  const page = await store.listEventsAfter(channelId, -1, { limit: 512 });
-  for (const row of page.events) {
-    if (row.type !== "pin.created") {
-      continue;
+  let afterSequence = -1;
+  while (true) {
+    const page = await store.listEventsAfter(channelId, afterSequence, { limit: 512 });
+    for (const row of page.events) {
+      if (row.type !== "pin.created") {
+        continue;
+      }
+      const agui = row.aguiEventJson;
+      if (!agui || agui.type !== "CUSTOM") {
+        continue;
+      }
+      const eventPinId = (agui.payload as { pin_id?: unknown }).pin_id;
+      if (typeof eventPinId === "string" && eventPinId === pinId) {
+        return row.sequence;
+      }
     }
-    if (sourceMessageId && row.sourceMessageId === sourceMessageId) {
-      return row.sequence;
+    if (!page.hasMore || page.events.length === 0) {
+      return null;
     }
-    if (!sourceMessageId && pin.sourceArtifactId && row.createdAt === pin.createdAt) {
-      return row.sequence;
-    }
+    afterSequence = page.events[page.events.length - 1]!.sequence;
   }
-  return null;
 }
 
 export type WorkspaceService = {
@@ -395,6 +402,7 @@ export function createWorkspaceService(options?: {
     type: "pin.created" | "pin.removed",
     actorId: string,
     createdAt: string,
+    pinId: string,
     sourceMessageId?: string,
   ): ChannelEventInsert {
     return {
@@ -406,7 +414,7 @@ export function createWorkspaceService(options?: {
       draft: {
         actorKind: "human",
         ...(sourceMessageId ? { sourceMessageId } : {}),
-        aguiEvent: customAguiEvent(type),
+        aguiEvent: pinAguiEvent(type, pinId),
       },
     };
   }
@@ -1389,7 +1397,7 @@ export function createWorkspaceService(options?: {
             if (!row) {
               return null;
             }
-            const sequence = await resolvePinEventSequence(store, channelId, row, sourceMessageId);
+            const sequence = await resolvePinEventSequence(store, channelId, row.id);
             if (sequence === null) {
               return null;
             }
@@ -1458,6 +1466,7 @@ export function createWorkspaceService(options?: {
                 "pin.created",
                 session.user.id,
                 createdAt,
+                pinId,
                 sourceMessageId ?? undefined,
               ),
               pin: {
@@ -1582,7 +1591,7 @@ export function createWorkspaceService(options?: {
               channelId,
               pinId,
               removedAt,
-              event: pinEvent("pin.removed", session.user.id, removedAt, sourceMessageId),
+              event: pinEvent("pin.removed", session.user.id, removedAt, pinId, sourceMessageId),
             });
             publish(appended);
             return {
