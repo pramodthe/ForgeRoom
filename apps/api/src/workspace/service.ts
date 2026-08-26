@@ -11,10 +11,7 @@ import type {
   SafeJsonObject,
   SessionResponse,
 } from "@forgeroom/contracts";
-import {
-  channelSchema,
-  coworkerProfileSchema,
-} from "@forgeroom/contracts";
+import { channelSchema, coworkerProfileSchema } from "@forgeroom/contracts";
 import { randomOpaqueId } from "../auth/crypto";
 import {
   createMemoryWorkspaceStore,
@@ -34,8 +31,7 @@ export type WorkspaceServiceError =
   | { code: "conflict"; message: string; details?: SafeJsonObject };
 
 export type WorkspaceServiceResult<T> =
-  | { ok: true; value: T }
-  | { ok: false; error: WorkspaceServiceError };
+  { ok: true; value: T } | { ok: false; error: WorkspaceServiceError };
 
 function toChannel(row: ChannelRecord): Channel {
   return channelSchema.parse({
@@ -106,10 +102,7 @@ export type WorkspaceService = {
     session: SessionResponse,
     workspaceId: string,
   ): Promise<WorkspaceServiceResult<Channel[]>>;
-  getChannel(
-    session: SessionResponse,
-    channelId: string,
-  ): Promise<WorkspaceServiceResult<Channel>>;
+  getChannel(session: SessionResponse, channelId: string): Promise<WorkspaceServiceResult<Channel>>;
   updateChannel(
     session: SessionResponse,
     channelId: string,
@@ -123,7 +116,12 @@ export type WorkspaceService = {
   addParticipant(
     session: SessionResponse,
     channelId: string,
-    input: { participant_type: "coworker"; participant_id: string; role: string; idempotency_key: string },
+    input: {
+      participant_type: "coworker";
+      participant_id: string;
+      role: string;
+      idempotency_key: string;
+    },
   ): Promise<WorkspaceServiceResult<{ channel: Channel; participant_id: string }>>;
   removeParticipant(
     session: SessionResponse,
@@ -226,7 +224,10 @@ export function createWorkspaceService(options?: {
       if (
         typeof cached === "object" &&
         cached !== null &&
-        ("id" in cached || "channel" in cached || "coworker" in cached || "participant_id" in cached)
+        ("id" in cached ||
+          "channel" in cached ||
+          "coworker" in cached ||
+          "participant_id" in cached)
       ) {
         return { ok: true, value: cached };
       }
@@ -582,9 +583,7 @@ export function createWorkspaceService(options?: {
           });
           const config = {
             ...coworker.editableConfigJson,
-            channel_ids: [
-              ...new Set([...coworker.editableConfigJson.channel_ids, channelId]),
-            ],
+            channel_ids: [...new Set([...coworker.editableConfigJson.channel_ids, channelId])],
           };
           await store.updateCoworker({
             ...coworker,
@@ -628,9 +627,7 @@ export function createWorkspaceService(options?: {
         resultId: `${channelId}:${participantId}`,
         reload: async () => {
           const channel = await store.getChannel(channelId);
-          return channel
-            ? { channel: toChannel(channel), participant_id: participantId }
-            : null;
+          return channel ? { channel: toChannel(channel), participant_id: participantId } : null;
         },
         run: async () => {
           const removedAt = now().toISOString();
@@ -641,7 +638,9 @@ export function createWorkspaceService(options?: {
               ...coworker,
               editableConfigJson: {
                 ...coworker.editableConfigJson,
-                channel_ids: coworker.editableConfigJson.channel_ids.filter((id) => id !== channelId),
+                channel_ids: coworker.editableConfigJson.channel_ids.filter(
+                  (id) => id !== channelId,
+                ),
               },
               updatedAt: removedAt,
             });

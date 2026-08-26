@@ -14,8 +14,7 @@ export function createApiApp(options?: {
   const app = new Hono();
   const env = options?.env;
   const auth = options?.auth ?? (env ? createAuthService({ env }) : undefined);
-  const workspace =
-    options?.workspace ?? (env && auth ? createWorkspaceService() : undefined);
+  const workspace = options?.workspace ?? (env && auth ? createWorkspaceService() : undefined);
 
   app.get("/health", (c) =>
     c.json({

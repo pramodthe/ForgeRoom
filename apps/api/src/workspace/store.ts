@@ -218,7 +218,11 @@ export function createMemoryWorkspaceStore(): WorkspaceCatalogStore {
     },
     async upsertParticipant(participant) {
       participants.set(
-        participantKey(participant.channelId, participant.participantType, participant.participantId),
+        participantKey(
+          participant.channelId,
+          participant.participantType,
+          participant.participantId,
+        ),
         structuredClone(participant),
       );
     },
