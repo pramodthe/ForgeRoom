@@ -29,8 +29,8 @@ describe("TrueForgeClient turns", () => {
     });
     expect(turn.id).toBe("tf_turn_1");
     expect(fetchImpl).toHaveBeenCalledOnce();
-    const [, init] = fetchImpl.mock.calls[0]!;
-    expect(JSON.parse(String((init as RequestInit).body))).toEqual({
+    const call = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
+    expect(JSON.parse(String(call[1].body))).toEqual({
       input: [{ type: "user.message", content: "hi" }],
       previous_turn_id: "none",
       stream: false,
