@@ -1,4 +1,12 @@
-import { boolean, integer, jsonb, pgTable, text, timestamp } from "drizzle-orm/pg-core";
+import {
+  boolean,
+  integer,
+  jsonb,
+  pgTable,
+  text,
+  timestamp,
+  uniqueIndex,
+} from "drizzle-orm/pg-core";
 
 const timestamptz = (name: string) => timestamp(name, { withTimezone: true, mode: "string" });
 
@@ -279,19 +287,23 @@ export const channelAgentSessionGenerations = pgTable("channel_agent_session_gen
   retiredAt: timestamptz("retired_at"),
 });
 
-export const runs = pgTable("runs", {
-  id: text("id").primaryKey(),
-  channelId: text("channel_id").notNull(),
-  sourceMessageId: text("source_message_id").notNull(),
-  requestedBy: text("requested_by").notNull(),
-  routingMode: text("routing_mode").notNull(),
-  goal: text("goal").notNull(),
-  lifecycle: text("lifecycle").notNull(),
-  schedulingPaused: boolean("scheduling_paused").notNull(),
-  budgetJson: jsonb("budget_json").notNull(),
-  startedAt: timestamptz("started_at"),
-  completedAt: timestamptz("completed_at"),
-});
+export const runs = pgTable(
+  "runs",
+  {
+    id: text("id").primaryKey(),
+    channelId: text("channel_id").notNull(),
+    sourceMessageId: text("source_message_id").notNull(),
+    requestedBy: text("requested_by").notNull(),
+    routingMode: text("routing_mode").notNull(),
+    goal: text("goal").notNull(),
+    lifecycle: text("lifecycle").notNull(),
+    schedulingPaused: boolean("scheduling_paused").notNull(),
+    budgetJson: jsonb("budget_json").notNull(),
+    startedAt: timestamptz("started_at"),
+    completedAt: timestamptz("completed_at"),
+  },
+  (table) => [uniqueIndex("runs_source_message_uidx").on(table.sourceMessageId)],
+);
 
 export const runSteps = pgTable("run_steps", {
   id: text("id").primaryKey(),

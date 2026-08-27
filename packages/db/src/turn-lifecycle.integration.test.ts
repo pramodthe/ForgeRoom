@@ -104,4 +104,47 @@ describe("turn lifecycle persistence", () => {
       expect(JSON.stringify(events[0]?.normalized_payload_redacted_json)).not.toContain("api_key");
     });
   }, 60_000);
+
+  it("settles the durable turn, queue item, step and run on a terminal provider error", async () => {
+    await withMigratedDatabase(async (sql) => {
+      await seedRuntime(sql);
+
+      const result = await ingestNormalizedTrueForgeEvent(sql, {
+        agentTurnId: "turn_1",
+        expectedTurnStates: ["streaming"],
+        event: {
+          trueforgeEventId: "evt_error_1",
+          normalizedType: "turn.error",
+          threadId: null,
+          sequenceNumber: 4,
+          payloadRedacted: {
+            type: "turn.error",
+            message: "provider failure",
+          },
+        },
+        now: NOW,
+      });
+      expect(result.ok).toBe(true);
+
+      const turns = await sql<{ state: string; error_json: Record<string, unknown> }[]>`
+        SELECT state, error_json FROM agent_turns WHERE id = 'turn_1'
+      `;
+      expect(turns[0]).toEqual({
+        state: "failed",
+        error_json: { reason: "trueforge_terminal_error" },
+      });
+      const steps = await sql<{ state: string }[]>`
+        SELECT state FROM run_steps WHERE id = 'step_1'
+      `;
+      expect(steps[0]?.state).toBe("failed");
+      const queue = await sql<{ state: string; lease_owner: string | null }[]>`
+        SELECT state, lease_owner FROM turn_queue_items WHERE id = 'q_1'
+      `;
+      expect(queue[0]).toEqual({ state: "failed", lease_owner: null });
+      const runs = await sql<{ lifecycle: string }[]>`
+        SELECT lifecycle FROM runs WHERE id = 'run_1'
+      `;
+      expect(runs[0]?.lifecycle).toBe("failed");
+    });
+  }, 60_000);
 });

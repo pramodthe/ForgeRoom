@@ -36,7 +36,9 @@ describe("P0 foundation migration", () => {
       expect(forbidden.filter((row) => EXCLUDED_COLUMN.test(row.column_name))).toEqual([]);
 
       const boundaryRolled = await rollbackLast(sql);
-      expect(boundaryRolled).toBe("0002_session_workspace_boundary.sql");
+      expect(boundaryRolled).toBe("0003_runs_source_message_unique.sql");
+      const workspaceBoundaryRolled = await rollbackLast(sql);
+      expect(workspaceBoundaryRolled).toBe("0002_session_workspace_boundary.sql");
       const foundationRolled = await rollbackLast(sql);
       expect(foundationRolled).toBe("0001_p0_foundation.sql");
       const afterDown = await sql<{ table_name: string }[]>`
@@ -62,19 +64,23 @@ describe("P0 foundation migration", () => {
         expect(forwardResults.flat()).toEqual([
           "0001_p0_foundation.sql",
           "0002_session_workspace_boundary.sql",
+          "0003_runs_source_message_unique.sql",
         ]);
         expect(await appliedMigrations(first)).toEqual([
           "0001_p0_foundation.sql",
           "0002_session_workspace_boundary.sql",
+          "0003_runs_source_message_unique.sql",
         ]);
 
         const rollbackResults = await Promise.all([
           rollbackLast(first),
           rollbackLast(second),
           rollbackLast(first),
+          rollbackLast(second),
         ]);
         expect(rollbackResults).toEqual(
           expect.arrayContaining([
+            "0003_runs_source_message_unique.sql",
             "0002_session_workspace_boundary.sql",
             "0001_p0_foundation.sql",
             null,
@@ -89,8 +95,12 @@ describe("P0 foundation migration", () => {
   it("backfills workspace ownership for existing stable sessions", async () => {
     await withMigratedDatabase(async (sql) => {
       await seedRuntime(sql);
+      expect(await rollbackLast(sql)).toBe("0003_runs_source_message_unique.sql");
       expect(await rollbackLast(sql)).toBe("0002_session_workspace_boundary.sql");
-      expect(await migrate(sql)).toEqual(["0002_session_workspace_boundary.sql"]);
+      expect(await migrate(sql)).toEqual([
+        "0002_session_workspace_boundary.sql",
+        "0003_runs_source_message_unique.sql",
+      ]);
 
       const [session] = await sql<{ workspace_id: string }[]>`
         SELECT workspace_id
@@ -104,6 +114,7 @@ describe("P0 foundation migration", () => {
   it("identifies cross-workspace legacy sessions before enforcing the boundary", async () => {
     await withMigratedDatabase(async (sql) => {
       await seedRuntime(sql);
+      expect(await rollbackLast(sql)).toBe("0003_runs_source_message_unique.sql");
       expect(await rollbackLast(sql)).toBe("0002_session_workspace_boundary.sql");
       await sql`
         INSERT INTO workspaces (id, name, slug, created_by, created_at)
@@ -127,7 +138,10 @@ describe("P0 foundation migration", () => {
       expect(await appliedMigrations(sql)).toEqual(["0001_p0_foundation.sql"]);
 
       await sql`UPDATE channel_agent_sessions SET agent_profile_id = 'cw_1' WHERE id = 'cas_1'`;
-      expect(await migrate(sql)).toEqual(["0002_session_workspace_boundary.sql"]);
+      expect(await migrate(sql)).toEqual([
+        "0002_session_workspace_boundary.sql",
+        "0003_runs_source_message_unique.sql",
+      ]);
     });
   }, 60_000);
 });

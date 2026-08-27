@@ -2,10 +2,10 @@
 
 | Field | Current value |
 | --- | --- |
-| Overall | M1 Foundation done; P0-206 multi-agent run in progress |
+| Overall | M1 Foundation done; P0-211 AG-UI adapter in progress |
 | Current phase | Phase 1 — Foundation |
-| Active task | P0-206 (in_progress) |
-| Next task | Finish P0-206 PR; then P0-208 rotation or P0-109 |
+| Active task | P0-211 (in_progress — AG-UI adapter bootstrap slice) |
+| Next task | Finish P0-211; then P0-314 / P0-208 rotation |
 | P0 blockers | Save-as-skill Run binding, TrueForge→artifact path, demo durable storage, run-limit hard enforcement |
 | Last updated | 2026-08-26 |
 

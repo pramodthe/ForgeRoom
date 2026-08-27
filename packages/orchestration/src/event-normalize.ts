@@ -40,6 +40,74 @@ export function redactSensitiveFields(value: unknown): unknown {
   return out;
 }
 
+function readSafeString(value: unknown): string | null {
+  return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+function projectRequiredActions(value: unknown): Array<{ type: string }> {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.flatMap((item) => {
+    if (!item || typeof item !== "object") {
+      return [];
+    }
+    const type = readSafeString((item as { type?: unknown }).type);
+    return type ? [{ type }] : [];
+  });
+}
+
+/**
+ * Persist only the event fields needed for lifecycle projection and safe text.
+ * Provider event/session/turn/thread/action IDs remain in typed correlation
+ * columns and arbitrary tool/provider bodies never enter normalized JSON.
+ */
+function projectNormalizedPayload(raw: Record<string, unknown>, type: string) {
+  const payload: Record<string, unknown> = { type };
+  const textEvent =
+    type === "model.message.start" ||
+    type === "assistant.message.start" ||
+    type === "message.start" ||
+    type === "model.message.delta" ||
+    type === "assistant.message.delta" ||
+    type === "message.delta" ||
+    type === "model.output.delta" ||
+    type === "model.message.end" ||
+    type === "assistant.message.end" ||
+    type === "message.end" ||
+    type === "assistant.message.done";
+  if (textEvent) {
+    for (const key of ["text", "delta", "content", "message"] as const) {
+      const value = readSafeString(raw[key]);
+      if (value) {
+        payload[key] = value;
+      }
+    }
+  }
+
+  const state =
+    raw.state && typeof raw.state === "object" && !Array.isArray(raw.state)
+      ? (raw.state as Record<string, unknown>)
+      : null;
+  const status = readSafeString(state?.status) ?? readSafeString(raw.status);
+  if (status) {
+    payload.status = status;
+  }
+  const requiredActions = projectRequiredActions(
+    state?.required_actions ??
+      state?.requiredActions ??
+      raw.required_actions ??
+      raw.requiredActions,
+  );
+  if (type === "turn.done" || requiredActions.length > 0) {
+    payload.state = {
+      ...(status ? { status } : {}),
+      required_actions: requiredActions,
+    };
+  }
+  return payload;
+}
+
 export function normalizeTrueForgeEvent(raw: Record<string, unknown>): NormalizedRunEvent {
   const type = typeof raw.type === "string" ? raw.type : "unknown";
   const id = typeof raw.id === "string" ? raw.id : "";
@@ -58,16 +126,12 @@ export function normalizeTrueForgeEvent(raw: Record<string, unknown>): Normalize
       : typeof raw.threadId === "string"
         ? raw.threadId
         : null;
-  const redacted = redactSensitiveFields(raw);
   return {
     trueforgeEventId: id,
     normalizedType: type,
     threadId,
     sequenceNumber,
-    payloadRedacted:
-      redacted && typeof redacted === "object" && !Array.isArray(redacted)
-        ? (redacted as Record<string, unknown>)
-        : { type, id },
+    payloadRedacted: projectNormalizedPayload(raw, type),
   };
 }
 

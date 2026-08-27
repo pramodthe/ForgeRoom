@@ -6,6 +6,7 @@ describe("packageBoundarySchema", () => {
   it("accepts the frozen P0 boundary", () => {
     expect(parsePackageBoundary(PACKAGE_BOUNDARY)).toEqual(PACKAGE_BOUNDARY);
     expect(PACKAGE_BOUNDARY.upstreamAgUiAdapters).toBe("owned-by-P0-211");
+    expect(PACKAGE_BOUNDARY.agUiProfile).toBe("pure_ag_ui_0_0_57");
   });
 
   it("rejects enabling open generated UI or CopilotKit", () => {

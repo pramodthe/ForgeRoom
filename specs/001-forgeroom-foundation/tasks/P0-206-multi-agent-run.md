@@ -1,9 +1,10 @@
 ---
 id: P0-206
 title: Implement direct multi-agent Run engine
-status: in_progress
+status: done
 owner: cursor-agent
 started: 2026-08-26
+completed: 2026-08-26
 depends_on: [P0-202, P0-203, P0-205]
 requirements: [OR-001, OR-005, OR-007, RUN-001, RUN-006]
 specs: [../runtime.md#routing, ../data-model.md#state-machines]

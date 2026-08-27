@@ -2,14 +2,19 @@ import { Hono } from "hono";
 import type { ApiEnv } from "./env";
 import { createAuthService, type AuthService } from "./auth/service";
 import { mountAuthRoutes } from "./auth/routes";
+import { mountAgUiRoutes } from "./ag-ui/routes";
 import { errorResponse } from "./http";
 import { createWorkspaceService, type WorkspaceService } from "./workspace/service";
 import { mountWorkspaceRoutes } from "./workspace/routes";
+import type { createSql } from "@forgeroom/db";
+import type { TrueForgeClient } from "@forgeroom/trueforge";
 
 export function createApiApp(options?: {
   env?: ApiEnv;
   auth?: AuthService;
   workspace?: WorkspaceService;
+  trueforgeClient?: TrueForgeClient;
+  sql?: ReturnType<typeof createSql>;
 }) {
   const app = new Hono();
   const env = options?.env;
@@ -46,6 +51,13 @@ export function createApiApp(options?: {
   }
   if (env && auth && workspace) {
     mountWorkspaceRoutes(app, { env, auth, workspace });
+    mountAgUiRoutes(app, {
+      env,
+      auth,
+      workspace,
+      ...(options?.trueforgeClient ? { trueforgeClient: options.trueforgeClient } : {}),
+      ...(options?.sql ? { sql: options.sql } : {}),
+    });
   }
 
   return app;

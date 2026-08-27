@@ -12,7 +12,7 @@ import {
 describe("domain contract reuse", () => {
   it("re-exports the shared Zod schemas instead of duplicating them", () => {
     expect(DOMAIN_RELEASE).toBe("0.1");
-    expect(assertFoundationBoundary().agUiProfile).toBe("unset-pending-P0-210");
+    expect(assertFoundationBoundary().agUiProfile).toBe("pure_ag_ui_0_0_57");
     expect(taskRecordV1Schema).toBe(contracts.taskRecordV1Schema);
   });
 
