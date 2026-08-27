@@ -297,6 +297,7 @@ const claimPauseGroupResumeCommandSchema = internalWorkerCommand(
   "claim_pause_group_resume",
   z
     .object({
+      workspace_id: opaqueIdSchema,
       pause_group_id: opaqueIdSchema,
       expected_state: z.literal("ready"),
       expected_generation: z.number().int().positive(),

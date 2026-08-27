@@ -477,6 +477,7 @@ describe("secure approval decision API", () => {
       expect(changes.ok).toBe(true);
       if (!changes.ok) throw new Error("request_changes");
       expect(changes.proposalState).toBe("denied");
+      expect(changes.pauseGroupReady).toBe(false);
       expect(changes.correctionDraft?.content).toBe("Use a safer label set");
       expect(changes.providerCalls).toBe(0);
       const correction = await sql<{ input_type: string }[]>`

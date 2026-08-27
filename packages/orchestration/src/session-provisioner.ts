@@ -1,6 +1,10 @@
 import { randomBytes } from "node:crypto";
 import type { TrueForgeClient, TrueForgeSession } from "@forgeroom/trueforge";
 import {
+  assertAgentSpecPolicyHealthy,
+  verifyCompiledAgentSpecPolicy,
+} from "@forgeroom/trueforge";
+import {
   compileSessionRevision,
   type CompiledSessionRevision,
   type SessionRevisionSnapshotInput,
@@ -48,6 +52,16 @@ export async function provisionChannelCoworkerSession(
   const fetched = await client.getSession(trueforgeSession.id);
   if (fetched.id !== trueforgeSession.id) {
     throw new Error("TrueForge session create/get mismatch");
+  }
+
+  for (const connector of input.connectors ?? []) {
+    const findings = verifyCompiledAgentSpecPolicy(revision.agentSpec, {
+      connectorName: connector.name,
+      enabledTools: connector.enabledTools,
+      approvalRequiredTools: connector.approvalRequiredTools,
+      approvalPolicyHash: revision.approvalPolicyHash,
+    });
+    assertAgentSpecPolicyHealthy(findings);
   }
 
   return {

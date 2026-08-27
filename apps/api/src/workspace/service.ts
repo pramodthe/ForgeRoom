@@ -40,6 +40,7 @@ import type { TrueForgeClient } from "@forgeroom/trueforge";
 import {
   createDirectMultiAgentRun,
   enqueueCorrectionForStep,
+  findRemoteActiveTurnForSession,
   hasActiveComponentGrant,
   listPublishedComponentVersions,
   markCancelCalled,
@@ -2793,6 +2794,7 @@ export function createWorkspaceService(options?: {
           affectedSessions.push(row.id);
           if (sql && trueforgeClient) {
             try {
+              const activeTurn = await findRemoteActiveTurnForSession(sql, row.id);
               const rotated = await rotateOwnedChannelCoworkerSession({
                 sql,
                 channelAgentSessionId: row.id,
@@ -2817,11 +2819,24 @@ export function createWorkspaceService(options?: {
                 pinnedSkillNames: skillNamesFromCoworker(updated),
                 client: trueforgeClient,
                 now: updatedAt,
+                hasActiveTurn: activeTurn !== null,
+                activeTurnId: activeTurn?.agentTurnId ?? null,
+                activeRunStepId: activeTurn?.runStepId ?? null,
               });
               staleProposalIds.push(...rotated.staleProposalIds);
-            } catch {
-              // Config commit already succeeded; rotation abort restores session to active.
-              // Caller still learns which sessions were targeted via session_rotations.
+            } catch (error) {
+              return {
+                ok: false,
+                error: {
+                  code: "provider_unavailable",
+                  message: "Coworker saved but session rotation failed; retry or refresh.",
+                  details: {
+                    reason: "session_rotation_failed",
+                    session_id: row.id,
+                    message: error instanceof Error ? error.message : String(error),
+                  },
+                },
+              };
             }
           }
         }

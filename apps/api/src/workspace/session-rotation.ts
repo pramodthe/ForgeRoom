@@ -3,12 +3,13 @@
  * channel/coworker logical session. Used by coworker updates and component grants.
  */
 import {
-  atomicSwapSessionGeneration,
   abortSessionRotation,
+  atomicSwapSessionGeneration,
   beginSessionRotation,
   completeSessionRotation,
-  nextSessionRevisionOrdinal,
+  markCancelCalled,
   recordMcpRotationOutcome,
+  requestRunStepStop,
   type SessionRotationReason,
   type SessionRotationSqlClient,
 } from "@forgeroom/db";
@@ -45,6 +46,7 @@ export type RotateOwnedSessionInput = {
   hasActiveTurn?: boolean;
   mcpInFlightKnownTerminal?: boolean | null;
   activeTurnId?: string | null;
+  activeRunStepId?: string | null;
   client?: TrueForgeClient;
   env?: NodeJS.ProcessEnv;
   now?: string;
@@ -78,6 +80,7 @@ export async function rotateOwnedChannelCoworkerSession(
 
   const begun = await beginSessionRotation(input.sql, {
     channelAgentSessionId: input.channelAgentSessionId,
+    agentProfileId: input.coworker.id,
     reason: input.reason,
     previousTools: input.previousTools,
     nextTools,
@@ -87,7 +90,20 @@ export async function rotateOwnedChannelCoworkerSession(
   });
 
   let swapped = false;
+  let newGenerationId: string | null = null;
   try {
+    if (begun.requestActiveTurnCancellation && input.activeRunStepId) {
+      const stop = await requestRunStepStop(input.sql, { runStepId: input.activeRunStepId, now });
+      if (stop.ok && stop.decision.callCancel) {
+        const client = input.client ?? loadTrueForgeClientFromEnv(input.env ?? process.env);
+        if (stop.trueforgeSessionId) {
+          await client.cancelSession(stop.trueforgeSessionId);
+        }
+        if (stop.agentTurnId) {
+          await markCancelCalled(input.sql, { agentTurnId: stop.agentTurnId, now });
+        }
+      }
+    }
     if (input.mcpInFlightKnownTerminal !== null && input.mcpInFlightKnownTerminal !== undefined) {
       await recordMcpRotationOutcome(input.sql, {
         channelAgentSessionId: input.channelAgentSessionId,
@@ -98,14 +114,13 @@ export async function rotateOwnedChannelCoworkerSession(
     }
 
     const client = input.client ?? loadTrueForgeClientFromEnv(input.env ?? process.env);
-    const sourceConfigRevision = await nextSessionRevisionOrdinal(input.sql, input.coworker.id);
 
     const rotated = await rotateChannelCoworkerSession(client, {
       channelAgentSessionId: input.channelAgentSessionId,
       reason: input.reason,
       previousTools: input.previousTools,
       nextGeneration: begun.previousGeneration + 1,
-      sourceConfigRevision,
+      sourceConfigRevision: begun.sourceConfigRevision,
       agentVersionId: input.coworker.currentVersionId,
       capability: input.capability,
       componentCandidates: input.componentCandidates,
@@ -158,6 +173,7 @@ export async function rotateOwnedChannelCoworkerSession(
       },
     });
     swapped = true;
+    newGenerationId = swap.newGenerationId;
 
     await completeSessionRotation(input.sql, {
       channelAgentSessionId: input.channelAgentSessionId,
@@ -177,18 +193,12 @@ export async function rotateOwnedChannelCoworkerSession(
       cancelRequested: begun.requestActiveTurnCancellation,
     };
   } catch (error) {
-    if (swapped) {
-      // New generation already committed — activate it rather than aborting onto a retired pointer.
-      await completeSessionRotation(input.sql, {
-        channelAgentSessionId: input.channelAgentSessionId,
-        now,
-      });
-    } else {
-      await abortSessionRotation(input.sql, {
-        channelAgentSessionId: input.channelAgentSessionId,
-        now,
-      });
-    }
+    await abortSessionRotation(input.sql, {
+      channelAgentSessionId: input.channelAgentSessionId,
+      restoreGenerationId: begun.previousGenerationId,
+      abortGenerationId: swapped ? newGenerationId : null,
+      now,
+    });
     throw error;
   }
 }

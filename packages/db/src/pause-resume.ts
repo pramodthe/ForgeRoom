@@ -566,7 +566,7 @@ export async function markPauseResumeCreating(
     UPDATE pause_resumes
     SET state = 'creating'
     WHERE id = ${input.pauseResumeId}
-      AND state IN ('claimed', 'intended', 'uncertain', 'creating')
+      AND state IN ('claimed', 'uncertain')
     RETURNING id
   `;
   if (rows.length === 0) {

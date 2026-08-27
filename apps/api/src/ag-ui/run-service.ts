@@ -10,6 +10,10 @@ import {
 } from "@forgeroom/ag-ui";
 import type { SessionResponse } from "@forgeroom/contracts";
 import {
+  type ComposioSessionClient,
+  verifyP0ManifestForDispatch,
+} from "@forgeroom/composio";
+import {
   claimPauseGroupResume,
   completePauseResume,
   derivePausePayloadKey,
@@ -81,10 +85,11 @@ export type AgUiRunService = {
 export function createAgUiRunService(options: {
   workspace: WorkspaceService;
   trueforgeClient?: TrueForgeClient;
+  composio?: ComposioSessionClient;
   sql?: ReturnType<typeof createSql>;
   pausePayloadEncryptionSecret?: string;
 }): AgUiRunService {
-  const { workspace, trueforgeClient, sql } = options;
+  const { workspace, trueforgeClient, sql, composio } = options;
   const encryptionKey = derivePausePayloadKey(
     options.pausePayloadEncryptionSecret ?? "forgeroom-dev-pause-payload-secret",
   );
@@ -248,11 +253,15 @@ export function createAgUiRunService(options: {
             encryptionKey,
           });
           if (!existing.ok) {
+            await markPauseResumeUncertain(sql, {
+              pauseResumeId: claim.existingPauseResumeId,
+              error: { reason: "decrypt_failed" },
+            });
             return {
               ok: false,
               error: {
-                code: "conflict",
-                message: "PauseResume exists but could not be loaded.",
+                code: "provider_unavailable",
+                message: "Encrypted PauseResume payload could not be opened.",
               },
             };
           }
@@ -289,6 +298,10 @@ export function createAgUiRunService(options: {
           encryptionKey,
         });
         if (!loaded.ok) {
+          await markPauseResumeUncertain(sql, {
+            pauseResumeId: claim.pauseResumeId,
+            error: { reason: "decrypt_failed" },
+          });
           return {
             ok: false,
             error: {
@@ -298,7 +311,16 @@ export function createAgUiRunService(options: {
           };
         }
 
-        await markPauseResumeCreating(sql, { pauseResumeId: claim.pauseResumeId });
+        const creating = await markPauseResumeCreating(sql, { pauseResumeId: claim.pauseResumeId });
+        if (!creating.ok) {
+          return {
+            ok: false,
+            error: {
+              code: "conflict",
+              message: "PauseResume is already being created by another worker.",
+            },
+          };
+        }
         const created = await createOrReconcileResponseTurn(
           {
             client: trueforgeClient,
@@ -318,7 +340,7 @@ export function createAgUiRunService(options: {
             responses: loaded.plaintext.responses,
             localTrueforgeResumeTurnId: loaded.trueforgeResumeTurnId,
             forceReconcile:
-              loaded.state === "uncertain" || Boolean(loaded.trueforgeResumeTurnId),
+              !loaded.trueforgeResumeTurnId || loaded.state === "uncertain",
           },
         );
 
@@ -333,11 +355,24 @@ export function createAgUiRunService(options: {
           };
         }
 
-        await completePauseResume(sql, {
+        const completed = await completePauseResume(sql, {
           pauseResumeId: claim.pauseResumeId,
           trueforgeResumeTurnId: created.trueforgeTurnId,
           reconciled: !created.created,
         });
+        if (!completed.ok) {
+          await markPauseResumeUncertain(sql, {
+            pauseResumeId: claim.pauseResumeId,
+            error: { reason: "complete_cas_failed" },
+          });
+          return {
+            ok: false,
+            error: {
+              code: "conflict",
+              message: "PauseResume completion CAS failed after provider turn succeeded.",
+            },
+          };
+        }
 
         return {
           ok: true,
@@ -467,6 +502,38 @@ export function createAgUiRunService(options: {
             coworkerId,
             trueforgeSessionId: bound.value.trueforgeSessionId,
             trueforgeTurnId: bound.value.trueforgeTurnId,
+          },
+        };
+      }
+
+      if (!composio) {
+        return {
+          ok: false,
+          error: {
+            code: "provider_unavailable",
+            message: "Composio connector configuration is required for AG-UI dispatch preflight.",
+          },
+        };
+      }
+
+      try {
+        const preflight = await verifyP0ManifestForDispatch(composio);
+        if (preflight.blocksDispatch) {
+          return {
+            ok: false,
+            error: {
+              code: "recipient_unavailable",
+              message: "Coworker dispatch blocked by connector manifest preflight.",
+              details: { preflight: preflight.redacted },
+            },
+          };
+        }
+      } catch {
+        return {
+          ok: false,
+          error: {
+            code: "provider_unavailable",
+            message: "Connector manifest preflight could not be completed.",
           },
         };
       }

@@ -36,7 +36,13 @@ describe("P0 foundation migration", () => {
       expect(forbidden.filter((row) => EXCLUDED_COLUMN.test(row.column_name))).toEqual([]);
 
       const registryRolled = await rollbackLast(sql);
-      expect(registryRolled).toBe("0004_component_registry_constraints.sql");
+      expect(registryRolled).toBe("0007_session_rotation_rollback.sql");
+      const reconnectRolled = await rollbackLast(sql);
+      expect(reconnectRolled).toBe("0006_connection_reconnect_intents.sql");
+      const artifactRolled = await rollbackLast(sql);
+      expect(artifactRolled).toBe("0005_artifact_content_revision_scope.sql");
+      const componentRegistryRolled = await rollbackLast(sql);
+      expect(componentRegistryRolled).toBe("0004_component_registry_constraints.sql");
       const boundaryRolled = await rollbackLast(sql);
       expect(boundaryRolled).toBe("0003_runs_source_message_unique.sql");
       const workspaceBoundaryRolled = await rollbackLast(sql);
@@ -68,12 +74,18 @@ describe("P0 foundation migration", () => {
           "0002_session_workspace_boundary.sql",
           "0003_runs_source_message_unique.sql",
           "0004_component_registry_constraints.sql",
+          "0005_artifact_content_revision_scope.sql",
+          "0006_connection_reconnect_intents.sql",
+          "0007_session_rotation_rollback.sql",
         ]);
         expect(await appliedMigrations(first)).toEqual([
           "0001_p0_foundation.sql",
           "0002_session_workspace_boundary.sql",
           "0003_runs_source_message_unique.sql",
           "0004_component_registry_constraints.sql",
+          "0005_artifact_content_revision_scope.sql",
+          "0006_connection_reconnect_intents.sql",
+          "0007_session_rotation_rollback.sql",
         ]);
 
         const rollbackResults = await Promise.all([
@@ -82,9 +94,15 @@ describe("P0 foundation migration", () => {
           rollbackLast(first),
           rollbackLast(second),
           rollbackLast(first),
+          rollbackLast(second),
+          rollbackLast(first),
+          rollbackLast(second),
         ]);
         expect(rollbackResults).toEqual(
           expect.arrayContaining([
+            "0007_session_rotation_rollback.sql",
+            "0006_connection_reconnect_intents.sql",
+            "0005_artifact_content_revision_scope.sql",
             "0004_component_registry_constraints.sql",
             "0003_runs_source_message_unique.sql",
             "0002_session_workspace_boundary.sql",
@@ -101,6 +119,9 @@ describe("P0 foundation migration", () => {
   it("backfills workspace ownership for existing stable sessions", async () => {
     await withMigratedDatabase(async (sql) => {
       await seedRuntime(sql);
+      expect(await rollbackLast(sql)).toBe("0007_session_rotation_rollback.sql");
+      expect(await rollbackLast(sql)).toBe("0006_connection_reconnect_intents.sql");
+      expect(await rollbackLast(sql)).toBe("0005_artifact_content_revision_scope.sql");
       expect(await rollbackLast(sql)).toBe("0004_component_registry_constraints.sql");
       expect(await rollbackLast(sql)).toBe("0003_runs_source_message_unique.sql");
       expect(await rollbackLast(sql)).toBe("0002_session_workspace_boundary.sql");
@@ -108,6 +129,9 @@ describe("P0 foundation migration", () => {
         "0002_session_workspace_boundary.sql",
         "0003_runs_source_message_unique.sql",
         "0004_component_registry_constraints.sql",
+        "0005_artifact_content_revision_scope.sql",
+        "0006_connection_reconnect_intents.sql",
+        "0007_session_rotation_rollback.sql",
       ]);
 
       const [session] = await sql<{ workspace_id: string }[]>`
@@ -122,6 +146,9 @@ describe("P0 foundation migration", () => {
   it("identifies cross-workspace legacy sessions before enforcing the boundary", async () => {
     await withMigratedDatabase(async (sql) => {
       await seedRuntime(sql);
+      expect(await rollbackLast(sql)).toBe("0007_session_rotation_rollback.sql");
+      expect(await rollbackLast(sql)).toBe("0006_connection_reconnect_intents.sql");
+      expect(await rollbackLast(sql)).toBe("0005_artifact_content_revision_scope.sql");
       expect(await rollbackLast(sql)).toBe("0004_component_registry_constraints.sql");
       expect(await rollbackLast(sql)).toBe("0003_runs_source_message_unique.sql");
       expect(await rollbackLast(sql)).toBe("0002_session_workspace_boundary.sql");
@@ -151,6 +178,9 @@ describe("P0 foundation migration", () => {
         "0002_session_workspace_boundary.sql",
         "0003_runs_source_message_unique.sql",
         "0004_component_registry_constraints.sql",
+        "0005_artifact_content_revision_scope.sql",
+        "0006_connection_reconnect_intents.sql",
+        "0007_session_rotation_rollback.sql",
       ]);
     });
   }, 60_000);

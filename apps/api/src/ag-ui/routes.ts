@@ -2,6 +2,7 @@ import type { Context } from "hono";
 import { streamSSE } from "hono/streaming";
 import type { SafeJsonObject } from "@forgeroom/contracts";
 import type { createSql } from "@forgeroom/db";
+import { loadComposioSessionClientFromEnv } from "@forgeroom/composio";
 import type { AuthService } from "../auth/service";
 import type { ApiEnv } from "../env";
 import { errorResponse } from "../http";
@@ -45,9 +46,20 @@ export function mountAgUiRoutes(
     sql?: ReturnType<typeof createSql>;
   },
 ) {
+  const composio =
+    options.env.composioApiKey && options.env.composioConnectedAccountId
+      ? loadComposioSessionClientFromEnv({
+          COMPOSIO_API_KEY: options.env.composioApiKey,
+          COMPOSIO_USER_ID: options.env.composioUserId ?? undefined,
+          COMPOSIO_CONNECTED_ACCOUNT_ID: options.env.composioConnectedAccountId,
+          COMPOSIO_AUTH_CONFIG_ID: options.env.composioAuthConfigId ?? undefined,
+          COMPOSIO_BASE_URL: options.env.composioBaseUrl ?? undefined,
+        })
+      : undefined;
   const agUi = createAgUiRunService({
     workspace: options.workspace,
     ...(options.trueforgeClient ? { trueforgeClient: options.trueforgeClient } : {}),
+    ...(composio ? { composio } : {}),
     ...(options.sql ? { sql: options.sql } : {}),
     pausePayloadEncryptionSecret: options.env.pausePayloadEncryptionSecret,
   });

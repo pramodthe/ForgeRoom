@@ -28,6 +28,10 @@ Runs exist instead of selecting or deleting a canonical Run automatically.
 for one-time `revoked_at` assignment and rejects `ui_component_grants` rows whose component version
 has `exposure = 'server_only'`.
 
+`0005_artifact_content_revision_scope.sql` scopes artifact content-revision idempotency to workspace + channel.
+
+`0006_connection_reconnect_intents.sql` creates the `connection_reconnect_intents` table so reconnect flows work across horizontally scaled API instances.
+
 Re-running `migrate` is idempotent through `forgeroom_schema_migrations`. Forward and rollback
 operations hold the same transaction-scoped PostgreSQL advisory lock, so concurrent deployers
 serialize before reading or changing the migration journal.

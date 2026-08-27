@@ -244,6 +244,71 @@ describe("P0-304 connections API", () => {
     });
   }, 60_000);
 
+  it("shares reconnect intents across service instances when sql is configured", async () => {
+    await withMigratedDatabase(async (sql) => {
+      await seedRuntime(sql);
+      const env = loadApiEnv({
+        NODE_ENV: "test",
+        OWNER_PASSWORD: PASSWORD,
+        OWNER_USER_ID: "user_1",
+        OWNER_EMAIL: "owner@example.test",
+        OWNER_DISPLAY_NAME: "Owner",
+        WORKSPACE_ID: "ws_1",
+        APP_ORIGIN: "http://localhost:5173",
+        AUTH_STORE: "postgres",
+        COMPOSIO_API_KEY: "ck_test",
+        COMPOSIO_USER_ID: "forgeroom_workspace_1",
+        COMPOSIO_CONNECTED_ACCOUNT_ID: PINNED,
+        COMPOSIO_AUTH_CONFIG_ID: "ac_test",
+      });
+      const authStore = createPostgresAuthStore(sql);
+      const auth = createAuthService({ env, store: authStore });
+      await auth.seedOwner();
+      const workspace = createWorkspaceService({
+        store: createPostgresWorkspaceStore(sql),
+      });
+      const writer = createConnectionService({
+        env,
+        sql,
+        composio: mockComposio(),
+      });
+      const reader = createConnectionService({
+        env,
+        sql,
+        composio: mockComposio(),
+      });
+      const app = createApiApp({ env, auth, workspace, connections: writer, sql });
+      const { session, cookie } = await login(app, env);
+
+      const reconnect = await app.request(
+        `/api/connections/${P0_COMPOSIO_CONNECTION_ID}/reconnect`,
+        {
+          method: "POST",
+          headers: mutationHeaders(env, cookie, session.csrf_token),
+          body: JSON.stringify({
+            schemaVersion: 1,
+            expected_connection_id: P0_COMPOSIO_CONNECTION_ID,
+            expected_status: "active",
+            idempotency_key: "reconnect-shared",
+          }),
+        },
+      );
+      expect(reconnect.status).toBe(200);
+      const reconnectBody = (await reconnect.json()) as { intent_id: string };
+      expect(reconnectBody.intent_id).toMatch(/^crec_/);
+
+      const statusFromOtherInstance = await reader.reconnectStatus(
+        session,
+        P0_COMPOSIO_CONNECTION_ID,
+      );
+      expect(statusFromOtherInstance.ok).toBe(true);
+      if (statusFromOtherInstance.ok) {
+        expect(statusFromOtherInstance.value.intent_id).toBe(reconnectBody.intent_id);
+        expect(statusFromOtherInstance.value.reconnect_state).toBe("pending");
+      }
+    });
+  }, 60_000);
+
   it("maps expired account to blocked_connection without fallback", async () => {
     await withMigratedDatabase(async (sql) => {
       await seedRuntime(sql);

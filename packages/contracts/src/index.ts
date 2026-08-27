@@ -252,8 +252,8 @@ export type {
   QuestionAnswerCommand,
 } from "./pause";
 
-export { artifactSchema, auditReceiptSchema } from "./artifacts";
-export type { Artifact, AuditReceipt } from "./artifacts";
+export { artifactSchema, artifactPreviewSchema, auditReceiptSchema } from "./artifacts";
+export type { Artifact, ArtifactPreview, AuditReceipt } from "./artifacts";
 
 export {
   componentVersionSchema,

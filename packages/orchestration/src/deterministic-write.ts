@@ -345,6 +345,8 @@ export async function dispatchApprovalGatedDeterministicWrite(
   let observation: TrueForgeDirectToolObservation;
   let providerInvoked = false;
   try {
+    // Fail closed before any provider mutation when the planned tool is not the literal write.
+    adapters.assertDirectWriteTool(preflight.toolSlug);
     observation = await adapters.invokeWriteViaTrueForge();
     providerInvoked = true;
     adapters.assertDirectWriteTool(observation.observedToolName);

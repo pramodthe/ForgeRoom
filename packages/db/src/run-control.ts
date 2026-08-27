@@ -164,6 +164,50 @@ export async function settleCancelledStep(
   });
 }
 
+export type RemoteActiveTurn = {
+  agentTurnId: string;
+  runStepId: string;
+  trueforgeTurnId: string | null;
+  trueforgeSessionId: string | null;
+};
+
+/** Remote-active slot occupant for a stable channel/coworker session. */
+export async function findRemoteActiveTurnForSession(
+  sql: SqlClient,
+  channelAgentSessionId: string,
+): Promise<RemoteActiveTurn | null> {
+  const rows = await sql<
+    {
+      id: string;
+      run_step_id: string;
+      trueforge_turn_id: string | null;
+      trueforge_session_id: string | null;
+    }[]
+  >`
+    SELECT
+      t.id,
+      t.run_step_id,
+      t.trueforge_turn_id,
+      g.trueforge_session_id
+    FROM agent_turns AS t
+    JOIN channel_agent_session_generations AS g ON g.id = t.session_generation_id
+    WHERE t.channel_agent_session_id = ${channelAgentSessionId}
+      AND t.state IN ('acquiring', 'creating', 'streaming', 'resuming')
+    ORDER BY t.started_at DESC NULLS LAST
+    LIMIT 1
+  `;
+  const row = rows[0];
+  if (!row) {
+    return null;
+  }
+  return {
+    agentTurnId: row.id,
+    runStepId: row.run_step_id,
+    trueforgeTurnId: row.trueforge_turn_id,
+    trueforgeSessionId: row.trueforge_session_id,
+  };
+}
+
 export async function sessionHasCancellingStep(
   sql: SqlClient,
   channelAgentSessionId: string,

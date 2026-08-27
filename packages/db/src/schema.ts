@@ -380,6 +380,19 @@ export const aguiEventRecords = pgTable("agui_event_records", {
   createdAt: timestamptz("created_at").notNull(),
 });
 
+export const connectionReconnectIntents = pgTable("connection_reconnect_intents", {
+  id: text("id").primaryKey(),
+  workspaceId: text("workspace_id").notNull(),
+  connectionId: text("connection_id").notNull(),
+  actorUserId: text("actor_user_id").notNull(),
+  idempotencyKey: text("idempotency_key").notNull(),
+  expectedConnectedAccountId: text("expected_connected_account_id").notNull(),
+  redirectUrl: text("redirect_url").notNull(),
+  expiresAt: timestamptz("expires_at").notNull(),
+  provisionalConnectedAccountId: text("provisional_connected_account_id"),
+  createdAt: timestamptz("created_at").notNull(),
+});
+
 export const connectorBindings = pgTable("connector_bindings", {
   id: text("id").primaryKey(),
   workspaceId: text("workspace_id").notNull(),
@@ -765,6 +778,7 @@ export const schema = {
   agentTurns,
   runEvents,
   aguiEventRecords,
+  connectionReconnectIntents,
   connectorBindings,
   toolGrants,
   uiComponents,
@@ -814,6 +828,7 @@ export const P0_TABLES = [
   "agent_turns",
   "run_events",
   "agui_event_records",
+  "connection_reconnect_intents",
   "connector_bindings",
   "tool_grants",
   "ui_components",

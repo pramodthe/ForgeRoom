@@ -14,6 +14,7 @@ import {
 import {
   assertP0ManifestHealthy,
   verifyP0Manifest,
+  verifyP0ManifestForDispatch,
 } from "./manifest-verification";
 import { P0_COMPOSIO_DIRECT_TOOLS } from "./p0-contract";
 
@@ -167,5 +168,39 @@ describe("verifyP0Manifest", () => {
       },
     });
     expect(result.findings.some((row) => row.kind === "lost_approval_rule")).toBe(true);
+  });
+});
+
+describe("verifyP0ManifestForDispatch", () => {
+  it("blocks dispatch when the observed account id does not match the pinned account", async () => {
+    const result = await verifyP0ManifestForDispatch({
+      pinnedConnectedAccountId: "ca_pinned",
+      async getConnectedAccountDetails() {
+        return {
+          id: "ca_other",
+          status: "ACTIVE",
+          isDisabled: false,
+          toolkitSlug: "github",
+        };
+      },
+    });
+    expect(result.ok).toBe(false);
+    expect(result.blocksDispatch).toBe(true);
+    expect(result.findings).toContainEqual({
+      kind: "account_mismatch",
+      expected: "ca_pinned",
+      observed: "ca_other",
+    });
+  });
+
+  it("passes when the observed account matches the pinned account", async () => {
+    const result = await verifyP0ManifestForDispatch({
+      pinnedConnectedAccountId: healthyAccount.id,
+      async getConnectedAccountDetails() {
+        return healthyAccount;
+      },
+    });
+    expect(result.ok).toBe(true);
+    expect(result.blocksDispatch).toBe(false);
   });
 });

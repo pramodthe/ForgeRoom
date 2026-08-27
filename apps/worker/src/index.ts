@@ -34,7 +34,18 @@ import {
   createOrReconcileResponseTurn,
   type CreateOrReconcileResponseTurnResult,
 } from "@forgeroom/orchestration/create-or-reconcile-response-turn";
+import {
+  createTrueForgeDownloadAdapter,
+  executePublishSandboxArtifactCommand,
+  type PublishSandboxArtifactCommand,
+  type SandboxArtifactPublishAdapters,
+  type SandboxArtifactPublishInput,
+} from "@forgeroom/orchestration/artifact-extraction";
 import { TrueForgeClient, type TrueForgeClient as TrueForgeClientType } from "@forgeroom/trueforge";
+import {
+  createWorkerArtifactDiscoveryLoader,
+  createWorkerArtifactPublishAdapter,
+} from "./artifacts";
 
 export function parseWorkerCommand(input: unknown): InternalWorkerCommand {
   return internalWorkerCommandSchema.parse(input);
@@ -51,6 +62,7 @@ export type WorkerDispatchResult = {
     | CreateOrReconcileResponseTurnResult
     | { ok: false; reason: "unavailable" };
   ingest?: IngestRunEventResult | { ok: false; reason: "unavailable" };
+  publishSandboxArtifact?: Awaited<ReturnType<typeof executePublishSandboxArtifactCommand>>;
 };
 
 export type WorkerProcessOptions = {
@@ -58,7 +70,10 @@ export type WorkerProcessOptions = {
   /** When set, DB-backed commands run against this client. */
   sql?: ReturnType<typeof createSql>;
   databaseUrl?: string;
-  trueforge?: Pick<TrueForgeClientType, "createTurn" | "listTurns" | "cancelSession">;
+  trueforge?: Pick<
+    TrueForgeClientType,
+    "createTurn" | "listTurns" | "cancelSession" | "downloadSandboxFile"
+  >;
   pausePayloadEncryptionSecret?: string;
   loadTurnCreateContext?: (agentTurnId: string) => Promise<{
     applicationRunToken: string;
@@ -67,6 +82,10 @@ export type WorkerProcessOptions = {
     localTrueforgeTurnId: string | null;
     trueforgeSessionId: string;
   } | null>;
+  loadArtifactDiscovery?: (
+    command: PublishSandboxArtifactCommand,
+  ) => Promise<SandboxArtifactPublishInput | null>;
+  publishArtifact?: SandboxArtifactPublishAdapters["publishArtifact"];
   /** When true (default with sql), mark active turns needs_attention on start. */
   markNeedsAttentionOnStart?: boolean;
   workspaceId?: string;
@@ -174,6 +193,24 @@ export async function executeIngestTrueForgeEvent(
   });
 }
 
+export async function executePublishSandboxArtifact(
+  options: {
+    client: Pick<TrueForgeClientType, "downloadSandboxFile">;
+    loadDiscovery: NonNullable<WorkerProcessOptions["loadArtifactDiscovery"]>;
+    publishArtifact: NonNullable<WorkerProcessOptions["publishArtifact"]>;
+  },
+  command: PublishSandboxArtifactCommand,
+) {
+  return executePublishSandboxArtifactCommand(
+    {
+      downloadSandboxFile: createTrueForgeDownloadAdapter(options.client),
+      loadDiscovery: options.loadDiscovery,
+      publishArtifact: options.publishArtifact,
+    },
+    command,
+  );
+}
+
 export async function executeStopCancelOnce(
   options: {
     sql: ReturnType<typeof createSql>;
@@ -227,50 +264,6 @@ export async function executeClaimPauseGroupResume(
   });
 
   if (!claim.ok) {
-    // Competing worker: observe existing resume and never create another intent.
-    if (claim.reason === "already_resuming" && claim.existingPauseResumeId) {
-      const existing = await loadPauseResumeForCreate(options.sql, {
-        pauseResumeId: claim.existingPauseResumeId,
-        encryptionKey: options.encryptionKey,
-      });
-      if (!existing.ok) {
-        return { claim };
-      }
-      if (existing.responsePayloadHash !== command.payload.response_payload_hash) {
-        return { claim };
-      }
-      if (existing.trueforgeResumeTurnId) {
-        return { claim };
-      }
-      await markPauseResumeCreating(options.sql, { pauseResumeId: existing.pauseResumeId });
-      const createOrReconcileResponse = await createOrReconcileResponseTurn(
-        {
-          client: options.client,
-          lockForCreate: async () => ({ ok: true }),
-          bindResumeTurn: async () => undefined,
-          markUncertain: async ({ pauseResumeId, error }) => {
-            await markPauseResumeUncertain(options.sql, { pauseResumeId, error });
-          },
-        },
-        {
-          pauseResumeId: existing.pauseResumeId,
-          trueforgeSessionId: existing.trueforgeSessionId,
-          applicationRunToken: existing.applicationRunToken,
-          previousTrueforgeTurnId: existing.previousTrueforgeTurnId,
-          responses: existing.plaintext.responses,
-          localTrueforgeResumeTurnId: existing.trueforgeResumeTurnId,
-          forceReconcile: existing.state === "uncertain" || Boolean(existing.trueforgeResumeTurnId),
-        },
-      );
-      if (createOrReconcileResponse.ok) {
-        await completePauseResume(options.sql, {
-          pauseResumeId: existing.pauseResumeId,
-          trueforgeResumeTurnId: createOrReconcileResponse.trueforgeTurnId,
-          reconciled: !createOrReconcileResponse.created,
-        });
-      }
-      return { claim, createOrReconcileResponse };
-    }
     return { claim };
   }
 
@@ -291,32 +284,65 @@ export async function executeClaimPauseGroupResume(
     return { claim: { ok: false, reason: "missing_binding" } };
   }
 
-  await markPauseResumeCreating(options.sql, { pauseResumeId: claim.pauseResumeId });
-  const createOrReconcileResponse = await createOrReconcileResponseTurn(
-    {
-      client: options.client,
-      lockForCreate: async () => ({ ok: true }),
-      bindResumeTurn: async () => undefined,
-      markUncertain: async ({ pauseResumeId, error }) => {
-        await markPauseResumeUncertain(options.sql, { pauseResumeId, error });
+  const creating = await markPauseResumeCreating(options.sql, { pauseResumeId: claim.pauseResumeId });
+  if (!creating.ok) {
+    return {
+      claim: {
+        ok: false,
+        reason: "already_resuming",
+        existingPauseResumeId: claim.pauseResumeId,
       },
-    },
-    {
-      pauseResumeId: claim.pauseResumeId,
-      trueforgeSessionId: claim.trueforgeSessionId,
-      applicationRunToken: claim.applicationRunToken,
-      previousTrueforgeTurnId: claim.previousTrueforgeTurnId,
-      responses: loaded.plaintext.responses,
-      localTrueforgeResumeTurnId: loaded.trueforgeResumeTurnId,
-      forceReconcile: false,
-    },
-  );
+    };
+  }
+
+  await options.sql`
+    SELECT pg_advisory_lock(
+      ('x' || substr(md5(${claim.pauseResumeId}), 1, 8))::bit(32)::int,
+      ('x' || substr(md5(${claim.pauseResumeId}), 9, 8))::bit(32)::int
+    )
+  `;
+  let createOrReconcileResponse: CreateOrReconcileResponseTurnResult;
+  try {
+    createOrReconcileResponse = await createOrReconcileResponseTurn(
+      {
+        client: options.client,
+        lockForCreate: async () => ({ ok: true }),
+        bindResumeTurn: async () => undefined,
+        markUncertain: async ({ pauseResumeId, error }) => {
+          await markPauseResumeUncertain(options.sql, { pauseResumeId, error });
+        },
+      },
+      {
+        pauseResumeId: claim.pauseResumeId,
+        trueforgeSessionId: claim.trueforgeSessionId,
+        applicationRunToken: claim.applicationRunToken,
+        previousTrueforgeTurnId: claim.previousTrueforgeTurnId,
+        responses: loaded.plaintext.responses,
+        localTrueforgeResumeTurnId: loaded.trueforgeResumeTurnId,
+        forceReconcile:
+          !loaded.trueforgeResumeTurnId || loaded.state === "uncertain",
+      },
+    );
+  } finally {
+    await options.sql`
+      SELECT pg_advisory_unlock(
+        ('x' || substr(md5(${claim.pauseResumeId}), 1, 8))::bit(32)::int,
+        ('x' || substr(md5(${claim.pauseResumeId}), 9, 8))::bit(32)::int
+      )
+    `;
+  }
   if (createOrReconcileResponse.ok) {
-    await completePauseResume(options.sql, {
+    const completed = await completePauseResume(options.sql, {
       pauseResumeId: claim.pauseResumeId,
       trueforgeResumeTurnId: createOrReconcileResponse.trueforgeTurnId,
       reconciled: !createOrReconcileResponse.created,
     });
+    if (!completed.ok) {
+      await markPauseResumeUncertain(options.sql, {
+        pauseResumeId: claim.pauseResumeId,
+        error: { reason: "complete_cas_failed" },
+      });
+    }
   }
   return { claim, createOrReconcileResponse };
 }
@@ -390,24 +416,29 @@ export function startWorkerProcess(options: WorkerProcessOptions | WorkerCommand
         sql ??= createSql(resolved.databaseUrl);
         const encryptionKey = derivePausePayloadKey(
           (() => {
-            const secret =
-              resolved.pausePayloadEncryptionSecret ??
+            const secret = resolved.pausePayloadEncryptionSecret ??
               process.env.PAUSE_PAYLOAD_ENCRYPTION_SECRET?.trim() ??
-              process.env.OWNER_PASSWORD_HASH?.trim() ??
               null;
             if (!secret) {
               if ((process.env.NODE_ENV ?? "development") === "production") {
-                throw new Error(
-                  "PAUSE_PAYLOAD_ENCRYPTION_SECRET (or OWNER_PASSWORD_HASH) is required in production",
-                );
+                throw new Error("PAUSE_PAYLOAD_ENCRYPTION_SECRET is required in production");
               }
-              return "forgeroom-dev-pause-payload-secret";
+              return (
+                process.env.OWNER_PASSWORD_HASH?.trim() ||
+                "forgeroom-dev-pause-payload-secret"
+              );
             }
             return secret;
           })(),
         );
-        const workspaceId =
-          resolved.workspaceId ?? process.env.WORKSPACE_ID ?? "workspace_1";
+        const workspaceId = command.payload.workspace_id;
+        if (!workspaceId) {
+          return {
+            command,
+            pauseResumeClaim: { ok: false, reason: "forbidden" },
+            createOrReconcileResponse: { ok: false, reason: "unavailable" },
+          };
+        }
         const result = await executeClaimPauseGroupResume(
           { sql, client: trueforge, encryptionKey, workspaceId },
           command,
@@ -432,6 +463,37 @@ export function startWorkerProcess(options: WorkerProcessOptions | WorkerCommand
           await resolved.executeCommand?.(command);
         }
         return { command, ingest };
+      }
+
+      if (command.name === "publish_sandbox_artifact") {
+        if (!trueforge || !canUseDb) {
+          return {
+            command,
+            publishSandboxArtifact: {
+              ok: false,
+              kind: "not_found",
+              reason: "unavailable",
+              events: [],
+            },
+          };
+        }
+        sql ??= createSql(resolved.databaseUrl);
+        const loadDiscovery =
+          resolved.loadArtifactDiscovery ?? createWorkerArtifactDiscoveryLoader({ sql });
+        const publishArtifact =
+          resolved.publishArtifact ?? createWorkerArtifactPublishAdapter({ sql });
+        const publishSandboxArtifact = await executePublishSandboxArtifact(
+          {
+            client: trueforge,
+            loadDiscovery,
+            publishArtifact,
+          },
+          command,
+        );
+        if (publishSandboxArtifact.ok) {
+          await resolved.executeCommand?.(command);
+        }
+        return { command, publishSandboxArtifact };
       }
 
       await resolved.executeCommand?.(command);

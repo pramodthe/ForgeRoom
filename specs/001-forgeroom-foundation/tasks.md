@@ -44,10 +44,10 @@ Each task file is authoritative for its status and evidence. Keep this index and
 | [x] | [P0-307](./tasks/P0-307-decisions.md) | Secure decision API/card | done | P0-104, P0-306 |
 | [x] | [P0-308](./tasks/P0-308-atomic-resume.md) | Atomic response-only resume | done | P0-202, P0-211, P0-306, P0-307 |
 | [x] | [P0-309](./tasks/P0-309-deterministic-write.md) | Approval-gated deterministic write | done | P0-305, P0-308 |
-| [ ] | [P0-310](./tasks/P0-310-artifact-storage.md) | Durable artifact storage | ready | P0-000, P0-103 |
-| [ ] | [P0-311](./tasks/P0-311-daytona.md) | Daytona sandbox event path | ready | P0-201, P0-203 |
-| [ ] | [P0-312](./tasks/P0-312-artifact-extraction.md) | Artifact extraction and preview | blocked | P0-310, P0-311 |
-| [ ] | [P0-313](./tasks/P0-313-audit-receipt.md) | Audit timeline and JSON receipt | blocked | P0-203, P0-309, P0-312, P0-315 |
+| [x] | [P0-310](./tasks/P0-310-artifact-storage.md) | Durable artifact storage | done | P0-000, P0-103 |
+| [x] | [P0-311](./tasks/P0-311-daytona.md) | Daytona sandbox event path | done | P0-201, P0-203 |
+| [x] | [P0-312](./tasks/P0-312-artifact-extraction.md) | Artifact extraction and preview | done | P0-310, P0-311 |
+| [ ] | [P0-313](./tasks/P0-313-audit-receipt.md) | Audit timeline and JSON receipt | ready | P0-203, P0-309, P0-312, P0-315 |
 | [x] | [P0-314](./tasks/P0-314-component-registry-grants.md) | Fixed governed component registry | done | P0-102, P0-103, P0-104, P0-210 |
 | [ ] | [P0-315](./tasks/P0-315-component-tool-interaction-gateway.md) | Component/interaction gateway | ready | P0-201, P0-208, P0-211, P0-212, P0-314 |
 | [ ] | [P0-316](./tasks/P0-316-controlled-component-library.md) | Small controlled component library | blocked | P0-312, P0-314, P0-401 |
