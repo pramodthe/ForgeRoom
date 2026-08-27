@@ -68,6 +68,7 @@ export function createWorkerArtifactDiscoveryLoader(input: {
   return async (command) => {
     const binding = await loadSandboxArtifactDiscoveryBinding(input.sql, {
       artifactId: command.payload.artifact_id,
+      runId: command.payload.run_id,
       runStepId: command.payload.run_step_id,
       sandboxId: command.payload.sandbox_id,
       nextRevision: command.payload.next_artifact_revision,

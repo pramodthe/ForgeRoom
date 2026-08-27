@@ -82,6 +82,7 @@ export async function loadSandboxArtifactDiscoveryBinding(
   sql: SqlClient,
   input: {
     artifactId: string;
+    runId: string;
     runStepId: string;
     sandboxId: string;
     nextRevision: number;
@@ -112,6 +113,7 @@ export async function loadSandboxArtifactDiscoveryBinding(
     JOIN channel_agent_sessions AS cas ON cas.id = at.channel_agent_session_id
     JOIN channel_agent_session_generations AS csg ON csg.id = at.session_generation_id
     WHERE rs.id = ${input.runStepId}
+      AND rs.run_id = ${input.runId}
     ORDER BY at.started_at DESC NULLS LAST, at.id DESC
     LIMIT 1
   `;
@@ -154,7 +156,10 @@ export async function loadSandboxArtifactDiscoveryBinding(
   }
 
   const payload = discovered.normalized_payload_redacted_json ?? {};
-  const sandboxId = readString(payload.sandbox_id) ?? input.sandboxId;
+  const sandboxId = readString(payload.sandbox_id);
+  if (!sandboxId || sandboxId !== input.sandboxId) {
+    return null;
+  }
   const relativePath = readString(payload.source_sandbox_path);
   const name = readString(payload.name);
   const mimeType = readString(payload.mime_type);

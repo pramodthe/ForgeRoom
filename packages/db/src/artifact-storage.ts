@@ -212,7 +212,9 @@ export async function publishArtifactRecord(
           existing.storageKey !== input.storageKey ||
           existing.byteSize !== input.byteSize ||
           existing.workspaceId !== input.workspaceId ||
-          existing.channelId !== input.channelId
+          existing.channelId !== input.channelId ||
+          existing.sha256 !== input.sha256 ||
+          existing.revision !== input.revision
         ) {
           return { ok: false, reason: "content_revision_conflict", existing };
         }
