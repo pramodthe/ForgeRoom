@@ -157,6 +157,11 @@ export function toPersistedAgUiEvent(input: unknown): P0PersistedAguiEvent | nul
       activityType: event.activityType,
       patch: event.patch,
     };
+  } else if (type === "MESSAGES_SNAPSHOT") {
+    candidate = {
+      type,
+      messages: event.messages,
+    };
   }
 
   const parsed = p0PersistedAguiEventSchema.safeParse(candidate);

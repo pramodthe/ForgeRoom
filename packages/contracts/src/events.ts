@@ -1141,6 +1141,22 @@ export const persistedTextMessageEndEventSchema = z
   })
   .strict();
 
+export const persistedAssistantSnapshotMessageSchema = z
+  .object({
+    id: opaqueIdSchema,
+    role: z.literal("assistant"),
+    content: z.string().min(1).max(64_000),
+    name: z.string().min(1).max(128).optional(),
+  })
+  .strict();
+
+export const persistedMessagesSnapshotEventSchema = z
+  .object({
+    type: z.literal("MESSAGES_SNAPSHOT"),
+    messages: z.array(persistedAssistantSnapshotMessageSchema).min(1),
+  })
+  .strict();
+
 export const p0PersistedAguiEventSchema = z.union([
   persistedRunStartedEventSchema,
   persistedRunFinishedEventSchema,
@@ -1148,6 +1164,7 @@ export const p0PersistedAguiEventSchema = z.union([
   persistedTextMessageStartEventSchema,
   persistedTextMessageContentEventSchema,
   persistedTextMessageEndEventSchema,
+  persistedMessagesSnapshotEventSchema,
   activitySnapshotEventSchema,
   activityDeltaEventSchema,
   stateSnapshotEventSchema,
@@ -1259,6 +1276,14 @@ export const agentChannelEnvelopeSchema = z
           path: ["actorKind"],
         });
       }
+    }
+
+    if (value.aguiEvent.type === "MESSAGES_SNAPSHOT" && value.actorKind !== "coworker") {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "MESSAGES_SNAPSHOT may only be emitted on a coworker lane",
+        path: ["actorKind"],
+      });
     }
   });
 

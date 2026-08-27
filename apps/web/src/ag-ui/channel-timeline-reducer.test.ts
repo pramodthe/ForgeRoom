@@ -1,4 +1,5 @@
 import type { AgentChannelEnvelope, ChannelTimelineMessage } from "@forgeroom/contracts";
+import { compactChannelEnvelopes } from "@forgeroom/ag-ui/browser";
 import { describe, expect, it } from "vitest";
 import {
   channelTimelineReducer,
@@ -205,5 +206,53 @@ describe("channelTimelineReducer", () => {
       content: "partial",
       status: "streaming",
     });
+  });
+
+  it("full text replay and compacted MESSAGES_SNAPSHOT replay match", () => {
+    const full: AgentChannelEnvelope[] = [
+      coworkerEnvelope(1, {
+        type: "RUN_STARTED",
+        threadId: "thread_coworker_research",
+        runId: "agui_step_1",
+      }),
+      coworkerEnvelope(2, {
+        type: "TEXT_MESSAGE_START",
+        messageId: "assistant_message",
+        role: "assistant",
+      }),
+      coworkerEnvelope(3, {
+        type: "TEXT_MESSAGE_CONTENT",
+        messageId: "assistant_message",
+        delta: "Hello",
+      }),
+      coworkerEnvelope(4, {
+        type: "TEXT_MESSAGE_CONTENT",
+        messageId: "assistant_message",
+        delta: " team",
+      }),
+      coworkerEnvelope(5, {
+        type: "TEXT_MESSAGE_END",
+        messageId: "assistant_message",
+      }),
+      coworkerEnvelope(6, {
+        type: "RUN_FINISHED",
+        threadId: "thread_coworker_research",
+        runId: "agui_step_1",
+        outcome: { type: "success" },
+      }),
+    ];
+
+    let fullState = initialChannelTimelineState("channel_demo");
+    for (const envelope of full) {
+      fullState = channelTimelineReducer(fullState, { type: "event", envelope });
+    }
+
+    let compactedState = initialChannelTimelineState("channel_demo");
+    for (const envelope of compactChannelEnvelopes(full)) {
+      compactedState = channelTimelineReducer(compactedState, { type: "event", envelope });
+    }
+
+    expect(orderedTimelineMessages(compactedState)).toEqual(orderedTimelineMessages(fullState));
+    expect(compactedState.runs).toEqual(fullState.runs);
   });
 });
