@@ -11,29 +11,33 @@
     "artifacts": "ARTIFACT_STORAGE_DIR local directory"
   },
   "localPreflightProbe": {
-    "status": "partial",
+    "status": "pass",
     "probeDate": "2026-08-26",
-    "note": "Env presence checks only; aggregate partial because TRUEFORGE_API_KEY and MODEL_PROVIDER_API_KEY are blocked.",
+    "note": "Local TrueForge harness running (v0.1.4, no TRUEFORGE_API_KEY). OpenAI provider configured; Operator smoke turn done.",
     "checks": [
       {
         "name": "DATABASE_URL",
         "result": "pass",
-        "note": "PostgreSQL forgeroom reachable; schema migrations not applied (workspaces missing)"
+        "note": "PostgreSQL forgeroom reachable; migrations applied (workspaces present)"
       },
       { "name": "COMPOSIO_API_KEY", "result": "pass" },
       { "name": "COMPOSIO_CONNECTED_ACCOUNT_ID", "result": "pass", "redactedSuffix": "nizY" },
       { "name": "DAYTONA_API_KEY", "result": "pass" },
       { "name": "ARTIFACT_STORAGE_DIR", "result": "pass" },
-      { "name": "TRUEFORGE_BASE_URL", "result": "pass", "note": "URL set (len 21)" },
       {
-        "name": "TRUEFORGE_API_KEY",
-        "result": "blocked",
-        "note": "missing — blocks harness session/AgentSpec probes"
+        "name": "TRUEFORGE_BASE_URL",
+        "result": "pass",
+        "note": "http://127.0.0.1:8790 reachable; npx @truefoundry/trueforge@latest"
       },
       {
-        "name": "MODEL_PROVIDER_API_KEY",
-        "result": "blocked",
-        "note": "missing — blocks coworker model preset probe (OD-005)"
+        "name": "TRUEFORGE_API_KEY",
+        "result": "not_required_local",
+        "note": "Local standalone TrueForge has no built-in API-key auth; leave empty"
+      },
+      {
+        "name": "OPENAI_API_KEY",
+        "result": "pass",
+        "note": "Configured in TrueForge as openai provider; preset openai/gpt-5-4-mini smoke-verified"
       }
     ]
   },

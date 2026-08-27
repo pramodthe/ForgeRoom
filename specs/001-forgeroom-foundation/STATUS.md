@@ -2,11 +2,11 @@
 
 | Field | Current value |
 | --- | --- |
-| Overall | M1 Foundation done; P0-402 composer/roster merged; P0-210 AG-UI spike merged (in_review); P0-000 partial live probes |
+| Overall | M1 Foundation done; P0-402 merged; P0-210 in_review; P0-000 OpenAI+TrueForge presets verified (remaining: Save-as-skill Run, artifact path, demo storage) |
 | Current phase | Phase 1 — Foundation |
-| Active task | P0-000 (in_progress); P0-210 (in_review, live proofs deferred to P0-211) |
-| Next task | Finish P0-000 TrueForge probes (add keys to `.env`); start P0-105 demo fixtures |
-| P0 blockers | TrueForge model presets, Research permission preview, Save-as-skill Run binding, TrueForge→artifact path, demo durable storage — Composio/Daytona SDK/local adapter verified 2026-08-26; **DB migrations applied locally** |
+| Active task | P0-000 (partial); next implementation: P0-105 demo fixtures |
+| Next task | Start P0-105 idempotent seed/reset; finish remaining P0-000 blockers in parallel when ready |
+| P0 blockers | Save-as-skill Run binding, TrueForge→artifact path, demo durable storage, run-limit hard enforcement — Composio/Daytona/OpenAI+TrueForge presets verified 2026-08-26; **DB migrations applied locally** |
 | Last updated | 2026-08-26 |
 
 ## Milestones
@@ -24,19 +24,20 @@
 
 Still open until TrueForge probes / P0-210 (see `decisions/OPEN.md` and `provider-fixtures/`):
 
-- Model preset for Operator and Research coworkers (`TRUEFORGE_API_KEY`, `MODEL_PROVIDER_API_KEY`).
-- Research draft exact permission preview/denials (TrueForge harness).
 - Save-as-skill successful Run binding (TrueForge).
 - Demo durable artifact storage adapter and checked-in deployment diagram.
-- DB fixture reset schema ready locally (P0-105 seed/reset can proceed; TrueForge probes still open).
+- TrueForge sandbox-file → application artifact retain path.
+- Run-limit hard enforcement evidence (P0-204).
 
 Verified 2026-08-26 live probes:
 
 - Composio github toolkit, tool slugs, account suffix `nizY`, descriptor hashes.
 - Synthetic provider fixture `pramodthe/Hi-Tuto#10` with idempotent label reset.
-- Daytona sandbox SDK upload/download (partial — TrueForge→storage path blocked).
+- Daytona sandbox SDK upload/download (partial — TrueForge→storage path blocked on adapter wiring).
 - Local `ARTIFACT_STORAGE_DIR` adapter retain (separate probe; not yet same bytes as Daytona download).
-- Local deployment preflight (partial — TrueForge/model keys missing).
+- Local TrueForge + OpenAI: preset `openai/gpt-5-4-mini`; Operator smoke turn `p0-openai-ok`; Research permission exactDiff frozen.
+- Local deployment preflight **pass** (TrueForge + OpenAI).
+- DB schema ready for P0-105 seed/reset.
 
 Frozen without secrets:
 
