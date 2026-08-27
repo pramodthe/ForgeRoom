@@ -66,13 +66,11 @@ export function loadApiEnv(env: NodeJS.ProcessEnv = process.env): ApiEnv {
 
   const pausePayloadEncryptionSecret =
     env.PAUSE_PAYLOAD_ENCRYPTION_SECRET?.trim() ||
-    env.OWNER_PASSWORD_HASH?.trim() ||
-    (nodeEnv === "production" ? "" : env.OWNER_PASSWORD?.trim() || "") ||
-    (nodeEnv === "production" ? "" : "forgeroom-dev-pause-payload-secret");
+    (nodeEnv === "production"
+      ? ""
+      : env.OWNER_PASSWORD_HASH?.trim() || env.OWNER_PASSWORD?.trim() || "forgeroom-dev-pause-payload-secret");
   if (!pausePayloadEncryptionSecret) {
-    throw new Error(
-      "PAUSE_PAYLOAD_ENCRYPTION_SECRET (or OWNER_PASSWORD_HASH) is required in production",
-    );
+    throw new Error("PAUSE_PAYLOAD_ENCRYPTION_SECRET is required in production");
   }
 
   return {

@@ -168,6 +168,7 @@ export {
   deleteExpiredConnectionReconnectIntents,
   findReconnectIntentByIdempotencyKey,
   findActiveReconnectIntentForActor,
+  findLatestReconnectIntentForActor,
   findLatestReconnectIntentForConnection,
   saveConnectionReconnectIntent,
 } from "./connection-reconnect-intents";

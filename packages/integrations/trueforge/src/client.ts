@@ -114,6 +114,10 @@ export class TrueForgeClient {
         `TrueForge sandbox file download failed (${response.status}) for ${sandboxPath}`,
       );
     }
+    const contentLength = Number(response.headers.get("content-length"));
+    if (Number.isFinite(contentLength) && contentLength > maxBytes) {
+      throw new Error(`TrueForge sandbox file exceeds ${maxBytes} byte limit`);
+    }
     if (!response.body) {
       const buffer = await response.arrayBuffer();
       if (buffer.byteLength > maxBytes) {

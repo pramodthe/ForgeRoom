@@ -36,6 +36,7 @@ import {
   deleteExpiredConnectionReconnectIntents,
   ensureP0ConnectorBinding,
   findActiveReconnectIntentForActor,
+  findLatestReconnectIntentForActor,
   findReconnectIntentByIdempotencyKey,
   loadConnectorBinding,
   saveConnectionReconnectIntent,
@@ -329,19 +330,29 @@ export function createConnectionService(options: ConnectionServiceOptions): Conn
     return binding;
   }
 
-  async function loadActiveReconnectIntentForStatus(input: {
+  async function resolveReconnectIntentForStatus(input: {
     workspaceId: string;
     connectionId: string;
     actorUserId: string;
-  }): Promise<ReconnectBinding | null> {
+    now?: string;
+  }): Promise<
+    | { kind: "none" }
+    | { kind: "active"; binding: ReconnectBinding }
+    | { kind: "expired"; binding: ReconnectBinding }
+  > {
+    const now = input.now ?? new Date().toISOString();
     if (options.sql) {
-      await deleteExpiredConnectionReconnectIntents(options.sql);
-      const active = await findActiveReconnectIntentForActor(options.sql, {
-        workspaceId: input.workspaceId,
-        connectionId: input.connectionId,
-        actorUserId: input.actorUserId,
-      });
-      return active ? storedIntentToBinding(active) : null;
+      const latest = await findLatestReconnectIntentForActor(options.sql, input);
+      if (!latest) {
+        await deleteExpiredConnectionReconnectIntents(options.sql, now);
+        return { kind: "none" };
+      }
+      if (latest.expiresAt <= now) {
+        await deleteExpiredConnectionReconnectIntents(options.sql, now);
+        return { kind: "expired", binding: storedIntentToBinding(latest) };
+      }
+      await deleteExpiredConnectionReconnectIntents(options.sql, now);
+      return { kind: "active", binding: storedIntentToBinding(latest) };
     }
 
     purgeExpiredIntents(intents);
@@ -351,10 +362,14 @@ export function createConnectionService(options: ConnectionServiceOptions): Conn
         binding.workspaceId === input.workspaceId &&
         binding.actorUserId === input.actorUserId
       ) {
-        return binding;
+        if (binding.expiresAt <= now) {
+          intents.delete(binding.intentId);
+          return { kind: "expired", binding };
+        }
+        return { kind: "active", binding };
       }
     }
-    return null;
+    return { kind: "none" };
   }
 
   return {
@@ -569,11 +584,15 @@ export function createConnectionService(options: ConnectionServiceOptions): Conn
       }
 
       try {
-        const activeIntent = await loadActiveReconnectIntentForStatus({
+        const intentStatus = await resolveReconnectIntentForStatus({
           workspaceId: session.workspace_id,
           connectionId,
           actorUserId: session.user.id,
         });
+        const activeIntent =
+          intentStatus.kind === "active" ? intentStatus.binding : null;
+        const expiredIntent =
+          intentStatus.kind === "expired" ? intentStatus.binding : null;
 
         const account = await composio.getConnectedAccountDetails();
         if (!account.id) {
@@ -592,7 +611,9 @@ export function createConnectionService(options: ConnectionServiceOptions): Conn
         });
 
         let reconnectState: ConnectionReconnectStatus["reconnect_state"] = "idle";
-        if (activeIntent) {
+        if (expiredIntent) {
+          reconnectState = "expired";
+        } else if (activeIntent) {
           const bound = assertReconnectBoundToWorkspace({
             binding: activeIntent,
             workspaceId: session.workspace_id,
@@ -652,7 +673,7 @@ export function createConnectionService(options: ConnectionServiceOptions): Conn
           value: connectionReconnectStatusSchema.parse({
             schemaVersion: 1,
             connection_id: connectionId,
-            intent_id: activeIntent?.intentId ?? null,
+            intent_id: activeIntent?.intentId ?? expiredIntent?.intentId ?? null,
             reconnect_state: reconnectState,
             connection_status: connectionStatus,
             blocks_dispatch: blocksDispatch,

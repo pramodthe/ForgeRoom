@@ -99,6 +99,37 @@ export async function findReconnectIntentByIdempotencyKey(
   return row ? rowToIntent(row) : null;
 }
 
+export async function findLatestReconnectIntentForActor(
+  sql: SqlClient,
+  input: {
+    workspaceId: string;
+    connectionId: string;
+    actorUserId: string;
+  },
+): Promise<StoredReconnectIntent | null> {
+  const rows = await sql<IntentRow[]>`
+    SELECT
+      id,
+      workspace_id,
+      connection_id,
+      actor_user_id,
+      idempotency_key,
+      expected_connected_account_id,
+      redirect_url,
+      expires_at,
+      provisional_connected_account_id,
+      created_at
+    FROM connection_reconnect_intents
+    WHERE workspace_id = ${input.workspaceId}
+      AND connection_id = ${input.connectionId}
+      AND actor_user_id = ${input.actorUserId}
+    ORDER BY created_at DESC
+    LIMIT 1
+  `;
+  const row = rows[0];
+  return row ? rowToIntent(row) : null;
+}
+
 export async function findActiveReconnectIntentForActor(
   sql: SqlClient,
   input: {

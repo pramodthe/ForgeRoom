@@ -24,7 +24,8 @@ export type AccountDriftFinding =
   | { kind: "expired_account"; status: string }
   | { kind: "disabled_account" }
   | { kind: "account_inactive"; status: string }
-  | { kind: "wrong_toolkit"; expected: string; observed: string };
+  | { kind: "wrong_toolkit"; expected: string; observed: string }
+  | { kind: "account_mismatch"; expected: string; observed: string | null };
 
 export type ManifestVerificationFinding =
   | DescriptorDriftFinding
@@ -206,13 +207,14 @@ export function buildFrozenP0ManifestVerificationInput(
  * Requires a live pinned connected-account observation from Composio.
  */
 export async function verifyP0ManifestForDispatch(composio: {
-  getConnectedAccountDetails(): Promise<ConnectedAccountHealth>;
+  pinnedConnectedAccountId: string;
+  getConnectedAccountDetails(): Promise<ConnectedAccountHealth | null>;
 }): Promise<ManifestVerificationResult> {
   const account = await composio.getConnectedAccountDetails();
-  if (!account.id) {
+  if (!account?.id) {
     const redacted: ManifestVerificationRedactedEvidence = {
       ownerTask: "P0-302",
-      accountStatus: account.status,
+      accountStatus: account?.status ?? "UNKNOWN",
       accountSuffix: "",
       descriptorSlugs: FROZEN_P0_DESCRIPTOR_ROWS.map((row) => row.toolSlug).sort(),
       enabledTools: [...FROZEN_P0_COMPILED_ALLOWLIST.enabledTools],
@@ -225,7 +227,33 @@ export async function verifyP0ManifestForDispatch(composio: {
       ok: false,
       healthy: false,
       blocksDispatch: true,
-      findings: [{ kind: "account_inactive", status: account.status }],
+      findings: [{ kind: "account_inactive", status: account?.status ?? "UNKNOWN" }],
+      redacted,
+    };
+  }
+  if (account.id !== composio.pinnedConnectedAccountId) {
+    const redacted: ManifestVerificationRedactedEvidence = {
+      ownerTask: "P0-302",
+      accountStatus: account.status,
+      accountSuffix: accountSuffix(account.id),
+      descriptorSlugs: FROZEN_P0_DESCRIPTOR_ROWS.map((row) => row.toolSlug).sort(),
+      enabledTools: [...FROZEN_P0_COMPILED_ALLOWLIST.enabledTools],
+      approvalRequiredTools: [...FROZEN_P0_COMPILED_ALLOWLIST.approvalRequiredTools],
+      findingKinds: ["account_mismatch"],
+      healthy: false,
+      blocksDispatch: true,
+    };
+    return {
+      ok: false,
+      healthy: false,
+      blocksDispatch: true,
+      findings: [
+        {
+          kind: "account_mismatch",
+          expected: composio.pinnedConnectedAccountId,
+          observed: account.id,
+        },
+      ],
       redacted,
     };
   }

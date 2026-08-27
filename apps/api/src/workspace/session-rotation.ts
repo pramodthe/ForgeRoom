@@ -4,6 +4,7 @@
  */
 import {
   abortSessionRotation,
+  atomicSwapSessionGeneration,
   beginSessionRotation,
   completeSessionRotation,
   markCancelCalled,
@@ -88,22 +89,21 @@ export async function rotateOwnedChannelCoworkerSession(
     now,
   });
 
-  if (begun.requestActiveTurnCancellation && input.activeRunStepId) {
-    const stop = await requestRunStepStop(input.sql, { runStepId: input.activeRunStepId, now });
-    if (stop.ok && stop.decision.callCancel) {
-      const client = input.client ?? loadTrueForgeClientFromEnv(input.env ?? process.env);
-      if (stop.trueforgeSessionId) {
-        await client.cancelSession(stop.trueforgeSessionId);
-      }
-      if (stop.agentTurnId) {
-        await markCancelCalled(input.sql, { agentTurnId: stop.agentTurnId, now });
-      }
-    }
-  }
-
   let swapped = false;
   let newGenerationId: string | null = null;
   try {
+    if (begun.requestActiveTurnCancellation && input.activeRunStepId) {
+      const stop = await requestRunStepStop(input.sql, { runStepId: input.activeRunStepId, now });
+      if (stop.ok && stop.decision.callCancel) {
+        const client = input.client ?? loadTrueForgeClientFromEnv(input.env ?? process.env);
+        if (stop.trueforgeSessionId) {
+          await client.cancelSession(stop.trueforgeSessionId);
+        }
+        if (stop.agentTurnId) {
+          await markCancelCalled(input.sql, { agentTurnId: stop.agentTurnId, now });
+        }
+      }
+    }
     if (input.mcpInFlightKnownTerminal !== null && input.mcpInFlightKnownTerminal !== undefined) {
       await recordMcpRotationOutcome(input.sql, {
         channelAgentSessionId: input.channelAgentSessionId,

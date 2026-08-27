@@ -320,10 +320,7 @@ export async function executeClaimPauseGroupResume(
         responses: loaded.plaintext.responses,
         localTrueforgeResumeTurnId: loaded.trueforgeResumeTurnId,
         forceReconcile:
-          !loaded.trueforgeResumeTurnId ||
-          loaded.state === "claimed" ||
-          loaded.state === "creating" ||
-          loaded.state === "uncertain",
+          !loaded.trueforgeResumeTurnId || loaded.state === "uncertain",
       },
     );
   } finally {
@@ -419,18 +416,17 @@ export function startWorkerProcess(options: WorkerProcessOptions | WorkerCommand
         sql ??= createSql(resolved.databaseUrl);
         const encryptionKey = derivePausePayloadKey(
           (() => {
-            const secret =
-              resolved.pausePayloadEncryptionSecret ??
+            const secret = resolved.pausePayloadEncryptionSecret ??
               process.env.PAUSE_PAYLOAD_ENCRYPTION_SECRET?.trim() ??
-              process.env.OWNER_PASSWORD_HASH?.trim() ??
               null;
             if (!secret) {
               if ((process.env.NODE_ENV ?? "development") === "production") {
-                throw new Error(
-                  "PAUSE_PAYLOAD_ENCRYPTION_SECRET (or OWNER_PASSWORD_HASH) is required in production",
-                );
+                throw new Error("PAUSE_PAYLOAD_ENCRYPTION_SECRET is required in production");
               }
-              return "forgeroom-dev-pause-payload-secret";
+              return (
+                process.env.OWNER_PASSWORD_HASH?.trim() ||
+                "forgeroom-dev-pause-payload-secret"
+              );
             }
             return secret;
           })(),

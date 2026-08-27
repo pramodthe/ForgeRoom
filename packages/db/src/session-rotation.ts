@@ -376,11 +376,23 @@ export async function atomicSwapSessionGeneration(
     }
 
     await tx`
+      SELECT id FROM agent_profiles
+      WHERE id = ${input.revision.agentProfileId}
+      FOR UPDATE
+    `;
+    const revisionRows = await tx<{ max: number | null }[]>`
+      SELECT MAX(source_config_revision) AS max
+      FROM session_revisions
+      WHERE agent_profile_id = ${input.revision.agentProfileId}
+    `;
+    const sourceConfigRevision = (revisionRows[0]?.max ?? 0) + 1;
+
+    await tx`
       INSERT INTO session_revisions (
         id, agent_profile_id, source_config_revision, effective_config_redacted_json,
         effective_spec_hash, approval_policy_hash, created_by, created_at
       ) VALUES (
-        ${input.revision.id}, ${input.revision.agentProfileId}, ${input.revision.sourceConfigRevision},
+        ${input.revision.id}, ${input.revision.agentProfileId}, ${sourceConfigRevision},
         ${JSON.stringify(input.revision.effectiveConfigRedactedJson)}::jsonb,
         ${input.revision.effectiveSpecHash}, ${input.revision.approvalPolicyHash},
         ${input.revision.createdBy}, ${input.revision.createdAt}

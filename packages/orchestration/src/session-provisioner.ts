@@ -54,12 +54,11 @@ export async function provisionChannelCoworkerSession(
     throw new Error("TrueForge session create/get mismatch");
   }
 
-  const primaryConnector = input.connectors?.[0];
-  if (primaryConnector) {
+  for (const connector of input.connectors ?? []) {
     const findings = verifyCompiledAgentSpecPolicy(revision.agentSpec, {
-      connectorName: primaryConnector.name,
-      enabledTools: primaryConnector.enabledTools,
-      approvalRequiredTools: primaryConnector.approvalRequiredTools,
+      connectorName: connector.name,
+      enabledTools: connector.enabledTools,
+      approvalRequiredTools: connector.approvalRequiredTools,
       approvalPolicyHash: revision.approvalPolicyHash,
     });
     assertAgentSpecPolicyHealthy(findings);
