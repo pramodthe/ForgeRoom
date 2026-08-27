@@ -4,7 +4,7 @@ import { pollTrueForgeTurnEvents, TrueForgeAGUIAdapter } from "./adapter";
 import { parseUpstreamAgUiEvent, parseUpstreamRunAgentInput } from "./upstream";
 
 describe("parseUpstreamRunAgentInput", () => {
-  it("accepts a valid RunAgentInput and rejects resume", () => {
+  it("accepts a valid RunAgentInput and flags resume for PauseGroup service", () => {
     const valid = parseUpstreamRunAgentInput({
       threadId: "thread_channel_1_cow_1",
       runId: "run_1",
@@ -22,12 +22,11 @@ describe("parseUpstreamRunAgentInput", () => {
       tools: [],
       context: [],
       state: {},
-      resume: [{ interruptId: "int_1", payload: {} }],
+      resume: [{ interruptId: "int_1", status: "resolved" }],
     });
-    expect(resume).toEqual({
-      ok: false,
-      capability: "RunAgentInput.resume",
-      reason: "unsupported_in_p0",
+    expect(resume).toMatchObject({
+      ok: true,
+      resumeRequiresPauseGroupService: true,
     });
   });
 });

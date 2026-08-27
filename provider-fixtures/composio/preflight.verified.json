@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 1,
+  "status": "verified",
+  "ownerTask": "P0-302",
+  "probeDate": "2026-08-27",
+  "decisionRefs": ["ADR-003", "OD-002", "OD-003", "OD-004"],
+  "trueforgeConnector": {
+    "name": "composio_github",
+    "auth": "header",
+    "registration": "PUT /api/v1/settings/mcp-servers",
+    "toolsList": "GET /api/v1/mcp-servers/{name}/tools",
+    "note": "MCP URL/headers stay server-side; TrueForge responses redact header values."
+  },
+  "compiledAllowlist": {
+    "enabledTools": [
+      "GITHUB_GET_AN_ISSUE",
+      "GITHUB_ADD_LABELS_TO_AN_ISSUE",
+      "GITHUB_REMOVE_A_LABEL_FROM_AN_ISSUE"
+    ],
+    "approvalRequiredTools": [
+      "GITHUB_ADD_LABELS_TO_AN_ISSUE",
+      "GITHUB_REMOVE_A_LABEL_FROM_AN_ISSUE"
+    ],
+    "enabledToolsHash": "sha256:1f56252d41932fc9d3a88e74175defcc3536cf0226177f1ecd62ea2cc962b2ed",
+    "approvalRequiredToolsHash": "sha256:3851895e0f1f81ea928a97bb33199706f73eaf5a1c5166207c0728cc8562c41d"
+  },
+  "descriptorHashes": {
+    "source": "GET /api/v3.1/tools/{slug} raw body sha256",
+    "manifest": "descriptors/manifest.json",
+    "matched": true
+  },
+  "pinnedAccount": {
+    "redactedSuffix": "nizY",
+    "status": "ACTIVE",
+    "toolkitSlug": "github"
+  },
+  "failClosedFixtures": [
+    "missing_tool",
+    "added_tool",
+    "schema_change",
+    "lost_approval_rule",
+    "expired_account"
+  ],
+  "livePreflight": {
+    "status": "verified",
+    "note": "Live Composio descriptor + ACTIVE account preflight via verifyP0Manifest; TrueForge header-auth registration covered by unit tests (local harness optional)."
+  }
+}

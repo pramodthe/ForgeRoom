@@ -14,42 +14,42 @@ Each task file is authoritative for its status and evidence. Keep this index and
 
 | Done | ID | Task | Status | Depends on |
 | --- | --- | --- | --- | --- |
-| [ ] | [P0-000](./tasks/P0-000-freeze-demo-contract.md) | Freeze demo/tool contract | in_progress | — |
+| [x] | [P0-000](./tasks/P0-000-freeze-demo-contract.md) | Freeze demo/tool contract | done | — |
 | [x] | [P0-101](./tasks/P0-101-scaffold-monorepo.md) | Scaffold monorepo and CI | done | — |
 | [x] | [P0-102](./tasks/P0-102-shared-contracts.md) | Shared domain/API contracts | done | P0-101 |
 | [x] | [P0-103](./tasks/P0-103-database-migrations.md) | Database schema and migrations | done | P0-102 |
 | [x] | [P0-104](./tasks/P0-104-owner-auth.md) | Owner authentication/authorization | done | P0-103 |
-| [ ] | [P0-105](./tasks/P0-105-demo-fixtures.md) | Idempotent demo fixtures | blocked | P0-000, P0-103, P0-104 |
+| [x] | [P0-105](./tasks/P0-105-demo-fixtures.md) | Idempotent demo fixtures | done | P0-000, P0-103, P0-104 |
 | [x] | [P0-106](./tasks/P0-106-channel-coworker-api.md) | Channel and coworker API | done | P0-103, P0-104 |
 | [x] | [P0-107](./tasks/P0-107-event-log-sse.md) | Canonical event log and SSE | done | P0-106 |
 | [x] | [P0-108](./tasks/P0-108-context-pins.md) | Channel context and pins | done | P0-107 |
-| [ ] | [P0-109](./tasks/P0-109-task-record.md) | Application-owned TaskRecord | blocked | P0-103, P0-104, P0-107, P0-203, P0-208 |
+| [ ] | [P0-109](./tasks/P0-109-task-record.md) | Application-owned TaskRecord | ready | P0-103, P0-104, P0-107, P0-203, P0-208 |
 | [x] | [P0-201](./tasks/P0-201-trueforge-sessions.md) | TrueForge adapter and sessions | done | P0-000, P0-103, P0-105 |
 | [x] | [P0-202](./tasks/P0-202-turn-queue.md) | Per-session serial turn queue | done | P0-103, P0-201 |
 | [x] | [P0-203](./tasks/P0-203-turn-events.md) | Turn creation and event normalization | done | P0-107, P0-202 |
 | [x] | [P0-204](./tasks/P0-204-reconnect-stop.md) | Reconnect, stop and correction | done | P0-203 |
 | [x] | [P0-205](./tasks/P0-205-router.md) | Direct mention/team router | done | P0-102, P0-106 |
 | [x] | [P0-206](./tasks/P0-206-multi-agent-run.md) | Direct multi-agent Run engine | done | P0-202, P0-203, P0-205 |
-| [ ] | [P0-208](./tasks/P0-208-session-rotation.md) | Capability/skill intersection and rotation | blocked | P0-202, P0-302, P0-314 |
-| [ ] | [P0-210](./tasks/P0-210-agui-compatibility-spike.md) | Freeze AG-UI and prove bridge | in_review | P0-000, P0-101 |
+| [x] | [P0-208](./tasks/P0-208-session-rotation.md) | Capability/skill intersection and rotation | done | P0-202, P0-302, P0-314 |
+| [x] | [P0-210](./tasks/P0-210-agui-compatibility-spike.md) | Freeze AG-UI and prove bridge | done | P0-000, P0-101 |
 | [x] | [P0-211](./tasks/P0-211-trueforge-agui-adapter.md) | TrueForge-to-AG-UI adapter | done | P0-102, P0-203, P0-210 |
 | [x] | [P0-212](./tasks/P0-212-agui-persistence-state-replay.md) | AG-UI persistence and replay | done | P0-103, P0-107, P0-211 |
-| [ ] | [P0-213](./tasks/P0-213-conversational-coworker-drafts.md) | Conversational CoworkerDraft provisioning | blocked | P0-106, P0-208 |
-| [ ] | [P0-301](./tasks/P0-301-composio-session.md) | Composio direct-tools session | blocked | P0-000, P0-101 |
-| [ ] | [P0-302](./tasks/P0-302-manifest-verification.md) | Connector/AgentSpec verification | blocked | P0-201, P0-301 |
-| [ ] | [P0-303](./tasks/P0-303-tool-policies.md) | Curated ToolPolicyDefinitions | blocked | P0-000, P0-302 |
-| [ ] | [P0-304](./tasks/P0-304-connections.md) | Connections API and health | blocked | P0-104, P0-302 |
-| [ ] | [P0-305](./tasks/P0-305-real-read.md) | Real Composio read path | blocked | P0-201, P0-203, P0-303 |
-| [ ] | [P0-306](./tasks/P0-306-pause-groups.md) | RequiredAction/PauseGroup persistence | blocked | P0-103, P0-203, P0-303 |
-| [ ] | [P0-307](./tasks/P0-307-decisions.md) | Secure decision API/card | blocked | P0-104, P0-306 |
-| [ ] | [P0-308](./tasks/P0-308-atomic-resume.md) | Atomic response-only resume | blocked | P0-202, P0-211, P0-306, P0-307 |
-| [ ] | [P0-309](./tasks/P0-309-deterministic-write.md) | Approval-gated deterministic write | blocked | P0-305, P0-308 |
-| [ ] | [P0-310](./tasks/P0-310-artifact-storage.md) | Durable artifact storage | blocked | P0-000, P0-103 |
-| [ ] | [P0-311](./tasks/P0-311-daytona.md) | Daytona sandbox event path | blocked | P0-201, P0-203 |
-| [ ] | [P0-312](./tasks/P0-312-artifact-extraction.md) | Artifact extraction and preview | blocked | P0-310, P0-311 |
-| [ ] | [P0-313](./tasks/P0-313-audit-receipt.md) | Audit timeline and JSON receipt | blocked | P0-203, P0-309, P0-312, P0-315 |
+| [ ] | [P0-213](./tasks/P0-213-conversational-coworker-drafts.md) | Conversational CoworkerDraft provisioning | ready | P0-106, P0-208 |
+| [x] | [P0-301](./tasks/P0-301-composio-session.md) | Composio direct-tools session | done | P0-000, P0-101 |
+| [x] | [P0-302](./tasks/P0-302-manifest-verification.md) | Connector/AgentSpec verification | done | P0-201, P0-301 |
+| [x] | [P0-303](./tasks/P0-303-tool-policies.md) | Curated ToolPolicyDefinitions | done | P0-000, P0-302 |
+| [x] | [P0-304](./tasks/P0-304-connections.md) | Connections API and health | done | P0-104, P0-302 |
+| [x] | [P0-305](./tasks/P0-305-real-read.md) | Real Composio read path | done | P0-201, P0-203, P0-303 |
+| [x] | [P0-306](./tasks/P0-306-pause-groups.md) | RequiredAction/PauseGroup persistence | done | P0-103, P0-203, P0-303 |
+| [x] | [P0-307](./tasks/P0-307-decisions.md) | Secure decision API/card | done | P0-104, P0-306 |
+| [x] | [P0-308](./tasks/P0-308-atomic-resume.md) | Atomic response-only resume | done | P0-202, P0-211, P0-306, P0-307 |
+| [x] | [P0-309](./tasks/P0-309-deterministic-write.md) | Approval-gated deterministic write | done | P0-305, P0-308 |
+| [x] | [P0-310](./tasks/P0-310-artifact-storage.md) | Durable artifact storage | done | P0-000, P0-103 |
+| [x] | [P0-311](./tasks/P0-311-daytona.md) | Daytona sandbox event path | done | P0-201, P0-203 |
+| [x] | [P0-312](./tasks/P0-312-artifact-extraction.md) | Artifact extraction and preview | done | P0-310, P0-311 |
+| [ ] | [P0-313](./tasks/P0-313-audit-receipt.md) | Audit timeline and JSON receipt | ready | P0-203, P0-309, P0-312, P0-315 |
 | [x] | [P0-314](./tasks/P0-314-component-registry-grants.md) | Fixed governed component registry | done | P0-102, P0-103, P0-104, P0-210 |
-| [ ] | [P0-315](./tasks/P0-315-component-tool-interaction-gateway.md) | Component/interaction gateway | blocked | P0-201, P0-208, P0-211, P0-212, P0-314 |
+| [ ] | [P0-315](./tasks/P0-315-component-tool-interaction-gateway.md) | Component/interaction gateway | ready | P0-201, P0-208, P0-211, P0-212, P0-314 |
 | [ ] | [P0-316](./tasks/P0-316-controlled-component-library.md) | Small controlled component library | blocked | P0-312, P0-314, P0-401 |
 | [ ] | [P0-318](./tasks/P0-318-save-run-as-skill.md) | Save successful Run as skill | blocked | P0-104, P0-106, P0-206, P0-208, P0-403 |
 | [x] | [P0-401](./tasks/P0-401-app-shell.md) | Authenticated three-pane shell | done | P0-102, P0-104 |

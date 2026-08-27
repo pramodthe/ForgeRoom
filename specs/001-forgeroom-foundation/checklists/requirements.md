@@ -21,7 +21,7 @@ Do not check an item until its linked task is `done` and evidence exists.
 - [ ] Stop and correction are explicit and visibly separate. (`RUN-004`, `RUN-007`, `RUN-009`, `P0-204`)
 - [ ] Compiled P0 AgentSpecs disable native subagents and unexpected child activity grants nothing. (`AGUI-007`, `P0-201`, `P0-211`)
 - [ ] `turn.done` with required actions cannot terminalize the RunStep. (`P0-203`)
-- [ ] Capability-affecting edits rotate session generation and stale old actions. (`P0-208`)
+- [x] Capability-affecting edits rotate session generation and stale old actions. (`P0-208`)
 
 ## AG-UI and generative UI
 
@@ -45,13 +45,13 @@ Do not check an item until its linked task is `done` and evidence exists.
 
 - [ ] Exact direct-tool manifest and pinned accounts match Phase 0 contract. (`TL-001`–`TL-005`, `P0-301`)
 - [ ] Connector and AgentSpec approval surfaces verify separately at startup. (`TL-006`, `TL-007`, `P0-302`)
-- [ ] Connections screen is fixed-account health/Test/Reconnect only. (`TL-011`, `P0-304`)
-- [ ] Every enabled tool has a reviewed ToolPolicyDefinition. (`P0-303`)
-- [ ] Real read appears with safe request/receipt summary. (`P0-305`)
-- [ ] PauseGroup captures every required action exactly once. (`AP-002`, `AP-009`, `AP-013`, `P0-306`)
-- [ ] Approval card binds exact tool, account, descriptor, target, arguments, artifact, policy and expiry. (`AP-004`–`AP-006`, `P0-307`)
-- [ ] One response-only resume consumes a complete group. (`AP-007`, `AP-010`, `AP-011`, `AP-013`, `P0-308`)
-- [ ] Denial produces zero mutation and deterministic approval is read-reconciled. (`AP-008`, `P0-309`)
+- [x] Connections screen is fixed-account health/Test/Reconnect only. (`TL-011`, `P0-304`)
+- [x] Every enabled tool has a reviewed ToolPolicyDefinition. (`P0-303`)
+- [x] Real read appears with safe request/receipt summary. (`P0-305`)
+- [x] PauseGroup captures every required action exactly once. (`AP-002`, `AP-009`, `AP-013`, `P0-306`)
+- [x] Approval card binds exact tool, account, descriptor, target, arguments, artifact, policy and expiry. (`AP-004`–`AP-006`, `P0-307`)
+- [x] One response-only resume consumes a complete group. (`AP-007`, `AP-010`, `AP-011`, `AP-013`, `P0-308`)
+- [x] Denial produces zero mutation and deterministic approval is read-reconciled. (`AP-008`, `P0-309`)
 
 ## Sandbox, artifact and audit
 

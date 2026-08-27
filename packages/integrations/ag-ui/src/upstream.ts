@@ -16,24 +16,24 @@ export type ExistingRunBinding = z.infer<typeof existingRunBindingSchema>;
 export type ParsedRunAgentInput = {
   ok: true;
   input: RunAgentInput;
+  /** When true, callers must authorize via PauseGroup CAS service before any provider call. */
+  resumeRequiresPauseGroupService?: true;
 };
 
 export type UpstreamParseFailure = {
   ok: false;
   capability: string;
-  reason: "unsupported_in_p0" | "invalid_upstream_schema" | "owned_by_P0-211";
+  reason:
+    | "unsupported_in_p0"
+    | "invalid_upstream_schema"
+    | "owned_by_P0-211"
+    | "requires_pause_group_service";
   issues?: string[];
 };
 
 export function parseUpstreamRunAgentInput(
   input: unknown,
 ): ParsedRunAgentInput | UpstreamParseFailure {
-  if (input && typeof input === "object" && "resume" in input) {
-    const resume = (input as { resume?: unknown }).resume;
-    if (Array.isArray(resume) && resume.length > 0) {
-      return unsupportedCapability("RunAgentInput.resume", "unsupported_in_p0");
-    }
-  }
   const parsed = RunAgentInputSchema.safeParse(input);
   if (!parsed.success) {
     return {
@@ -43,8 +43,15 @@ export function parseUpstreamRunAgentInput(
       issues: parsed.error.issues.map((issue) => `${issue.path.join(".")}: ${issue.message}`),
     };
   }
+  // Resume arrays are accepted at the schema boundary only; authorization and
+  // CAS/idempotency must go through the PauseGroup service (P0-308). Direct
+  // forged payloads are rejected there — never treated as decisions here.
   if (parsed.data.resume && parsed.data.resume.length > 0) {
-    return unsupportedCapability("RunAgentInput.resume", "unsupported_in_p0");
+    return {
+      ok: true,
+      input: parsed.data,
+      resumeRequiresPauseGroupService: true,
+    };
   }
   return { ok: true, input: parsed.data };
 }

@@ -61,6 +61,7 @@ export type ClaimTurnQueueItemResult =
         | "session_rotating"
         | "session_disabled"
         | "session_busy"
+        | "pause_group_unresolved"
         | "missing_generation"
         | "stale_generation"
         | "lease_conflict"
@@ -273,6 +274,18 @@ export async function claimTurnQueueItem(
     });
     if (!eligibility.ok) {
       return eligibility;
+    }
+
+    const unresolvedPause = await tx<{ id: string }[]>`
+      SELECT pg.id
+      FROM pause_groups AS pg
+      JOIN agent_turns AS t ON t.id = pg.agent_turn_id
+      WHERE t.channel_agent_session_id = ${item.channel_agent_session_id}
+        AND pg.state IN ('collecting', 'ready')
+      LIMIT 1
+    `;
+    if (unresolvedPause.length > 0 && item.input_type !== "pause_group_response") {
+      return { ok: false, reason: "pause_group_unresolved" };
     }
 
     const cancelling = await tx<{ id: string }[]>`

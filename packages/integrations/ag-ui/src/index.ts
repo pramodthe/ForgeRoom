@@ -67,5 +67,6 @@ export { buildAgUiCoworkerCapabilities, type AgUiCoworkerCapabilities } from "./
 export {
   pollTrueForgeTurnEvents,
   TrueForgeAGUIAdapter,
+  extractRequiredActionInterruptRefs,
   type TrueForgeAdapterContext,
 } from "./adapter";

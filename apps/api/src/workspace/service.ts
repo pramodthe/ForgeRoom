@@ -40,6 +40,7 @@ import type { TrueForgeClient } from "@forgeroom/trueforge";
 import {
   createDirectMultiAgentRun,
   enqueueCorrectionForStep,
+  findRemoteActiveTurnForSession,
   hasActiveComponentGrant,
   listPublishedComponentVersions,
   markCancelCalled,
@@ -51,7 +52,12 @@ import { customAguiEvent, messageCreatedAguiEvent, pinAguiEvent } from "./event-
 import { ChannelEventPersistenceError } from "./event-guard";
 import { createChannelEventHub, type ChannelEventHub } from "./event-hub";
 import { DEFAULT_EVENT_PAGE_SIZE, envelopeFromStoredEvent } from "./event-read";
-import { ensureCoworkerChannelSession } from "./session-provision";
+import {
+  connectorsFromCoworker,
+  ensureCoworkerChannelSession,
+  skillNamesFromCoworker,
+} from "./session-provision";
+import { rotateOwnedChannelCoworkerSession } from "./session-rotation";
 import {
   createMemoryWorkspaceStore,
   emptyEditableConfig,
@@ -2769,13 +2775,80 @@ export function createWorkspaceService(options?: {
       for (const appended of committed.events ?? []) {
         publish(appended);
       }
+
+      const previousTools = [...loaded.value.editableConfigJson.tool_grants];
+      const nextTools = [...config.tool_grants];
+      const affectedSessions: string[] = [];
+      const staleProposalIds: string[] = [];
+
+      // Capability-affecting coworker updates rotate each channel session for this coworker.
+      for (const membership of membershipPlan.memberships) {
+        if (membership.removedAt !== null) {
+          continue;
+        }
+        const sessions = await store.listChannelAgentSessions(membership.channelId);
+        for (const row of sessions) {
+          if (row.agentProfileId !== coworkerId || !row.currentGenerationId) {
+            continue;
+          }
+          affectedSessions.push(row.id);
+          if (sql && trueforgeClient) {
+            try {
+              const activeTurn = await findRemoteActiveTurnForSession(sql, row.id);
+              const rotated = await rotateOwnedChannelCoworkerSession({
+                sql,
+                channelAgentSessionId: row.id,
+                coworker: updated,
+                channelId: membership.channelId,
+                workspaceId: loaded.value.workspaceId,
+                createdBy: session.user.id,
+                reason: "configuration_changed",
+                previousTools,
+                capability: {
+                  workspacePolicyTools: nextTools,
+                  channelGrantTools: nextTools,
+                  coworkerGrantTools: nextTools,
+                  connectors: connectorsFromCoworker(updated).map((connector) => ({
+                    connectorName: connector.name,
+                    connectorAllowedTools: connector.enabledTools,
+                    accountActive: true,
+                    agentSpecEnabledTools: connector.enabledTools,
+                    approvalRequiredTools: connector.approvalRequiredTools,
+                  })),
+                },
+                pinnedSkillNames: skillNamesFromCoworker(updated),
+                client: trueforgeClient,
+                now: updatedAt,
+                hasActiveTurn: activeTurn !== null,
+                activeTurnId: activeTurn?.agentTurnId ?? null,
+                activeRunStepId: activeTurn?.runStepId ?? null,
+              });
+              staleProposalIds.push(...rotated.staleProposalIds);
+            } catch (error) {
+              return {
+                ok: false,
+                error: {
+                  code: "provider_unavailable",
+                  message: "Coworker saved but session rotation failed; retry or refresh.",
+                  details: {
+                    reason: "session_rotation_failed",
+                    session_id: row.id,
+                    message: error instanceof Error ? error.message : String(error),
+                  },
+                },
+              };
+            }
+          }
+        }
+      }
+
       return {
         ok: true,
         value: {
           coworker: toCoworker(updated),
           config,
-          session_rotations: [],
-          stale_proposal_ids: [],
+          session_rotations: [...new Set(affectedSessions)],
+          stale_proposal_ids: [...new Set(staleProposalIds)],
         },
       };
     },

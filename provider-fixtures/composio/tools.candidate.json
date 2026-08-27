@@ -12,7 +12,7 @@
       "preferredCandidateSlug": "GITHUB_GET_ISSUE",
       "riskClass": "read",
       "status": "verified",
-      "note": "Live slug is GITHUB_GET_AN_ISSUE (GITHUB_GET_ISSUE returns 404). Verified read on octocat/Hello-World#1 and pramodthe/Hi-Tuto#10."
+      "note": "Live slug is GITHUB_GET_AN_ISSUE (GITHUB_GET_ISSUE returns 404). Verified read on octocat/Hello-World#1 and pramodthe/ForgeRoom#35 (2026-08-27). Prior temporary Hi-Tuto probe discarded."
     },
     {
       "role": "deterministic_write",
@@ -22,7 +22,7 @@
       "idempotency": "required",
       "status": "verified",
       "constraint": "Adds synthetic label forgeroom-p0-probe on existing non-production demo issue; reset via GITHUB_REMOVE_A_LABEL_FROM_AN_ISSUE.",
-      "note": "Verified 2026-08-26: label write + GET reconcile on pramodthe/Hi-Tuto#10."
+      "note": "Frozen target pramodthe/ForgeRoom#35. Live label write on #35 verified 2026-08-27 as pthebesfsu-a11y (ForgeRoom write collaborator). Earlier same-day 403 was pre-invite-acceptance. Prior Hi-Tuto write probe discarded as freeze target."
     },
     {
       "role": "reconciliation_read",
@@ -59,8 +59,8 @@
     "status": "verified",
     "recordKind": "github_issue_in_dedicated_demo_repo",
     "owner": "pramodthe",
-    "repo": "Hi-Tuto",
-    "issueNumber": 10,
+    "repo": "ForgeRoom",
+    "issueNumber": 35,
     "syntheticMarker": {
       "kind": "label",
       "value": "forgeroom-p0-probe"
@@ -68,6 +68,6 @@
     "resetToolSlug": "GITHUB_REMOVE_A_LABEL_FROM_AN_ISSUE",
     "resetIdempotent": true,
     "productionImpact": "forbidden",
-    "note": "Non-production demo issue used for label write/reconcile/reset probe. P0-105 owns DB fixture reset; provider reset is label removal."
+    "note": "ForgeRoom-owned non-production sandbox issue https://github.com/pramodthe/ForgeRoom/issues/35 for label write/reconcile/reset. P0-105 owns DB fixture reset; provider reset is label removal. Live Composio add/remove/GET on #35 verified 2026-08-27 with connected identity pthebesfsu-a11y (write collaborator; invite not pending)."
   }
 }

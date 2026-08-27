@@ -12,6 +12,8 @@
   },
   "dependencies": {
     "@forgeroom/ag-ui": "workspace:*",
+    "@forgeroom/artifacts": "workspace:*",
+    "@forgeroom/composio": "workspace:*",
     "@forgeroom/contracts": "workspace:*",
     "@forgeroom/db": "workspace:*",
     "@forgeroom/domain": "workspace:*",

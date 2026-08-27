@@ -6,6 +6,15 @@ import type {
   TrueForgeTurn,
   TrueForgeTurnEvent,
 } from "./types";
+import type {
+  RegisterHeaderAuthMcpServerInput,
+  TrueForgeConfiguredMcpServer,
+  TrueForgeMcpTool,
+} from "./mcp-connector";
+import {
+  listMcpServerTools as listMcpServerToolsImpl,
+  registerHeaderAuthMcpServer as registerHeaderAuthMcpServerImpl,
+} from "./mcp-connector";
 
 function trimTrailingSlash(url: string): string {
   return url.replace(/\/+$/, "");
@@ -26,14 +35,14 @@ export class TrueForgeClient {
   }
 
   async createSession(input: CreateSessionInput): Promise<TrueForgeSession> {
-    const payload = await this.request<unknown>("POST", "/api/v1/sessions", {
+    const payload = await this.requestJson<unknown>("POST", "/api/v1/sessions", {
       agent: { spec: input.spec },
     });
     return unwrapSession(payload);
   }
 
   async getSession(sessionId: string): Promise<TrueForgeSession> {
-    const payload = await this.request<unknown>(
+    const payload = await this.requestJson<unknown>(
       "GET",
       `/api/v1/sessions/${encodeURIComponent(sessionId)}`,
     );
@@ -41,7 +50,7 @@ export class TrueForgeClient {
   }
 
   async createTurn(sessionId: string, input: CreateTurnInput): Promise<TrueForgeTurn> {
-    const payload = await this.request<unknown>(
+    const payload = await this.requestJson<unknown>(
       "POST",
       `/api/v1/sessions/${encodeURIComponent(sessionId)}/turns`,
       {
@@ -66,12 +75,12 @@ export class TrueForgeClient {
     }
     const query = params.toString();
     const path = `/api/v1/sessions/${encodeURIComponent(sessionId)}/turns${query ? `?${query}` : ""}`;
-    const payload = await this.request<unknown>("GET", path);
+    const payload = await this.requestJson<unknown>("GET", path);
     return unwrapTurnList(payload);
   }
 
   async getTurn(sessionId: string, turnId: string): Promise<TrueForgeTurn> {
-    const payload = await this.request<unknown>(
+    const payload = await this.requestJson<unknown>(
       "GET",
       `/api/v1/sessions/${encodeURIComponent(sessionId)}/turns/${encodeURIComponent(turnId)}`,
     );
@@ -79,18 +88,75 @@ export class TrueForgeClient {
   }
 
   async listTurnEvents(sessionId: string, turnId: string): Promise<TrueForgeTurnEvent[]> {
-    const payload = await this.request<unknown>(
+    const payload = await this.requestJson<unknown>(
       "GET",
       `/api/v1/sessions/${encodeURIComponent(sessionId)}/turns/${encodeURIComponent(turnId)}/events`,
     );
     return unwrapTurnEvents(payload);
   }
 
+  /** Download a file produced in the turn sandbox (TrueForge sandbox-file endpoint). */
+  async downloadSandboxFile(
+    sessionId: string,
+    turnId: string,
+    sandboxPath: string,
+    maxBytes = 8_192,
+  ): Promise<Uint8Array> {
+    const params = new URLSearchParams({ path: sandboxPath });
+    const path = `/api/v1/sessions/${encodeURIComponent(sessionId)}/turns/${encodeURIComponent(turnId)}/download-sandbox-file?${params}`;
+    const headers: Record<string, string> = { Accept: "application/octet-stream" };
+    if (this.apiKey) {
+      headers.Authorization = `Bearer ${this.apiKey}`;
+    }
+    const response = await this.fetchImpl(`${this.baseUrl}${path}`, { method: "GET", headers });
+    if (!response.ok) {
+      throw new Error(
+        `TrueForge sandbox file download failed (${response.status}) for ${sandboxPath}`,
+      );
+    }
+    const contentLength = Number(response.headers.get("content-length"));
+    if (Number.isFinite(contentLength) && contentLength > maxBytes) {
+      throw new Error(`TrueForge sandbox file exceeds ${maxBytes} byte limit`);
+    }
+    if (!response.body) {
+      const buffer = await response.arrayBuffer();
+      if (buffer.byteLength > maxBytes) {
+        throw new Error(`TrueForge sandbox file exceeds ${maxBytes} byte limit`);
+      }
+      return new Uint8Array(buffer);
+    }
+    const reader = response.body.getReader();
+    const chunks: Uint8Array[] = [];
+    let total = 0;
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) {
+        break;
+      }
+      if (!value) {
+        continue;
+      }
+      total += value.byteLength;
+      if (total > maxBytes) {
+        await reader.cancel();
+        throw new Error(`TrueForge sandbox file exceeds ${maxBytes} byte limit`);
+      }
+      chunks.push(value);
+    }
+    const merged = new Uint8Array(total);
+    let offset = 0;
+    for (const chunk of chunks) {
+      merged.set(chunk, offset);
+      offset += chunk.byteLength;
+    }
+    return merged;
+  }
+
   async cancelSession(
     sessionId: string,
     body: Record<string, unknown> = {},
   ): Promise<{ cancelled: boolean; raw: unknown }> {
-    const payload = await this.request<unknown>(
+    const payload = await this.requestJson<unknown>(
       "POST",
       `/api/v1/sessions/${encodeURIComponent(sessionId)}/cancel`,
       body,
@@ -98,7 +164,19 @@ export class TrueForgeClient {
     return { cancelled: true, raw: payload };
   }
 
-  private async request<T>(method: string, path: string, body?: unknown): Promise<T> {
+  /** Register or replace a header-auth remote MCP connector (Composio hosted MCP). */
+  async registerHeaderAuthMcpServer(
+    input: RegisterHeaderAuthMcpServerInput,
+  ): Promise<TrueForgeConfiguredMcpServer> {
+    return registerHeaderAuthMcpServerImpl(this, input);
+  }
+
+  /** Query connector tools for startup manifest verification. */
+  async listMcpServerTools(name: string): Promise<TrueForgeMcpTool[]> {
+    return listMcpServerToolsImpl(this, name);
+  }
+
+  async requestJson<T>(method: string, path: string, body?: unknown): Promise<T> {
     const headers: Record<string, string> = {
       Accept: "application/json",
     };

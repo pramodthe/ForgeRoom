@@ -1,0 +1,65 @@
+{
+  "schemaVersion": 1,
+  "status": "verified",
+  "ownerTask": "P0-305",
+  "probeDate": "2026-08-27",
+  "decisionRefs": [
+    "ADR-003",
+    "OD-003",
+    "TL-001",
+    "TL-004",
+    "TL-008",
+    "RUN-005"
+  ],
+  "note": "Redacted real-read evidence. Secrets, full account IDs, and raw tool bodies absent.",
+  "preflight": {
+    "exactAccountRequired": true,
+    "exactTool": "GITHUB_GET_AN_ISSUE",
+    "accountSuffix": "nizY",
+    "accountStatus": "ACTIVE",
+    "connectorName": "composio_github",
+    "metaToolsRejected": [
+      "COMPOSIO_SEARCH_TOOLS",
+      "COMPOSIO_MULTI_EXECUTE_TOOL",
+      "COMPOSIO_REMOTE_WORKBENCH",
+      "COMPOSIO_REMOTE_BASH_TOOL",
+      "COMPOSIO_MANAGE_CONNECTIONS"
+    ]
+  },
+  "trueforgeInvocation": {
+    "directToolOnly": true,
+    "observedToolName": "GITHUB_GET_AN_ISSUE",
+    "wrapperMetaToolsForbidden": true,
+    "connector": "composio_github"
+  },
+  "normalizedEvent": {
+    "types": [
+      "tool.started",
+      "tool.succeeded"
+    ],
+    "attribution": [
+      "coworker_id",
+      "tool_name",
+      "account_suffix"
+    ],
+    "safeRequestFields": [
+      "target",
+      "redacted_arguments",
+      "risk_class"
+    ],
+    "resultSummaryPresent": true,
+    "rawResultBodyPresent": false,
+    "credentialsPresent": false
+  },
+  "expiredAuth": {
+    "mapsTo": "blocked_connection",
+    "fallbackAccountSelected": false,
+    "eventType": "connection.blocked"
+  },
+  "liveRead": {
+    "status": "verified",
+    "targetDisplay": "pramodthe/ForgeRoom#35",
+    "toolName": "GITHUB_GET_AN_ISSUE",
+    "note": "Live Composio execute after exact account/tool preflight; safe summary only in evidence."
+  }
+}

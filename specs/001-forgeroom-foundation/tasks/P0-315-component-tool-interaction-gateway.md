@@ -1,7 +1,7 @@
 ---
 id: P0-315
 title: Implement component tool bridge, UIInstances and interaction gateway
-status: blocked
+status: ready
 owner: unassigned
 depends_on: [P0-201, P0-208, P0-211, P0-212, P0-314]
 requirements: [PLAT-006, GUI-004, GUI-005, GUI-008, GUI-009, GUI-010, GUI-011, GUI-014]

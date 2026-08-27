@@ -42,14 +42,28 @@ export type {
   IngestRunEventResult,
 } from "./turn-lifecycle";
 export {
+  persistPauseGroupCapture,
+  sessionHasUnresolvedPauseGroup,
+} from "./pause-group";
+export type {
+  PersistPauseGroupCaptureInput,
+  PersistPauseGroupCaptureResult,
+  PersistPauseGroupAction,
+  PersistPauseGroupApprovalAction,
+  PersistPauseGroupQuestionAction,
+  PersistPauseGroupConnectionAction,
+  SqlClient as PauseGroupSqlClient,
+} from "./pause-group";
+export {
   requestRunStepStop,
+  findRemoteActiveTurnForSession,
   markCancelCalled,
   settleCancelledStep,
   sessionHasCancellingStep,
   enqueueCorrectionForStep,
   markActiveTurnsNeedsAttentionOnRestart,
 } from "./run-control";
-export type { RequestStopResult, StoppableStepState } from "./run-control";
+export type { RequestStopResult, StoppableStepState, RemoteActiveTurn } from "./run-control";
 export {
   createDirectMultiAgentRun,
   refreshRunLifecycle,
@@ -82,3 +96,96 @@ export type {
   ApplyComponentGrantChangeInput,
   ApplyComponentGrantChangeResult,
 } from "./component-registry";
+export {
+  recordApprovalDecision,
+  loadApprovalProposalForCard,
+} from "./approval-decision";
+export type {
+  ApprovalDecisionCommandInput,
+  ApprovalProposalCardSnapshot,
+  RecordApprovalDecisionInput,
+  RecordApprovalDecisionResult,
+  SqlClient as ApprovalDecisionSqlClient,
+} from "./approval-decision";
+export {
+  derivePausePayloadKey,
+  sealPauseResponsePayload,
+  openPauseResponsePayload,
+} from "./pause-crypto";
+export {
+  assemblePauseResumePlaintext,
+  claimPauseGroupResume,
+  loadPauseResumeForCreate,
+  markPauseResumeCreating,
+  markPauseResumeUncertain,
+  completePauseResume,
+  expirePauseResumeCiphertexts,
+  recordQuestionAnswer,
+  loadPauseGroupRequiredActionIds,
+  loadPauseGroupResumeGate,
+  findPauseGroupByInterruptIds,
+  PAUSE_CIPHERTEXT_RECOVERY_WINDOW_MS,
+} from "./pause-resume";
+export type {
+  ResolvedPauseActionRow,
+  PauseResumeResponsePlaintext,
+  ClaimPauseGroupResumeInput,
+  ClaimPauseGroupResumeResult,
+  LoadPauseResumeForCreateResult,
+  RecordQuestionAnswerInput,
+  RecordQuestionAnswerResult,
+  SqlClient as PauseResumeSqlClient,
+} from "./pause-resume";
+export {
+  beginSessionRotation,
+  abortSessionRotation,
+  atomicSwapSessionGeneration,
+  completeSessionRotation,
+  nextSessionRevisionOrdinal,
+  recordMcpRotationOutcome,
+  listCoworkerChannelSessions,
+} from "./session-rotation";
+export type {
+  SessionRotationReason,
+  SessionRevisionInsert,
+  GenerationInsert,
+  BeginSessionRotationInput,
+  BeginSessionRotationResult,
+  AtomicSwapSessionGenerationInput,
+  AtomicSwapSessionGenerationResult,
+  CompleteSessionRotationInput,
+  RecordMcpRotationOutcomeInput,
+  SqlClient as SessionRotationSqlClient,
+} from "./session-rotation";
+export {
+  ConnectorBindingWorkspaceConflictError,
+  ensureP0ConnectorBinding,
+  loadConnectorBinding,
+  listWorkspaceConnectorBindings,
+  updateConnectorBindingStatus,
+} from "./connector-bindings";
+export {
+  deleteExpiredConnectionReconnectIntents,
+  findReconnectIntentByIdempotencyKey,
+  findActiveReconnectIntentForActor,
+  findLatestReconnectIntentForActor,
+  findLatestReconnectIntentForConnection,
+  saveConnectionReconnectIntent,
+} from "./connection-reconnect-intents";
+export type { StoredReconnectIntent } from "./connection-reconnect-intents";
+export type {
+  ConnectorBindingRow,
+  EnsureP0ConnectorBindingInput,
+} from "./connector-bindings";
+export {
+  findArtifactByContentRevision,
+  loadArtifactById,
+  publishArtifactRecord,
+} from "./artifact-storage";
+export { loadSandboxArtifactDiscoveryBinding } from "./artifact-discovery-binding";
+export type { ArtifactDiscoveryBinding } from "./artifact-discovery-binding";
+export type {
+  ArtifactRecord,
+  PublishArtifactRecordInput,
+  PublishArtifactRecordResult,
+} from "./artifact-storage";

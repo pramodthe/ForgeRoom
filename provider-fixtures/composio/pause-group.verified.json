@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 1,
+  "status": "verified",
+  "ownerTask": "P0-306",
+  "verification": "unit+integration",
+  "probeDate": "2026-08-27",
+  "note": "Redacted PauseGroup capture sample. Secrets and raw credentials absent.",
+  "pauseGroup": {
+    "state": "collecting",
+    "generation": 1,
+    "requiredActionCount": 2,
+    "resolvedActionCount": 0,
+    "keyedTo": ["agent_turn_id", "trueforge_turn_id", "generation"]
+  },
+  "requiredActions": [
+    {
+      "actionType": "approval",
+      "providerActionId": "prov_approval",
+      "toolName": "GITHUB_ADD_LABELS_TO_AN_ISSUE",
+      "redactedPreview": {
+        "target": "pramodthe/ForgeRoom#35",
+        "labels": ["forgeroom-p0-probe"],
+        "expectedEffect": "Add labels to issue"
+      },
+      "bindingHashes": [
+        "arguments_hash",
+        "target_hash",
+        "observed_descriptor_hash",
+        "approval_policy_hash",
+        "session_generation_id"
+      ]
+    },
+    {
+      "actionType": "question",
+      "providerActionId": "prov_question",
+      "promptRedacted": { "prompt": "Confirm the label?" }
+    }
+  ],
+  "runStep": {
+    "state": "awaiting_approval",
+    "completedAt": null
+  },
+  "agentTurn": {
+    "state": "required_actions"
+  },
+  "sessionGate": {
+    "unresolvedPauseGroupBlocks": ["normal", "correction", "component_interaction_response"],
+    "allows": ["pause_group_response"]
+  },
+  "unexpectedChild": "rejected_not_persisted"
+}

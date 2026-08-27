@@ -9,8 +9,28 @@ import {
   toPersistedAgUiEvent,
 } from "@forgeroom/ag-ui";
 import type { SessionResponse } from "@forgeroom/contracts";
-import { ingestNormalizedTrueForgeEvent, type createSql } from "@forgeroom/db";
-import { evaluateTurnDoneOutcome, normalizeTrueForgeEvent } from "@forgeroom/orchestration";
+import {
+  type ComposioSessionClient,
+  verifyP0ManifestForDispatch,
+} from "@forgeroom/composio";
+import {
+  claimPauseGroupResume,
+  completePauseResume,
+  derivePausePayloadKey,
+  findPauseGroupByInterruptIds,
+  ingestNormalizedTrueForgeEvent,
+  loadPauseGroupResumeGate,
+  loadPauseResumeForCreate,
+  markPauseResumeCreating,
+  markPauseResumeUncertain,
+  type createSql,
+} from "@forgeroom/db";
+import {
+  authorizeAgUiPauseGroupResume,
+  evaluateTurnDoneOutcome,
+  normalizeTrueForgeEvent,
+} from "@forgeroom/orchestration";
+import { createOrReconcileResponseTurn } from "@forgeroom/orchestration/create-or-reconcile-response-turn";
 import type { TrueForgeClient } from "@forgeroom/trueforge";
 import type { WorkspaceService } from "../workspace/service";
 import { bindDurableTrueForgeTurn } from "./bind-durable-turn";
@@ -65,9 +85,14 @@ export type AgUiRunService = {
 export function createAgUiRunService(options: {
   workspace: WorkspaceService;
   trueforgeClient?: TrueForgeClient;
+  composio?: ComposioSessionClient;
   sql?: ReturnType<typeof createSql>;
+  pausePayloadEncryptionSecret?: string;
 }): AgUiRunService {
-  const { workspace, trueforgeClient, sql } = options;
+  const { workspace, trueforgeClient, sql, composio } = options;
+  const encryptionKey = derivePausePayloadKey(
+    options.pausePayloadEncryptionSecret ?? "forgeroom-dev-pause-payload-secret",
+  );
 
   return {
     async getCapabilities(session, channelId, coworkerId) {
@@ -104,7 +129,7 @@ export function createAgUiRunService(options: {
             code: "validation_failed",
             message:
               parsedInput.reason === "unsupported_in_p0"
-                ? "RunAgentInput.resume is disabled in P0."
+                ? "Unsupported RunAgentInput capability."
                 : "Invalid RunAgentInput.",
             details: {
               capability: parsedInput.capability,
@@ -141,6 +166,227 @@ export function createAgUiRunService(options: {
               expected_thread_id: resolved.value.logicalThreadId,
               received_thread_id: input.threadId,
             },
+          },
+        };
+      }
+
+      if (parsedInput.resumeRequiresPauseGroupService) {
+        if (!sql) {
+          return {
+            ok: false,
+            error: {
+              code: "validation_failed",
+              message: "RunAgentInput.resume requires PauseGroup service authorization.",
+              details: { reason: "pause_group_service_unavailable" },
+            },
+          };
+        }
+        const resumeItems = (input.resume ?? []).map((item) => ({
+          interruptId: item.interruptId,
+          status: item.status as "resolved" | "cancelled" | undefined,
+          payload: "payload" in item ? item.payload : undefined,
+        }));
+        const located = await findPauseGroupByInterruptIds(sql, {
+          workspaceId: session.workspace_id,
+          interruptIds: resumeItems.map((item) => item.interruptId),
+        });
+        if (!located.ok) {
+          return {
+            ok: false,
+            error: {
+              code: "validation_failed",
+              message: "RunAgentInput.resume interrupt IDs do not map to one PauseGroup.",
+              details: { reason: located.reason },
+            },
+          };
+        }
+        const gate = await loadPauseGroupResumeGate(sql, {
+          pauseGroupId: located.pauseGroupId,
+          workspaceId: session.workspace_id,
+        });
+        if (!gate.ok) {
+          return {
+            ok: false,
+            error: {
+              code: gate.reason === "forbidden" ? "forbidden" : "not_found",
+              message: "PauseGroup not found for resume.",
+            },
+          };
+        }
+        const authorized = authorizeAgUiPauseGroupResume({
+          resume: resumeItems,
+          interruptIds: gate.interruptIds,
+          requiredActionCount: gate.requiredActionCount,
+          pauseGroupReady:
+            gate.state === "ready" || gate.state === "resuming" || gate.state === "uncertain",
+          pauseGroupExpired: gate.expired,
+        });
+        if (!authorized.ok) {
+          return {
+            ok: false,
+            error: {
+              code: "validation_failed",
+              message: "RunAgentInput.resume rejected by PauseGroup service.",
+              details: { reason: authorized.reason },
+            },
+          };
+        }
+        if (!trueforgeClient) {
+          return {
+            ok: false,
+            error: {
+              code: "provider_unavailable",
+              message: "TrueForge runtime is required for PauseGroup resume create.",
+            },
+          };
+        }
+
+        let claim = await claimPauseGroupResume(sql, {
+          pauseGroupId: located.pauseGroupId,
+          workspaceId: session.workspace_id,
+          workerId: `agui_${session.user.id}`,
+          encryptionKey,
+        });
+        if (!claim.ok && claim.reason === "already_resuming" && claim.existingPauseResumeId) {
+          const existing = await loadPauseResumeForCreate(sql, {
+            pauseResumeId: claim.existingPauseResumeId,
+            encryptionKey,
+          });
+          if (!existing.ok) {
+            await markPauseResumeUncertain(sql, {
+              pauseResumeId: claim.existingPauseResumeId,
+              error: { reason: "decrypt_failed" },
+            });
+            return {
+              ok: false,
+              error: {
+                code: "provider_unavailable",
+                message: "Encrypted PauseResume payload could not be opened.",
+              },
+            };
+          }
+          claim = {
+            ok: true,
+            inserted: false,
+            pauseResumeId: existing.pauseResumeId,
+            pauseGroupId: existing.pauseGroupId,
+            applicationRunToken: existing.applicationRunToken,
+            responsePayloadHash: existing.responsePayloadHash,
+            resumeClaimToken: "existing",
+            queueItemId: "existing",
+            agentTurnId: existing.agentTurnId,
+            previousTrueforgeTurnId: existing.previousTrueforgeTurnId,
+            trueforgeSessionId: existing.trueforgeSessionId,
+            channelAgentSessionId: "",
+            logicalThreadId: resolved.value.logicalThreadId,
+            requiredActionIds: gate.requiredActionIds,
+          };
+        }
+        if (!claim.ok) {
+          return {
+            ok: false,
+            error: {
+              code: claim.reason === "incomplete" ? "validation_failed" : "conflict",
+              message: "PauseGroup cannot be resumed yet.",
+              details: { reason: claim.reason },
+            },
+          };
+        }
+
+        const loaded = await loadPauseResumeForCreate(sql, {
+          pauseResumeId: claim.pauseResumeId,
+          encryptionKey,
+        });
+        if (!loaded.ok) {
+          await markPauseResumeUncertain(sql, {
+            pauseResumeId: claim.pauseResumeId,
+            error: { reason: "decrypt_failed" },
+          });
+          return {
+            ok: false,
+            error: {
+              code: "provider_unavailable",
+              message: "Encrypted PauseResume payload could not be opened.",
+            },
+          };
+        }
+
+        const creating = await markPauseResumeCreating(sql, { pauseResumeId: claim.pauseResumeId });
+        if (!creating.ok) {
+          return {
+            ok: false,
+            error: {
+              code: "conflict",
+              message: "PauseResume is already being created by another worker.",
+            },
+          };
+        }
+        const created = await createOrReconcileResponseTurn(
+          {
+            client: trueforgeClient,
+            lockForCreate: async () => ({ ok: true }),
+            bindResumeTurn: async () => {
+              // Completion happens after create/reconcile returns so we know created vs reconciled.
+            },
+            markUncertain: async ({ pauseResumeId, error }) => {
+              await markPauseResumeUncertain(sql, { pauseResumeId, error });
+            },
+          },
+          {
+            pauseResumeId: claim.pauseResumeId,
+            trueforgeSessionId: claim.trueforgeSessionId,
+            applicationRunToken: claim.applicationRunToken,
+            previousTrueforgeTurnId: claim.previousTrueforgeTurnId,
+            responses: loaded.plaintext.responses,
+            localTrueforgeResumeTurnId: loaded.trueforgeResumeTurnId,
+            forceReconcile:
+              !loaded.trueforgeResumeTurnId || loaded.state === "uncertain",
+          },
+        );
+
+        if (!created.ok) {
+          return {
+            ok: false,
+            error: {
+              code: "provider_unavailable",
+              message: "Response-only TrueForge resume create/reconcile failed.",
+              details: { reason: created.reason },
+            },
+          };
+        }
+
+        const completed = await completePauseResume(sql, {
+          pauseResumeId: claim.pauseResumeId,
+          trueforgeResumeTurnId: created.trueforgeTurnId,
+          reconciled: !created.created,
+        });
+        if (!completed.ok) {
+          await markPauseResumeUncertain(sql, {
+            pauseResumeId: claim.pauseResumeId,
+            error: { reason: "complete_cas_failed" },
+          });
+          return {
+            ok: false,
+            error: {
+              code: "conflict",
+              message: "PauseResume completion CAS failed after provider turn succeeded.",
+            },
+          };
+        }
+
+        return {
+          ok: true,
+          value: {
+            threadId: resolved.value.logicalThreadId,
+            aguiRunId: input.runId,
+            applicationRunId: `resume_${claim.pauseResumeId}`,
+            runStepId: `resume_step_${claim.pauseResumeId}`,
+            agentTurnId: claim.agentTurnId,
+            messageId: `resume_msg_${claim.pauseResumeId}`,
+            channelId,
+            coworkerId,
+            trueforgeSessionId: claim.trueforgeSessionId,
+            trueforgeTurnId: created.trueforgeTurnId,
           },
         };
       }
@@ -256,6 +502,38 @@ export function createAgUiRunService(options: {
             coworkerId,
             trueforgeSessionId: bound.value.trueforgeSessionId,
             trueforgeTurnId: bound.value.trueforgeTurnId,
+          },
+        };
+      }
+
+      if (!composio) {
+        return {
+          ok: false,
+          error: {
+            code: "provider_unavailable",
+            message: "Composio connector configuration is required for AG-UI dispatch preflight.",
+          },
+        };
+      }
+
+      try {
+        const preflight = await verifyP0ManifestForDispatch(composio);
+        if (preflight.blocksDispatch) {
+          return {
+            ok: false,
+            error: {
+              code: "recipient_unavailable",
+              message: "Coworker dispatch blocked by connector manifest preflight.",
+              details: { preflight: preflight.redacted },
+            },
+          };
+        }
+      } catch {
+        return {
+          ok: false,
+          error: {
+            code: "provider_unavailable",
+            message: "Connector manifest preflight could not be completed.",
           },
         };
       }

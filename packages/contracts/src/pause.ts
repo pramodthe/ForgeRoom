@@ -385,13 +385,89 @@ export const actionProposalSchema = z
     }
   });
 
+export const approvalDecisionKindSchema = z.enum(["allow", "deny", "request_changes"]);
+
 export const approvalDecisionCommandSchema = z
   .object({
-    decision: z.enum(["allow", "deny"]),
+    decision: approvalDecisionKindSchema,
     expected_arguments_hash: sha256Schema,
     expected_descriptor_hash: sha256Schema,
     expected_session_generation: z.number().int().positive(),
     reason: z.string().min(1).max(2_000).nullable().optional(),
+  })
+  .strict()
+  .superRefine((command, ctx) => {
+    if (command.decision === "request_changes") {
+      const reason = command.reason?.trim() ?? "";
+      if (reason.length < 1) {
+        addRequiredIssue(
+          ctx,
+          "reason",
+          "request_changes requires a non-empty correction reason",
+        );
+      }
+    }
+  });
+
+/** Trusted-host approval card projection (AP-004). Never sourced from model props. */
+export const approvalCardSchema = z
+  .object({
+    schemaVersion: schemaVersion1,
+    proposal_id: opaqueIdSchema,
+    required_action_id: opaqueIdSchema,
+    pause_group_id: opaqueIdSchema,
+    channel_id: opaqueIdSchema,
+    run_id: opaqueIdSchema,
+    run_step_id: opaqueIdSchema,
+    agent_turn_id: opaqueIdSchema,
+    coworker_id: opaqueIdSchema,
+    coworker_handle: z.string().min(1),
+    coworker_name: z.string().min(1),
+    logical_thread_id: opaqueIdSchema,
+    tool_call_id: opaqueIdSchema,
+    tool_name: z.string().min(1),
+    observed_descriptor_hash: sha256Schema,
+    approval_policy_hash: sha256Schema,
+    connector_binding_id: opaqueIdSchema,
+    account_id: opaqueIdSchema,
+    acting_identity: actingIdentitySchema,
+    redacted_arguments: safeJsonValueSchema,
+    arguments_hash: sha256Schema,
+    redacted_target: safeJsonValueSchema,
+    target_hash: sha256Schema,
+    artifact_revision_hash: sha256Schema.nullable(),
+    expected_effect: z.string().min(1),
+    risk_class: z.enum(["low", "medium", "high"]),
+    payload_hash: sha256Schema,
+    session_generation: z.number().int().positive(),
+    session_generation_id: opaqueIdSchema,
+    state: actionProposalStateSchema,
+    expires_at: isoDateTimeSchema,
+    provider_idempotency_key: z.string().min(1).max(512).nullable(),
+  })
+  .strict();
+
+export const approvalDecisionResultSchema = z
+  .object({
+    schemaVersion: schemaVersion1,
+    proposal_id: opaqueIdSchema,
+    decision: approvalDecisionKindSchema,
+    proposal_state: z.enum(["allowed", "denied"]),
+    pause_group_id: opaqueIdSchema,
+    pause_group_state: pauseGroupStateSchema,
+    pause_group_ready: z.boolean(),
+    required_action_count: z.number().int().positive(),
+    resolved_action_count: nonNegativeIntSchema,
+    correction_draft: z
+      .object({
+        queue_item_id: opaqueIdSchema,
+        run_step_id: opaqueIdSchema,
+        prior_run_step_id: opaqueIdSchema,
+        content: z.string().min(1).max(2_000),
+      })
+      .strict()
+      .nullable(),
+    provider_calls: z.literal(0),
   })
   .strict();
 
@@ -454,6 +530,9 @@ export type PauseResumeState = z.infer<typeof pauseResumeStateSchema>;
 export type ActionProposal = z.infer<typeof actionProposalSchema>;
 export type ActingIdentity = z.infer<typeof actingIdentitySchema>;
 export type ActionProposalState = z.infer<typeof actionProposalStateSchema>;
+export type ApprovalDecisionKind = z.infer<typeof approvalDecisionKindSchema>;
 export type ApprovalDecisionCommand = z.infer<typeof approvalDecisionCommandSchema>;
+export type ApprovalCard = z.infer<typeof approvalCardSchema>;
+export type ApprovalDecisionResult = z.infer<typeof approvalDecisionResultSchema>;
 export type Question = z.infer<typeof questionSchema>;
 export type QuestionAnswerCommand = z.infer<typeof questionAnswerCommandSchema>;

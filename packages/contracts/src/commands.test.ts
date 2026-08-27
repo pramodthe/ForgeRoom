@@ -373,6 +373,7 @@ describe("P0 command surface", () => {
       {
         name: "claim_pause_group_resume",
         payload: {
+          workspace_id: "ws_1",
           pause_group_id: "pause_1",
           expected_state: "ready",
           expected_generation: 1,
