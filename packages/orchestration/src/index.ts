@@ -50,3 +50,16 @@ export {
   resolveMessageRecipients,
 } from "./router";
 export type { MentionRouterCoworker, ResolveMessageRecipientsInput } from "./router";
+export {
+  TURN_QUEUE_INPUT_TYPES,
+  TURN_QUEUE_PRIORITY,
+  priorityForInputType,
+  evaluateClaimEligibility,
+  resolveClaimGenerationBinding,
+  compareClaimOrder,
+} from "./turn-queue";
+export type {
+  TurnQueueInputType,
+  ChannelAgentSessionClaimState,
+  ClaimEligibility,
+} from "./turn-queue";

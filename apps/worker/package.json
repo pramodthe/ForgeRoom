@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@forgeroom/contracts": "workspace:*",
+    "@forgeroom/db": "workspace:*",
     "@forgeroom/orchestration": "workspace:*"
   },
   "devDependencies": {

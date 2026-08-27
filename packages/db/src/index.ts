@@ -14,3 +14,19 @@ export function describeDatabaseAdapter(): {
 export { createDb, createSql, databaseUrl, DEFAULT_DATABASE_URL } from "./client";
 export { migrate, rollbackLast, listForwardMigrations, MIGRATIONS_DIR } from "./migrate";
 export * from "./schema";
+export {
+  TURN_QUEUE_INPUT_TYPES,
+  TURN_QUEUE_PRIORITY,
+  enqueueTurnQueueItem,
+  claimTurnQueueItem,
+  heartbeatTurnQueueLease,
+  reclaimExpiredTurnQueueLease,
+  listClaimableQueueItems,
+} from "./turn-queue";
+export type {
+  TurnQueueInputType,
+  EnqueueTurnQueueItemInput,
+  ClaimTurnQueueItemInput,
+  ClaimTurnQueueItemResult,
+  SqlClient as TurnQueueSqlClient,
+} from "./turn-queue";

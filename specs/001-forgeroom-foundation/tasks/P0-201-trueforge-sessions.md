@@ -1,9 +1,10 @@
 ---
 id: P0-201
 title: Implement TrueForge adapter and session provisioner
-status: in_progress
+status: done
 owner: cursor-agent
 started: 2026-08-26
+completed: 2026-08-26
 depends_on: [P0-000, P0-103, P0-105]
 requirements: [AG-005, AG-011, SK-002, TL-006]
 specs: [../runtime.md#session-topology, ../runtime.md#sessionrevision-compilation]

@@ -2,10 +2,10 @@
 
 | Field | Current value |
 | --- | --- |
-| Overall | M1 Foundation done; P0-105 merged; P0-201 TrueForge session provisioner in progress |
+| Overall | M1 Foundation done; P0-201 merged; P0-202 turn queue in progress |
 | Current phase | Phase 1 — Foundation |
-| Active task | P0-201 (in_progress) |
-| Next task | Finish P0-201 PR; then P0-202 turn queue or P0-403 activity cards |
+| Active task | P0-202 (in_progress) |
+| Next task | Finish P0-202 PR; then P0-203 turn events |
 | P0 blockers | Save-as-skill Run binding, TrueForge→artifact path, demo durable storage, run-limit hard enforcement |
 | Last updated | 2026-08-26 |
 

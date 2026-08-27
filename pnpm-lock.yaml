@@ -157,6 +157,9 @@ importers:
       '@forgeroom/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
+      '@forgeroom/db':
+        specifier: workspace:*
+        version: link:../../packages/db
       '@forgeroom/orchestration':
         specifier: workspace:*
         version: link:../../packages/orchestration
