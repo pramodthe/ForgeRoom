@@ -231,7 +231,7 @@ export async function ingestNormalizedTrueForgeEvent(
       `;
     }
 
-    let turnOutcome = input.turnDoneOutcome ?? null;
+    const turnOutcome = input.turnDoneOutcome ?? null;
     if (normalized.normalizedType === "turn.done" && turnOutcome && inserted) {
       await tx`
         UPDATE agent_turns
