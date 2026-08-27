@@ -510,7 +510,9 @@ export async function resetSyntheticProviderLabel(input: {
     return "skipped";
   }
   if (!env.composioUserId) {
-    throw new Error("COMPOSIO_USER_ID is required for provider fixture reset with a connected account");
+    throw new Error(
+      "COMPOSIO_USER_ID is required for provider fixture reset with a connected account",
+    );
   }
   assertProviderResetTargetAllowed({
     connectedAccountId: env.composioConnectedAccountId,

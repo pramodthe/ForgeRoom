@@ -16,9 +16,9 @@ describe("P0-105 demo fixtures", () => {
     expect(bundle.operator.coworker.handle).toBe("operator");
     expect(bundle.operator.coworker.native_subagents_enabled).toBe(false);
     expect(bundle.researchDraft.prompt).toContain("Research coworker");
-    expect(bundle.researchDraft.expectedPermissionPreview.exactDiff?.grants[0]?.directToolSlug).toBe(
-      "GITHUB_GET_AN_ISSUE",
-    );
+    expect(
+      bundle.researchDraft.expectedPermissionPreview.exactDiff?.grants[0]?.directToolSlug,
+    ).toBe("GITHUB_GET_AN_ISSUE");
     expect(bundle.taskTitle.length).toBeGreaterThan(0);
   });
 
