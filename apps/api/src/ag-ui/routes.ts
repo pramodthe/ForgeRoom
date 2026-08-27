@@ -5,7 +5,12 @@ import type { createSql } from "@forgeroom/db";
 import type { AuthService } from "../auth/service";
 import type { ApiEnv } from "../env";
 import { errorResponse } from "../http";
-import { requireMutationSession, requireParam, requireSession } from "../http-guards";
+import {
+  mutationGuardInput,
+  requireMutationSession,
+  requireParam,
+  requireSession,
+} from "../http-guards";
 import { createAgUiRunService, type AgUiRunServiceError } from "./run-service";
 import type { WorkspaceService } from "../workspace/service";
 
@@ -67,6 +72,7 @@ export function mountAgUiRoutes(
   });
 
   app.post("/api/ag-ui/channels/:channelId/coworkers/:coworkerId/runs", async (c) => {
+    const liveGuardInput = mutationGuardInput(c, options.env);
     const authed = await requireMutationSession(c, options.env, options.auth);
     if (authed instanceof Response) {
       return authed;
@@ -86,21 +92,34 @@ export function mountAgUiRoutes(
     }
 
     return streamSSE(c, async (stream) => {
-      try {
-        await agUi.streamPreparedRun(prepared.value, async (chunk) => {
+      await agUi.streamPreparedRun(
+        prepared.value,
+        async (chunk) => {
           await stream.write(chunk);
-        });
-      } catch (error) {
-        const message = error instanceof Error ? error.message : "AG-UI run stream failed.";
-        await stream.write(
-          `data: ${JSON.stringify({
-            type: "RUN_ERROR",
-            threadId: prepared.value.threadId,
-            runId: prepared.value.aguiRunId,
-            message,
-          })}\n\n`,
-        );
-      }
+        },
+        {
+          isDeliveryAuthorized: async () => {
+            const live = await options.auth.assertMutationGuards(liveGuardInput);
+            if (
+              !live.ok ||
+              live.session.user.id !== authed.session.user.id ||
+              live.session.workspace_id !== authed.session.workspace_id
+            ) {
+              return false;
+            }
+            const resolved = await options.workspace.resolveAgUiCoworkerContext(
+              live.session,
+              channelId,
+              coworkerId,
+            );
+            return (
+              resolved.ok &&
+              resolved.value.logicalThreadId === prepared.value.threadId &&
+              resolved.value.availability === "available"
+            );
+          },
+        },
+      );
     });
   });
 }

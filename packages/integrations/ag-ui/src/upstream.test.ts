@@ -8,11 +8,13 @@ describe("parseUpstreamAgUiEvent", () => {
       capability: "RAW",
       reason: "unsupported_in_p0",
     });
-    expect(parseUpstreamAgUiEvent({
-      type: "TEXT_MESSAGE_START",
-      messageId: "msg_1",
-      role: "assistant",
-    })).toMatchObject({ ok: true });
+    expect(
+      parseUpstreamAgUiEvent({
+        type: "TEXT_MESSAGE_START",
+        messageId: "msg_1",
+        role: "assistant",
+      }),
+    ).toMatchObject({ ok: true });
   });
 
   it("extracts the latest user message content", () => {

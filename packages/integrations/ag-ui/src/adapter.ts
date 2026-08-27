@@ -1,6 +1,9 @@
 import { EventSchemas, EventType } from "@ag-ui/core";
 import { isP0UnsupportedCapability } from "@forgeroom/contracts";
-import { evaluateTurnDoneOutcome, normalizeTrueForgeEvent } from "@forgeroom/orchestration/event-normalize";
+import {
+  evaluateTurnDoneOutcome,
+  normalizeTrueForgeEvent,
+} from "@forgeroom/orchestration/event-normalize";
 import { buildForgeRoomEventMetadata } from "./metadata";
 import { parseUpstreamAgUiEvent } from "./upstream";
 
@@ -33,7 +36,7 @@ function readTextDelta(raw: Record<string, unknown>): string | null {
   );
 }
 
-function shouldDropTrueForgeEventType(type: string): boolean {
+export function shouldDiscardTrueForgeEventType(type: string): boolean {
   return (
     type === "RAW" ||
     type.startsWith("REASONING_") ||
@@ -67,11 +70,8 @@ export class TrueForgeAGUIAdapter {
       return [];
     }
     const type = readString(rawInput.type) ?? "unknown";
-    if (shouldDropTrueForgeEventType(type)) {
+    if (shouldDiscardTrueForgeEventType(type)) {
       return [];
-    }
-    if (isP0UnsupportedCapability(type)) {
-      return this.mapUnsupportedCapabilityActivity(type, "Capability is unsupported in P0.");
     }
 
     let normalizedId: string;
@@ -84,6 +84,10 @@ export class TrueForgeAGUIAdapter {
       return [];
     }
     this.seenTrueForgeEventIds.add(normalizedId);
+
+    if (isP0UnsupportedCapability(type)) {
+      return this.mapUnsupportedCapabilityActivity(type, "Capability is unsupported in P0.");
+    }
 
     if (type === "turn.done") {
       return this.mapTurnDone(rawInput);
@@ -101,13 +105,22 @@ export class TrueForgeAGUIAdapter {
       return this.endAssistantText();
     }
     if (type.startsWith("tool.") || type.startsWith("tool_")) {
-      return this.mapUnsupportedCapabilityActivity(type, "Controlled tool mapping is partial in P0-211 bootstrap.");
+      return this.mapUnsupportedCapabilityActivity(
+        "controlled_tool_mapping",
+        "Controlled tool mapping is partial in P0-211 bootstrap.",
+      );
     }
     if (type.startsWith("subagent.") || type.startsWith("SUBAGENT_")) {
-      return this.mapUnsupportedCapabilityActivity(type, "Native subagents are disabled in P0.");
+      return this.mapUnsupportedCapabilityActivity(
+        "native_subagent",
+        "Native subagents are disabled in P0.",
+      );
     }
     if (type.includes("open_ui") || type.includes("generative")) {
-      return this.mapUnsupportedCapabilityActivity(type, "Open generated UI is disabled in P0.");
+      return this.mapUnsupportedCapabilityActivity(
+        "open_generated_ui",
+        "Open generated UI is disabled in P0.",
+      );
     }
     return [];
   }
@@ -226,7 +239,10 @@ export class TrueForgeAGUIAdapter {
             interrupts: [
               {
                 id: opaqueMessageId("int_req"),
-                reason: outcome.runStepState === "awaiting_approval" ? "approval_required" : "input_required",
+                reason:
+                  outcome.runStepState === "awaiting_approval"
+                    ? "approval_required"
+                    : "input_required",
                 message: "Additional human action is required before this turn can continue.",
                 metadata: this.metadata,
               },
@@ -250,14 +266,21 @@ export class TrueForgeAGUIAdapter {
     return events;
   }
 
-  private mapRunError(raw: Record<string, unknown>): AgUiEventRecord[] {
+  private mapRunError(_raw: Record<string, unknown>): AgUiEventRecord[] {
+    return this.buildRunError("TrueForge run failed.");
+  }
+
+  buildRunError(message: string): AgUiEventRecord[] {
+    if (this.finished) {
+      return [];
+    }
     const events = this.endAssistantText();
     events.push(
       this.validate({
         type: EventType.RUN_ERROR,
         threadId: this.context.logicalThreadId,
         runId: this.context.aguiRunId,
-        message: readString(raw.message) ?? "TrueForge run failed.",
+        message,
         metadata: this.metadata,
       }),
     );
@@ -296,26 +319,39 @@ export async function pollTrueForgeTurnEvents(input: {
   sessionId: string;
   turnId: string;
   adapter: TrueForgeAGUIAdapter;
+  onUpstreamEvent?: (event: Record<string, unknown>) => Promise<void>;
+  onEvent?: (event: AgUiEventRecord) => Promise<void>;
   intervalMs?: number;
   timeoutMs?: number;
 }): Promise<AgUiEventRecord[]> {
   const intervalMs = input.intervalMs ?? 100;
-  const timeoutMs = input.timeoutMs ?? 30_000;
   const startedAt = Date.now();
   const emitted: AgUiEventRecord[] = [];
-  const seen = new Set<string>();
+  const seenTrueForgeEventIds = new Set<string>();
 
-  while (Date.now() - startedAt < timeoutMs) {
+  while (input.timeoutMs === undefined || Date.now() - startedAt < input.timeoutMs) {
     const events = await input.listEvents(input.sessionId, input.turnId);
     for (const raw of events) {
+      const type = readString(raw.type) ?? "unknown";
+      if (shouldDiscardTrueForgeEventType(type)) {
+        continue;
+      }
+      let trueforgeEventId: string;
+      try {
+        trueforgeEventId = normalizeTrueForgeEvent(raw).trueforgeEventId;
+      } catch {
+        continue;
+      }
+      if (seenTrueForgeEventIds.has(trueforgeEventId)) {
+        continue;
+      }
+      seenTrueForgeEventIds.add(trueforgeEventId);
+      await input.onUpstreamEvent?.(raw);
+
       const mapped = input.adapter.mapTrueForgeEvent(raw);
       for (const event of mapped) {
-        const key = JSON.stringify(event);
-        if (seen.has(key)) {
-          continue;
-        }
-        seen.add(key);
         emitted.push(event);
+        await input.onEvent?.(event);
         if (event.type === EventType.RUN_FINISHED || event.type === EventType.RUN_ERROR) {
           return emitted;
         }

@@ -7,7 +7,8 @@ import {
   TrueForgeAGUIAdapter,
 } from "@forgeroom/ag-ui";
 import type { SessionResponse } from "@forgeroom/contracts";
-import type { createSql } from "@forgeroom/db";
+import { ingestNormalizedTrueForgeEvent, type createSql } from "@forgeroom/db";
+import { evaluateTurnDoneOutcome, normalizeTrueForgeEvent } from "@forgeroom/orchestration";
 import type { TrueForgeClient } from "@forgeroom/trueforge";
 import type { WorkspaceService } from "../workspace/service";
 import { bindDurableTrueForgeTurn } from "./bind-durable-turn";
@@ -55,6 +56,7 @@ export type AgUiRunService = {
   streamPreparedRun(
     bootstrap: AgUiRunBootstrap,
     write: (chunk: string) => Promise<void>,
+    options?: { isDeliveryAuthorized?: () => Promise<boolean> },
   ): Promise<void>;
 };
 
@@ -239,9 +241,12 @@ export function createAgUiRunService(options: {
       };
     },
 
-    async streamPreparedRun(bootstrap, write) {
+    async streamPreparedRun(bootstrap, write, streamOptions) {
       if (!trueforgeClient) {
         throw new Error("TrueForge runtime is not configured");
+      }
+      if (!sql) {
+        throw new Error("SQL is required for durable AG-UI streaming");
       }
       const adapter = new TrueForgeAGUIAdapter({
         channelId: bootstrap.channelId,
@@ -253,25 +258,40 @@ export function createAgUiRunService(options: {
         agentTurnId: bootstrap.agentTurnId,
       });
 
-      let wroteTerminal = false;
+      let observedTerminal = false;
+      let deliveryAuthorized = true;
+      const canDeliver = async () => {
+        if (!deliveryAuthorized) {
+          return false;
+        }
+        if (!streamOptions?.isDeliveryAuthorized) {
+          return true;
+        }
+        try {
+          deliveryAuthorized = await streamOptions.isDeliveryAuthorized();
+        } catch {
+          deliveryAuthorized = false;
+        }
+        return deliveryAuthorized;
+      };
+      const writeEvent = async (event: Record<string, unknown>) => {
+        if (await canDeliver()) {
+          await write(formatAgUiSseEvent(event));
+        }
+      };
       const writeTerminalError = async (message: string) => {
-        if (wroteTerminal) {
+        if (observedTerminal) {
           return;
         }
-        wroteTerminal = true;
-        await write(
-          formatAgUiSseEvent({
-            type: "RUN_ERROR",
-            threadId: bootstrap.threadId,
-            runId: bootstrap.aguiRunId,
-            message,
-          }),
-        );
+        observedTerminal = true;
+        for (const event of adapter.buildRunError(message)) {
+          await writeEvent(event);
+        }
       };
 
       try {
-        await write(formatAgUiSseEvent(adapter.buildRunStarted()));
-        const events = await pollTrueForgeTurnEvents({
+        await writeEvent(adapter.buildRunStarted());
+        await pollTrueForgeTurnEvents({
           adapter,
           sessionId: bootstrap.trueforgeSessionId,
           turnId: bootstrap.trueforgeTurnId,
@@ -279,20 +299,40 @@ export function createAgUiRunService(options: {
             const rows = await trueforgeClient.listTurnEvents(sessionId, turnId);
             return rows as Array<Record<string, unknown>>;
           },
+          onUpstreamEvent: async (raw) => {
+            const normalized = normalizeTrueForgeEvent(raw);
+            const turnDoneOutcome =
+              normalized.normalizedType === "turn.done"
+                ? evaluateTurnDoneOutcome(normalized.payloadRedacted)
+                : null;
+            const ingested = await ingestNormalizedTrueForgeEvent(sql, {
+              agentTurnId: bootstrap.agentTurnId,
+              expectedTurnStates: [
+                "creating",
+                "streaming",
+                "required_actions",
+                "completed",
+                "failed",
+              ],
+              event: normalized,
+              turnDoneOutcome,
+            });
+            if (!ingested.ok) {
+              throw new Error("Durable TrueForge event ingestion failed");
+            }
+          },
+          onEvent: async (event) => {
+            if (event.type === "RUN_FINISHED" || event.type === "RUN_ERROR") {
+              observedTerminal = true;
+            }
+            await writeEvent(event);
+          },
         });
-        for (const event of events) {
-          await write(formatAgUiSseEvent(event));
-          if (event.type === "RUN_FINISHED" || event.type === "RUN_ERROR") {
-            wroteTerminal = true;
-          }
-        }
-        if (!wroteTerminal) {
+        if (!observedTerminal) {
           await writeTerminalError("Timed out waiting for a terminal AG-UI run event.");
         }
-      } catch (error) {
-        await writeTerminalError(
-          error instanceof Error ? error.message : "AG-UI run stream failed.",
-        );
+      } catch {
+        await writeTerminalError("AG-UI run failed while reading provider events.");
       }
     },
   };

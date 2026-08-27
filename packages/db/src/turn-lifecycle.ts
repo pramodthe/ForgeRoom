@@ -233,6 +233,10 @@ export async function ingestNormalizedTrueForgeEvent(
     }
 
     const turnOutcome = input.turnDoneOutcome ?? null;
+    const terminalError =
+      normalized.normalizedType === "turn.error" ||
+      normalized.normalizedType === "turn.failed" ||
+      normalized.normalizedType === "session.error";
     if (normalized.normalizedType === "turn.done" && turnOutcome && inserted) {
       await tx`
         UPDATE agent_turns
@@ -261,6 +265,27 @@ export async function ingestNormalizedTrueForgeEvent(
           SELECT queue_item_id FROM agent_turns WHERE id = ${input.agentTurnId}
         )
       `;
+    } else if (terminalError && inserted) {
+      await tx`
+        UPDATE agent_turns
+        SET
+          state = 'failed',
+          error_json = '{"reason":"trueforge_terminal_error"}'::jsonb,
+          completed_at = ${now}
+        WHERE id = ${input.agentTurnId}
+      `;
+      await tx`
+        UPDATE run_steps
+        SET state = 'failed', completed_at = ${now}
+        WHERE id = ${turn.run_step_id}
+      `;
+      await tx`
+        UPDATE turn_queue_items
+        SET state = 'failed', completed_at = ${now}, lease_owner = NULL, lease_expires_at = NULL
+        WHERE id = (
+          SELECT queue_item_id FROM agent_turns WHERE id = ${input.agentTurnId}
+        )
+      `;
     } else if (inserted && turn.state === "creating") {
       await tx`
         UPDATE agent_turns SET state = 'streaming' WHERE id = ${input.agentTurnId}
@@ -276,7 +301,7 @@ export async function ingestNormalizedTrueForgeEvent(
     const runRows = await tx<{ run_id: string }[]>`
       SELECT run_id FROM run_steps WHERE id = ${turn.run_step_id} LIMIT 1
     `;
-    if (runRows[0] && (turnOutcome || (inserted && turn.state === "creating"))) {
+    if (runRows[0] && (turnOutcome || terminalError || (inserted && turn.state === "creating"))) {
       await applyRunLifecycleProjection(tx as unknown as SqlClient, {
         runId: runRows[0].run_id,
         now,

@@ -40,5 +40,10 @@ Run golden mapping, illegal-order, redaction, interrupt and official-client conf
 - `@forgeroom/ag-ui`: `TrueForgeAGUIAdapter`, upstream parsers, SSE formatter, capabilities builder.
 - `POST /api/ag-ui/channels/:channelId/coworkers/:coworkerId/runs` persists via `postMessage`, claims the durable queue item, binds the worker-owned TrueForge turn, streams validated AG-UI SSE.
 - `GET /api/ag-ui/channels/:channelId/coworkers/:coworkerId/capabilities` reports P0 profile and disabled resume seam.
-- Qodo autofix: no synthetic side-turn; failed bind marks run step failed; stream failures emit terminal `RUN_ERROR`.
+- Review remediation: no synthetic side-turn; only the worker that owns a failed create may fail the RunStep, while a waiter timeout leaves the owner's step unchanged.
+- Provider history is deduplicated and streamed incrementally with no fixed production timeout; each sanitized upstream event enters the canonical durable lifecycle before browser delivery.
+- Provider/list failures emit one schema-validated redacted `RUN_ERROR`; provider terminal errors settle AgentTurn, queue item, RunStep and parent Run.
+- Live delivery revalidates the authenticated session and channel/coworker access, and latches closed after revocation.
+- AG-UI run idempotency rejects content collisions and repairs a persisted message's missing Run instead of creating a duplicate message.
+- Normalized persistence retains provider IDs only in typed correlation columns and drops arbitrary provider/tool bodies.
 - Remaining: durable channel mirror (P0-212), full tool/state/interrupt mapping (P0-314/P0-306).

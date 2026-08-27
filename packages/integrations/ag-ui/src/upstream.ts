@@ -1,8 +1,4 @@
-import {
-  EventSchemas,
-  RunAgentInputSchema,
-  type RunAgentInput,
-} from "@ag-ui/core";
+import { EventSchemas, RunAgentInputSchema, type RunAgentInput } from "@ag-ui/core";
 import { isP0UnsupportedCapability, unsupportedCapability } from "@forgeroom/contracts";
 
 export type ParsedRunAgentInput = {
@@ -17,7 +13,9 @@ export type UpstreamParseFailure = {
   issues?: string[];
 };
 
-export function parseUpstreamRunAgentInput(input: unknown): ParsedRunAgentInput | UpstreamParseFailure {
+export function parseUpstreamRunAgentInput(
+  input: unknown,
+): ParsedRunAgentInput | UpstreamParseFailure {
   if (input && typeof input === "object" && "resume" in input) {
     const resume = (input as { resume?: unknown }).resume;
     if (Array.isArray(resume) && resume.length > 0) {

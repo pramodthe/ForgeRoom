@@ -605,6 +605,8 @@ export function createWorkspaceService(options?: {
     assertReceipt?: (receipt: { resultId: string }) => WorkspaceServiceError | null;
     /** Optional: rewrite durable result_id after success (e.g. pin id + event sequence). */
     finalizeResultId?: (value: T) => string | null;
+    /** Keep the claim when the durable result exists but related persistence needs repair. */
+    retainReceiptOnError?: (resultId: string) => Promise<boolean>;
     run: () => Promise<WorkspaceServiceResult<T>>;
   }): Promise<WorkspaceServiceResult<T>> {
     const leaseOwner = randomOpaqueId("lease");
@@ -694,12 +696,17 @@ export function createWorkspaceService(options?: {
     try {
       const result = await input.run();
       if (!result.ok) {
-        await store.deleteCommandReceipt(
-          input.workspaceId,
-          input.commandKind,
-          input.idempotencyKey,
-          leaseOwner,
-        );
+        const retainReceipt = input.retainReceiptOnError
+          ? await input.retainReceiptOnError(input.resultId).catch(() => true)
+          : false;
+        if (!retainReceipt) {
+          await store.deleteCommandReceipt(
+            input.workspaceId,
+            input.commandKind,
+            input.idempotencyKey,
+            leaseOwner,
+          );
+        }
         return result;
       }
       if (input.finalizeResultId) {
@@ -727,12 +734,17 @@ export function createWorkspaceService(options?: {
       }
       return result;
     } catch (error) {
-      await store.deleteCommandReceipt(
-        input.workspaceId,
-        input.commandKind,
-        input.idempotencyKey,
-        leaseOwner,
-      );
+      const retainReceipt = input.retainReceiptOnError
+        ? await input.retainReceiptOnError(input.resultId).catch(() => true)
+        : false;
+      if (!retainReceipt) {
+        await store.deleteCommandReceipt(
+          input.workspaceId,
+          input.commandKind,
+          input.idempotencyKey,
+          leaseOwner,
+        );
+      }
       throw error;
     } finally {
       clearInterval(heartbeat);
@@ -1410,6 +1422,21 @@ export function createWorkspaceService(options?: {
             },
           });
         }
+        if (
+          message.authorType !== "human" ||
+          message.authorId !== session.user.id ||
+          message.body !== command.body ||
+          message.parentMessageId !== command.parent_message_id
+        ) {
+          return idempotencyMismatch({
+            code: "conflict",
+            message: "Idempotency key was already used for a different channel message.",
+            details: {
+              reason: "idempotency_key_reuse",
+              claimed_result_id: messageId,
+            },
+          });
+        }
         let afterSequence = -1;
         while (true) {
           const page = await store.listEventsAfter(channelId, afterSequence, { limit: 512 });
@@ -1436,13 +1463,65 @@ export function createWorkspaceService(options?: {
               `;
               runId = runs[0]?.id ?? null;
               if (!runId) {
-                // Message without Run is incomplete when SQL-backed; force retry/repair.
-                return null;
+                const repairCoworkers = await store.listCoworkers(loaded.value.workspaceId);
+                const repairSessions = await store.listChannelAgentSessions(channelId);
+                const recipients = [];
+                for (const handle of payload.recipient_handles) {
+                  const coworker = repairCoworkers.find((row) => row.handle === handle);
+                  const agentSession = coworker
+                    ? repairSessions.find((row) => row.agentProfileId === coworker.id)
+                    : null;
+                  if (!coworker || !agentSession) {
+                    return null;
+                  }
+                  recipients.push({
+                    coworkerId: coworker.id,
+                    handle: coworker.handle,
+                    channelAgentSessionId: agentSession.id,
+                    logicalThreadId: agentSession.logicalAguiThreadId,
+                  });
+                }
+                const repairPlan = planDirectRunSteps({
+                  goal: message.body,
+                  recipients,
+                });
+                if (!repairPlan.ok) {
+                  return null;
+                }
+                try {
+                  const repaired = await createDirectMultiAgentRun(sql, {
+                    channelId,
+                    sourceMessageId: messageId,
+                    requestedBy: message.authorId,
+                    routingMode: payload.routing_mode,
+                    goal: message.body,
+                    now: message.createdAt,
+                    steps: repairPlan.steps.map((step) => ({
+                      assignedAgentId: step.assignedCoworkerId,
+                      channelAgentSessionId: step.channelAgentSessionId,
+                      logicalThreadId: step.logicalThreadId,
+                      objective: step.objective,
+                    })),
+                  });
+                  runId = repaired.runId;
+                  runStepIds = repaired.steps.map((step) => step.id);
+                } catch {
+                  // A concurrent retry may have repaired the same source message.
+                  const repairedRuns = await sql<{ id: string }[]>`
+                    SELECT id FROM runs WHERE source_message_id = ${messageId} LIMIT 1
+                  `;
+                  runId = repairedRuns[0]?.id ?? null;
+                  if (!runId) {
+                    return null;
+                  }
+                }
               }
-              const steps = await sql<{ id: string }[]>`
-                SELECT id FROM run_steps WHERE run_id = ${runId} ORDER BY id
-              `;
-              runStepIds = steps.map((step) => step.id);
+              if (runStepIds.length === 0) {
+                const steps = await sql<{ id: string }[]>`
+                  SELECT id FROM run_steps WHERE run_id = ${runId} ORDER BY id
+                `;
+                runStepIds = steps.map((step) => step.id);
+              }
             }
             return {
               message_id: message.id,
@@ -1737,6 +1816,7 @@ export function createWorkspaceService(options?: {
           idempotencyKey: command.idempotency_key,
           resultId: messageId,
           reload: reloadPostedMessage,
+          retainReceiptOnError: async (resultId) => Boolean(await store.getMessage(resultId)),
           run: async () => appendMessage(messageId, eventId),
         });
       }

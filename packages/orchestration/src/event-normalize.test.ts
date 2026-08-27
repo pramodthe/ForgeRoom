@@ -36,6 +36,42 @@ describe("event normalization", () => {
     expect(normalized.trueforgeEventId).toBe("evt_shared");
     expect(normalized.sequenceNumber).toBe(7);
     expect(normalized.threadId).toBe("thr_1");
+    expect(normalized.payloadRedacted).toEqual({
+      type: "model.message.delta",
+      text: "hi",
+    });
+    expect(JSON.stringify(normalized.payloadRedacted)).not.toContain("evt_shared");
+    expect(JSON.stringify(normalized.payloadRedacted)).not.toContain("thr_1");
+  });
+
+  it("excludes arbitrary tool bodies and provider action ids from normalized JSON", () => {
+    const tool = normalizeTrueForgeEvent({
+      type: "tool.call",
+      id: "evt_tool_private",
+      thread_id: "thread_private",
+      arguments: { access_token: "secret", query: "private query" },
+    });
+    expect(tool.payloadRedacted).toEqual({ type: "tool.call" });
+
+    const done = normalizeTrueForgeEvent({
+      type: "turn.done",
+      id: "evt_done_private",
+      state: {
+        required_actions: [
+          {
+            type: "tool.approval_required",
+            id: "provider_action_private",
+            arguments: { repository: "private" },
+          },
+        ],
+      },
+    });
+    expect(done.payloadRedacted).toEqual({
+      type: "turn.done",
+      state: {
+        required_actions: [{ type: "tool.approval_required" }],
+      },
+    });
   });
 
   it("keeps RunStep nonterminal when turn.done has required actions", () => {

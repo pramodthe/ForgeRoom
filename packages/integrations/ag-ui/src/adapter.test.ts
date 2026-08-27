@@ -1,6 +1,6 @@
 import { EventType } from "@ag-ui/core";
 import { describe, expect, it } from "vitest";
-import { TrueForgeAGUIAdapter } from "./adapter";
+import { pollTrueForgeTurnEvents, TrueForgeAGUIAdapter } from "./adapter";
 import { parseUpstreamAgUiEvent, parseUpstreamRunAgentInput } from "./upstream";
 
 describe("parseUpstreamRunAgentInput", () => {
@@ -97,13 +97,59 @@ describe("TrueForgeAGUIAdapter", () => {
     const adapter = new TrueForgeAGUIAdapter(context);
     expect(adapter.mapTrueForgeEvent({ type: "RAW", id: "evt_raw" })).toEqual([]);
     expect(adapter.mapTrueForgeEvent({ type: "REASONING_START", id: "evt_r" })).toEqual([]);
-    expect(
-      adapter.mapTrueForgeEvent({ type: "subagent.started", id: "evt_sub" }),
-    ).toMatchObject([
+    expect(adapter.mapTrueForgeEvent({ type: "subagent.started", id: "evt_sub" })).toMatchObject([
       {
         type: EventType.ACTIVITY_SNAPSHOT,
         activityType: "forgeroom.coworker_work.v1",
       },
     ]);
+  });
+
+  it("redacts provider error details from RUN_ERROR", () => {
+    const adapter = new TrueForgeAGUIAdapter(context);
+    const events = adapter.mapTrueForgeEvent({
+      type: "turn.error",
+      id: "evt_error",
+      message: "session tf_secret_session turn tf_secret_turn failed",
+    });
+    expect(events.at(-1)).toMatchObject({
+      type: EventType.RUN_ERROR,
+      message: "TrueForge run failed.",
+    });
+    expect(JSON.stringify(events)).not.toContain("tf_secret");
+  });
+
+  it("delivers mapped events while polling and dedupes unsupported history", async () => {
+    const adapter = new TrueForgeAGUIAdapter(context);
+    const delivered: Array<Record<string, unknown>> = [];
+    let polls = 0;
+
+    await pollTrueForgeTurnEvents({
+      sessionId: "tf_session_private",
+      turnId: "tf_turn_private",
+      adapter,
+      intervalMs: 0,
+      listEvents: async () => {
+        polls += 1;
+        if (polls === 1) {
+          return [
+            { type: "subagent.started", id: "evt_sub" },
+            { type: "model.message.delta", id: "evt_text", text: "Live output" },
+          ];
+        }
+        expect(delivered.some((event) => event.type === EventType.TEXT_MESSAGE_CONTENT)).toBe(true);
+        return [
+          { type: "subagent.started", id: "evt_sub" },
+          { type: "model.message.delta", id: "evt_text", text: "Live output" },
+          { type: "turn.done", id: "evt_done", state: { required_actions: [] } },
+        ];
+      },
+      onEvent: async (event) => {
+        delivered.push(event);
+      },
+    });
+
+    expect(delivered.filter((event) => event.type === EventType.ACTIVITY_SNAPSHOT)).toHaveLength(1);
+    expect(delivered.at(-1)?.type).toBe(EventType.RUN_FINISHED);
   });
 });

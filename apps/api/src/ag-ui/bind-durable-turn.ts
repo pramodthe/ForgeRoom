@@ -221,6 +221,8 @@ export async function bindDurableTrueForgeTurn(input: {
     await sleep(intervalMs);
   }
 
-  await markRunStepFailed(input.sql, input.runStepId);
+  // A timeout here only means this request did not observe another worker's
+  // durable bind in time. It does not own that worker's lease and must not
+  // terminalize the shared RunStep.
   return { ok: false, reason: "timeout" };
 }
