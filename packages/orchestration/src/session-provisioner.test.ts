@@ -1,6 +1,6 @@
-import { describe, expect, it, vi } from "vitest";
+import { compileSessionRevision, provisionChannelCoworkerSession } from "./session";
 import { TrueForgeClient } from "@forgeroom/trueforge";
-import { compileSessionRevision, provisionChannelCoworkerSession } from "./index";
+import { describe, expect, it, vi } from "vitest";
 
 describe("compileSessionRevision", () => {
   it("snapshots coworker config with P0 flags and hashes", () => {

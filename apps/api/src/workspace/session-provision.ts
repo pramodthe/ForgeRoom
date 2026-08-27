@@ -1,5 +1,5 @@
-import type { CompiledSessionRevision } from "@forgeroom/orchestration";
-import { provisionChannelCoworkerSession } from "@forgeroom/orchestration";
+import type { CompiledSessionRevision } from "@forgeroom/orchestration/session";
+import { provisionChannelCoworkerSession } from "@forgeroom/orchestration/session";
 import { loadTrueForgeClientFromEnv, type TrueForgeClient } from "@forgeroom/trueforge";
 import type { ChannelAgentSessionRecord, CoworkerRecord, WorkspaceCatalogStore } from "./store";
 
