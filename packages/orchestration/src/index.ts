@@ -75,10 +75,7 @@ export {
   normalizeTrueForgeEvent,
   evaluateTurnDoneOutcome,
 } from "./event-normalize";
-export type {
-  NormalizedRunEvent,
-  TurnDoneOutcome,
-} from "./event-normalize";
+export type { NormalizedRunEvent, TurnDoneOutcome } from "./event-normalize";
 export { createOrReconcileTurn } from "./create-or-reconcile-turn";
 export type {
   CreateOrReconcileTurnInput,
