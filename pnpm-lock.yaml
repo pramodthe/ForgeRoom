@@ -68,6 +68,9 @@ importers:
       '@forgeroom/orchestration':
         specifier: workspace:*
         version: link:../../packages/orchestration
+      '@forgeroom/trueforge':
+        specifier: workspace:*
+        version: link:../../packages/integrations/trueforge
       '@hono/node-server':
         specifier: ^1.19.0
         version: 1.19.17(hono@4.13.4)
@@ -294,6 +297,9 @@ importers:
       '@forgeroom/contracts':
         specifier: workspace:*
         version: link:../contracts
+      '@forgeroom/trueforge':
+        specifier: workspace:*
+        version: link:../integrations/trueforge
     devDependencies:
       '@types/node':
         specifier: 'catalog:'

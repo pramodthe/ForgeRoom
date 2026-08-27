@@ -2,10 +2,10 @@
 
 | Field | Current value |
 | --- | --- |
-| Overall | M1 Foundation done; P0-402 merged; P0-210 in_review; P0-000 OpenAI+TrueForge presets verified; P0-105 seed/reset implemented |
+| Overall | M1 Foundation done; P0-105 merged; P0-201 TrueForge session provisioner in progress |
 | Current phase | Phase 1 — Foundation |
-| Active task | P0-105 (in_progress → PR); P0-000 remaining blockers open |
-| Next task | Open P0-105 PR; then P0-403 activity cards or TrueForge runtime (P0-201) |
+| Active task | P0-201 (in_progress) |
+| Next task | Finish P0-201 PR; then P0-202 turn queue or P0-403 activity cards |
 | P0 blockers | Save-as-skill Run binding, TrueForge→artifact path, demo durable storage, run-limit hard enforcement |
 | Last updated | 2026-08-26 |
 

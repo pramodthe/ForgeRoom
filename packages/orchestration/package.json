@@ -12,7 +12,8 @@
     "build": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@forgeroom/contracts": "workspace:*"
+    "@forgeroom/contracts": "workspace:*",
+    "@forgeroom/trueforge": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "catalog:",

@@ -2,6 +2,7 @@ import { serve } from "@hono/node-server";
 import { assertAgUiStartupProfile } from "@forgeroom/ag-ui";
 import { startWorker } from "@forgeroom/orchestration";
 import { migrate } from "@forgeroom/db";
+import { loadTrueForgeClientFromEnv } from "@forgeroom/trueforge";
 import { loadApiEnv } from "./env";
 import { createApiApp } from "./server";
 import { createAuthService } from "./auth/service";
@@ -17,7 +18,14 @@ export async function startApiProcess(env: NodeJS.ProcessEnv = process.env) {
   });
   const auth = createAuthService({ env: config, store });
   const workspaceStore = createDefaultWorkspaceStore({ authStore: config.authStore, sql });
-  const workspace = createWorkspaceService({ store: workspaceStore });
+  const trueforgeClient =
+    env.TRUEFORGE_BASE_URL && env.TRUEFORGE_BASE_URL.trim().length > 0
+      ? loadTrueForgeClientFromEnv(env)
+      : undefined;
+  const workspace = createWorkspaceService({
+    store: workspaceStore,
+    ...(trueforgeClient ? { trueforgeClient } : {}),
+  });
   const app = createApiApp({ env: config, auth, workspace });
   let worker: ReturnType<typeof startWorker> | undefined;
   let server: ReturnType<typeof serve> | undefined;
