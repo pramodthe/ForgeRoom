@@ -1320,10 +1320,24 @@ export function createWorkspaceService(options?: {
         routing_mode: "direct" | "team";
       };
 
-      const reloadPostedMessage = async (messageId: string): Promise<MessagePostResult | null> => {
+      const reloadPostedMessage = async (
+        messageId: string,
+      ): Promise<MessagePostResult | null | IdempotentReloadMismatch> => {
         const message = await store.getMessage(messageId);
-        if (!message || message.channelId !== channelId) {
+        if (!message) {
           return null;
+        }
+        if (message.channelId !== channelId) {
+          return idempotencyMismatch({
+            code: "conflict",
+            message: "Idempotency key was already used for a different channel message.",
+            details: {
+              reason: "idempotency_key_reuse",
+              expected_channel_id: channelId,
+              claimed_channel_id: message.channelId,
+              claimed_result_id: messageId,
+            },
+          });
         }
         let afterSequence = -1;
         while (true) {
