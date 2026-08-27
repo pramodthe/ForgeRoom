@@ -53,8 +53,10 @@ export type { RequestStopResult, StoppableStepState } from "./run-control";
 export {
   createDirectMultiAgentRun,
   refreshRunLifecycle,
+  refreshRunLifecycleForStep,
   loadRunProjection,
   aggregateRunFromStepsLocal,
+  applyRunLifecycleProjection,
 } from "./multi-agent-run";
 export type {
   CreateDirectMultiAgentRunInput,

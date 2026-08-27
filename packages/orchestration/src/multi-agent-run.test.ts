@@ -114,6 +114,9 @@ describe("aggregateRunFromSteps", () => {
     expect(aggregateRunFromSteps([{ state: "unknown" }, { state: "unknown" }]).lifecycle).toBe(
       "partial",
     );
+    expect(aggregateRunFromSteps([{ state: "completed" }, { state: "queued" }]).lifecycle).toBe(
+      "active",
+    );
   });
 
   it("buckets acquiring_session as planning", () => {

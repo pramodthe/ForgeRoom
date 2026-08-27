@@ -89,9 +89,12 @@ export function aggregateRunFromStepsLocal(steps: ReadonlyArray<{ state: RunStep
   let terminalCancelled = 0;
   let terminalUnknown = 0;
   let nonTerminal = 0;
-  let onlyQueued = true;
+  let allStepsQueued = true;
 
   for (const step of steps) {
+    if (step.state !== "queued") {
+      allStepsQueued = false;
+    }
     switch (step.state) {
       case "queued":
         activity.queued += 1;
@@ -100,32 +103,26 @@ export function aggregateRunFromStepsLocal(steps: ReadonlyArray<{ state: RunStep
       case "acquiring_session":
         activity.planning += 1;
         nonTerminal += 1;
-        onlyQueued = false;
         break;
       case "running":
         activity.running += 1;
         nonTerminal += 1;
-        onlyQueued = false;
         break;
       case "awaiting_input":
         activity.awaiting_input += 1;
         nonTerminal += 1;
-        onlyQueued = false;
         break;
       case "awaiting_approval":
         activity.awaiting_approval += 1;
         nonTerminal += 1;
-        onlyQueued = false;
         break;
       case "blocked_connection":
         activity.blocked_connection += 1;
         nonTerminal += 1;
-        onlyQueued = false;
         break;
       case "cancelling":
         activity.cancelling += 1;
         nonTerminal += 1;
-        onlyQueued = false;
         break;
       case "completed":
         terminalCompleted += 1;
@@ -143,7 +140,7 @@ export function aggregateRunFromStepsLocal(steps: ReadonlyArray<{ state: RunStep
   }
 
   if (nonTerminal > 0) {
-    return { lifecycle: onlyQueued ? "queued" : "active", activity };
+    return { lifecycle: allStepsQueued ? "queued" : "active", activity };
   }
   const terminalCount = terminalCompleted + terminalFailed + terminalCancelled + terminalUnknown;
   if (terminalUnknown > 0) return { lifecycle: "partial", activity };
@@ -185,19 +182,41 @@ export async function createDirectMultiAgentRun(
       )
     `;
 
+    // Lock sessions in stable ID order to avoid deadlocks across concurrent fan-outs.
+    const sessionIds = [...new Set(input.steps.map((step) => step.channelAgentSessionId))].sort();
+    const sessionById = new Map<
+      string,
+      { id: string; agent_profile_id: string; channel_id: string }
+    >();
+    for (const sessionId of sessionIds) {
+      const sessions = await tx<{ id: string; agent_profile_id: string; channel_id: string }[]>`
+        SELECT id, agent_profile_id, channel_id
+        FROM channel_agent_sessions
+        WHERE id = ${sessionId}
+        FOR UPDATE
+      `;
+      if (!sessions[0]) {
+        throw new Error(`channel_agent_session not found: ${sessionId}`);
+      }
+      if (sessions[0].channel_id !== input.channelId) {
+        throw new Error(`channel_agent_session ${sessionId} is not in channel ${input.channelId}`);
+      }
+      sessionById.set(sessionId, sessions[0]);
+    }
+
     const created: CreateDirectMultiAgentRunResult["steps"] = [];
 
     for (const step of input.steps) {
       const stepId = step.id ?? opaqueId("step");
       const queueItemId = step.queueItemId ?? opaqueId("tqi");
-      const sessions = await tx<{ id: string }[]>`
-        SELECT id
-        FROM channel_agent_sessions
-        WHERE id = ${step.channelAgentSessionId}
-        FOR UPDATE
-      `;
-      if (!sessions[0]) {
+      const session = sessionById.get(step.channelAgentSessionId);
+      if (!session) {
         throw new Error(`channel_agent_session not found: ${step.channelAgentSessionId}`);
+      }
+      if (session.agent_profile_id !== step.assignedAgentId) {
+        throw new Error(
+          `assignedAgentId ${step.assignedAgentId} does not own session ${step.channelAgentSessionId}`,
+        );
       }
 
       const locked = await tx<{ fifo_sequence: number }[]>`
@@ -258,40 +277,74 @@ export async function createDirectMultiAgentRun(
   });
 }
 
+export async function applyRunLifecycleProjection(
+  tx: SqlClient,
+  input: { runId: string; now: string },
+): Promise<{ lifecycle: RunLifecycle; activity: RunActivityCounters }> {
+  const steps = await tx<{ state: RunStepState }[]>`
+    SELECT state FROM run_steps WHERE run_id = ${input.runId} FOR UPDATE
+  `;
+  const projection = aggregateRunFromStepsLocal(steps);
+  const runRows = await tx<
+    { started_at: string | Date | null; completed_at: string | Date | null }[]
+  >`
+    SELECT started_at, completed_at FROM runs WHERE id = ${input.runId} FOR UPDATE
+  `;
+  if (!runRows[0]) {
+    throw new Error(`run not found: ${input.runId}`);
+  }
+  const startedAt = runRows[0].started_at ?? null;
+  const completedAt = runRows[0].completed_at ?? null;
+  const terminal =
+    projection.lifecycle === "completed" ||
+    projection.lifecycle === "partial" ||
+    projection.lifecycle === "failed" ||
+    projection.lifecycle === "cancelled";
+  await tx`
+    UPDATE runs
+    SET
+      lifecycle = ${projection.lifecycle},
+      started_at = ${
+        projection.lifecycle === "queued"
+          ? null
+          : startedAt
+            ? new Date(startedAt).toISOString()
+            : input.now
+      },
+      completed_at = ${
+        terminal ? (completedAt ? new Date(completedAt).toISOString() : input.now) : null
+      }
+    WHERE id = ${input.runId}
+  `;
+  return projection;
+}
+
 export async function refreshRunLifecycle(
   sql: SqlClient,
   input: { runId: string; now?: string },
 ): Promise<{ lifecycle: RunLifecycle; activity: RunActivityCounters }> {
   const now = input.now ?? new Date().toISOString();
+  return sql.begin(async (tx) =>
+    applyRunLifecycleProjection(tx as unknown as SqlClient, { runId: input.runId, now }),
+  );
+}
+
+export async function refreshRunLifecycleForStep(
+  sql: SqlClient,
+  input: { runStepId: string; now?: string },
+): Promise<{ lifecycle: RunLifecycle; activity: RunActivityCounters; runId: string } | null> {
+  const now = input.now ?? new Date().toISOString();
   return sql.begin(async (tx) => {
-    const steps = await tx<{ state: RunStepState }[]>`
-      SELECT state FROM run_steps WHERE run_id = ${input.runId} FOR UPDATE
+    const steps = await tx<{ run_id: string }[]>`
+      SELECT run_id FROM run_steps WHERE id = ${input.runStepId} LIMIT 1
     `;
-    const projection = aggregateRunFromStepsLocal(steps);
-    const runRows = await tx<{ started_at: string | Date | null }[]>`
-      SELECT started_at FROM runs WHERE id = ${input.runId} FOR UPDATE
-    `;
-    const startedAt = runRows[0]?.started_at ?? null;
-    const terminal =
-      projection.lifecycle === "completed" ||
-      projection.lifecycle === "partial" ||
-      projection.lifecycle === "failed" ||
-      projection.lifecycle === "cancelled";
-    await tx`
-      UPDATE runs
-      SET
-        lifecycle = ${projection.lifecycle},
-        started_at = ${
-          projection.lifecycle === "queued"
-            ? null
-            : startedAt
-              ? new Date(startedAt).toISOString()
-              : now
-        },
-        completed_at = ${terminal ? now : null}
-      WHERE id = ${input.runId}
-    `;
-    return projection;
+    const runId = steps[0]?.run_id;
+    if (!runId) return null;
+    const projection = await applyRunLifecycleProjection(tx as unknown as SqlClient, {
+      runId,
+      now,
+    });
+    return { ...projection, runId };
   });
 }
 

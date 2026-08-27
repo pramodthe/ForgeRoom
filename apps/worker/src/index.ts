@@ -8,7 +8,6 @@ import {
   markActiveTurnsNeedsAttentionOnRestart,
   markAgentTurnUncertain,
   markCancelCalled,
-  refreshRunLifecycle,
   requestRunStepStop,
   settleCancelledStep,
   type ClaimTurnQueueItemResult,
@@ -141,9 +140,7 @@ export async function executeCreateOrReconcileTurn(
 export async function executeIngestTrueForgeEvent(
   sql: ReturnType<typeof createSql>,
   command: Extract<InternalWorkerCommand, { name: "ingest_trueforge_event" }>,
-): Promise<
-  IngestRunEventResult & { runLifecycle?: Awaited<ReturnType<typeof refreshRunLifecycle>> }
-> {
+): Promise<IngestRunEventResult> {
   const event = normalizeTrueForgeEvent({
     ...command.payload.event_payload,
     type: command.payload.upstream_event_type,
@@ -151,17 +148,13 @@ export async function executeIngestTrueForgeEvent(
   });
   const turnDoneOutcome =
     event.normalizedType === "turn.done" ? evaluateTurnDoneOutcome(event.payloadRedacted) : null;
-  const ingest = await ingestNormalizedTrueForgeEvent(sql, {
+  // Parent Run lifecycle is refreshed inside the ingest transaction from the locked step.
+  return ingestNormalizedTrueForgeEvent(sql, {
     agentTurnId: command.payload.agent_turn_id,
     expectedTurnStates: [command.payload.expected_turn_state, "streaming", "creating"],
     event,
     turnDoneOutcome,
   });
-  if (!ingest.ok || !ingest.turnOutcome) {
-    return ingest;
-  }
-  const runLifecycle = await refreshRunLifecycle(sql, { runId: command.payload.run_id });
-  return { ...ingest, runLifecycle };
 }
 
 export async function executeStopCancelOnce(

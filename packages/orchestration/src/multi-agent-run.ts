@@ -125,16 +125,16 @@ export function aggregateRunFromSteps(steps: ReadonlyArray<{ state: RunStepState
   let terminalCancelled = 0;
   let terminalUnknown = 0;
   let nonTerminal = 0;
-  let onlyQueued = true;
+  let allStepsQueued = true;
 
   for (const step of steps) {
+    if (step.state !== "queued") {
+      allStepsQueued = false;
+    }
     const bucket = activityBucketForStepState(step.state);
     if (bucket) {
       activity[bucket] += 1;
       nonTerminal += 1;
-      if (step.state !== "queued") {
-        onlyQueued = false;
-      }
       continue;
     }
     if (step.state === "completed") terminalCompleted += 1;
@@ -144,7 +144,7 @@ export function aggregateRunFromSteps(steps: ReadonlyArray<{ state: RunStepState
   }
 
   if (nonTerminal > 0) {
-    return { lifecycle: onlyQueued ? "queued" : "active", activity };
+    return { lifecycle: allStepsQueued ? "queued" : "active", activity };
   }
 
   const terminalCount = terminalCompleted + terminalFailed + terminalCancelled + terminalUnknown;

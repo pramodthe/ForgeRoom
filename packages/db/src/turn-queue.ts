@@ -322,6 +322,33 @@ export async function claimTurnQueueItem(
       )
     `;
 
+    await tx`
+      UPDATE run_steps
+      SET state = 'acquiring_session', started_at = COALESCE(started_at, ${now})
+      WHERE id = ${item.run_step_id}
+        AND state IN ('queued', 'acquiring_session')
+    `;
+
+    const runRows = await tx<{ run_id: string }[]>`
+      SELECT run_id FROM run_steps WHERE id = ${item.run_step_id} LIMIT 1
+    `;
+    if (runRows[0]) {
+      const siblingStates = await tx<{ state: string }[]>`
+        SELECT state FROM run_steps WHERE run_id = ${runRows[0].run_id} FOR UPDATE
+      `;
+      const hasActive = siblingStates.some((row) => row.state !== "queued");
+      if (hasActive) {
+        await tx`
+          UPDATE runs
+          SET
+            lifecycle = 'active',
+            started_at = COALESCE(started_at, ${now})
+          WHERE id = ${runRows[0].run_id}
+            AND lifecycle IN ('queued', 'active')
+        `;
+      }
+    }
+
     return {
       ok: true,
       queueItemId: item.id,
