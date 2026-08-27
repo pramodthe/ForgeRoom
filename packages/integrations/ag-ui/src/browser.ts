@@ -9,3 +9,9 @@ export {
   reduceUiPresentationState,
   type UiPresentationState,
 } from "./ui-state-reducer";
+export {
+  initialActivityPresentationState,
+  reduceActivityPresentationState,
+  type ActivityPresentationState,
+} from "./activity-reducer";
+export { compactChannelEnvelopes, isMessagesSnapshotEvent } from "./messages-compaction";

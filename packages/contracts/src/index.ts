@@ -311,6 +311,7 @@ export {
   parseUpstreamRunAgentInput,
   activitySnapshotEventSchema,
   activityDeltaEventSchema,
+  forgeRoomActivityContentSchema,
   jsonPatchOperationSchema,
   stateSnapshotEventSchema,
   stateDeltaEventSchema,
@@ -321,8 +322,16 @@ export {
   persistedTextMessageStartEventSchema,
   persistedTextMessageContentEventSchema,
   persistedTextMessageEndEventSchema,
+  persistedMessagesSnapshotEventSchema,
+  persistedAssistantSnapshotMessageSchema,
 } from "./events";
 export type { AgentChannelEnvelope, P0PersistedAguiEvent } from "./events";
+export type PersistedMessagesSnapshotEvent = import("zod").infer<
+  typeof import("./events").persistedMessagesSnapshotEventSchema
+>;
+export type ForgeRoomActivityContent = import("zod").infer<
+  typeof import("./events").forgeRoomActivityContentSchema
+>;
 
 export {
   interpretP0Capability,

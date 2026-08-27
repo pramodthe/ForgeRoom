@@ -196,6 +196,31 @@ export function channelTimelineReducer(
     };
   }
 
+  if (event.type === "MESSAGES_SNAPSHOT" && envelope.coworkerId) {
+    const messages = { ...state.messages };
+    const restPlaceholderKey = `seq:${envelope.channelSequence}`;
+    if (messages[restPlaceholderKey]) {
+      delete messages[restPlaceholderKey];
+    }
+    for (const [index, message] of event.messages.entries()) {
+      const key = `${envelope.logicalThreadId ?? envelope.coworkerId}:${message.id}`;
+      const prior = messages[key];
+      messages[key] = {
+        key,
+        sequence: prior?.sequence ?? envelope.channelSequence + index,
+        kind: "coworker",
+        authorId: envelope.coworkerId,
+        content: message.content,
+        status: "complete",
+      };
+    }
+    return {
+      ...state,
+      seenSequences,
+      messages,
+    };
+  }
+
   return { ...state, seenSequences };
 }
 

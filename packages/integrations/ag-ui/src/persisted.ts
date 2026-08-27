@@ -142,6 +142,26 @@ export function toPersistedAgUiEvent(input: unknown): P0PersistedAguiEvent | nul
         };
       }
     }
+  } else if (type === "ACTIVITY_SNAPSHOT") {
+    candidate = {
+      type,
+      messageId: stringField(event, "messageId"),
+      activityType: event.activityType,
+      replace: event.replace,
+      content: event.content,
+    };
+  } else if (type === "ACTIVITY_DELTA") {
+    candidate = {
+      type,
+      messageId: stringField(event, "messageId"),
+      activityType: event.activityType,
+      patch: event.patch,
+    };
+  } else if (type === "MESSAGES_SNAPSHOT") {
+    candidate = {
+      type,
+      messages: event.messages,
+    };
   }
 
   const parsed = p0PersistedAguiEventSchema.safeParse(candidate);
