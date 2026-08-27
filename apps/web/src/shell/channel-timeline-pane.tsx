@@ -2,6 +2,7 @@ import { useCallback, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { LoadingState, RouteErrorState } from "@forgeroom/ui-components";
 import type { Channel } from "@forgeroom/contracts";
+import type { ConnectionFixture } from "../api/mock-fixtures";
 import { ApiError } from "../api/http-client";
 import {
   addChannelCoworker,
@@ -20,11 +21,16 @@ import { ChannelTimeline } from "./channel-timeline";
 type ChannelTimelinePaneProps = {
   workspaceId: string;
   channel: Channel;
+  connections: ConnectionFixture[];
 };
 
 const EMPTY_TIMELINE_MESSAGES: [] = [];
 
-export function ChannelTimelinePane({ workspaceId, channel }: ChannelTimelinePaneProps) {
+export function ChannelTimelinePane({
+  workspaceId,
+  channel,
+  connections,
+}: ChannelTimelinePaneProps) {
   const { session } = useSession();
   const queryClient = useQueryClient();
   const archived = channel.status === "archived";
@@ -110,6 +116,7 @@ export function ChannelTimelinePane({ workspaceId, channel }: ChannelTimelinePan
         channelName={channel.name}
         missionBrief={channel.mission_brief}
         roster={rosterQuery.data}
+        connections={connections}
         workspaceCoworkers={coworkersQuery.data ?? []}
         membershipBusy={membershipMutation.isPending}
         archived={archived}
@@ -120,12 +127,15 @@ export function ChannelTimelinePane({ workspaceId, channel }: ChannelTimelinePan
         }
       />
       <ChannelTimeline
+        workspaceId={workspaceId}
         channelId={channel.id}
         messages={timeline.messages}
         runs={timeline.runs}
         roster={rosterQuery.data.coworkers}
         connection={timeline.connection}
         archived={archived}
+        currentHumanId={session?.user.id ?? null}
+        currentHumanName={session?.user.display_name ?? "Workspace owner"}
       />
       {launchError ? (
         <div

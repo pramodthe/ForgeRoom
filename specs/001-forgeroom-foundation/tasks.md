@@ -29,9 +29,9 @@ Each task file is authoritative for its status and evidence. Keep this index and
 | [x] | [P0-203](./tasks/P0-203-turn-events.md) | Turn creation and event normalization | done | P0-107, P0-202 |
 | [x] | [P0-204](./tasks/P0-204-reconnect-stop.md) | Reconnect, stop and correction | done | P0-203 |
 | [x] | [P0-205](./tasks/P0-205-router.md) | Direct mention/team router | done | P0-102, P0-106 |
-| [ ] | [P0-206](./tasks/P0-206-multi-agent-run.md) | Direct multi-agent Run engine | done | P0-202, P0-203, P0-205 |
+| [x] | [P0-206](./tasks/P0-206-multi-agent-run.md) | Direct multi-agent Run engine | done | P0-202, P0-203, P0-205 |
 | [ ] | [P0-208](./tasks/P0-208-session-rotation.md) | Capability/skill intersection and rotation | blocked | P0-202, P0-302, P0-314 |
-| [ ] | [P0-210](./tasks/P0-210-agui-compatibility-spike.md) | Freeze AG-UI and prove bridge | done | P0-000, P0-101 |
+| [ ] | [P0-210](./tasks/P0-210-agui-compatibility-spike.md) | Freeze AG-UI and prove bridge | in_review | P0-000, P0-101 |
 | [x] | [P0-211](./tasks/P0-211-trueforge-agui-adapter.md) | TrueForge-to-AG-UI adapter | done | P0-102, P0-203, P0-210 |
 | [x] | [P0-212](./tasks/P0-212-agui-persistence-state-replay.md) | AG-UI persistence and replay | done | P0-103, P0-107, P0-211 |
 | [ ] | [P0-213](./tasks/P0-213-conversational-coworker-drafts.md) | Conversational CoworkerDraft provisioning | blocked | P0-106, P0-208 |

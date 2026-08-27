@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { SessionResponse } from "@forgeroom/contracts";
 import { notifyApiUnauthorized, setApiUnauthorizedHandler } from "./api/unauthorized";
 import { assertMockFixturesValid, MOCK_WORKSPACE_ID } from "./api/mock-fixtures";
+import { fixtureModeFor } from "./api/mode";
 import {
   createFixtureResearcher,
   disableCoworker,
@@ -10,8 +11,12 @@ import {
   listChannelMessages,
   listChannelRoster,
   listCoworkers,
+  listSkillVersions,
+  listTasks,
   postChannelMessage,
+  publishFixtureRunSkill,
   updateCoworker,
+  updateFixtureTaskStatus,
 } from "./api/workspace-api";
 import { isSessionExpired, liveSession, sessionWorkspaceMismatch } from "./auth/session";
 import {
@@ -61,6 +66,11 @@ describe("P0 route contract", () => {
 });
 
 describe("mock fixtures", () => {
+  it("cannot enable fixture mode in production", () => {
+    expect(fixtureModeFor("production")).toBe(false);
+    expect(fixtureModeFor("prototype")).toBe(true);
+  });
+
   it("validates canonical contract fixtures", () => {
     expect(() => assertMockFixturesValid()).not.toThrow();
   });
@@ -158,6 +168,29 @@ describe("mock fixtures", () => {
     expect(posted.run_step_assignments).toEqual([
       expect.objectContaining({ coworker_id: researcher.id }),
     ]);
+  });
+
+  it("persists fixture task transitions as new revisions", async () => {
+    const before = (await listTasks(MOCK_WORKSPACE_ID))[0];
+    expect(before).toBeDefined();
+    if (!before) return;
+    const updated = await updateFixtureTaskStatus({
+      workspaceId: MOCK_WORKSPACE_ID,
+      taskId: before.id,
+      status: "done",
+    });
+    expect(updated.status).toBe("done");
+    expect(updated.current_revision).toBe(before.current_revision + 1);
+    expect((await listTasks(MOCK_WORKSPACE_ID))[0]?.status).toBe("done");
+  });
+
+  it("publishes the fixture run skill and binds it to Operator", async () => {
+    const skill = await publishFixtureRunSkill(MOCK_WORKSPACE_ID);
+    expect((await listSkillVersions(MOCK_WORKSPACE_ID)).map((version) => version.id)).toContain(
+      skill.id,
+    );
+    const operator = await getCoworker(MOCK_WORKSPACE_ID, "cw_operator_001");
+    expect(operator?.config.skill_version_ids).toContain(skill.id);
   });
 });
 

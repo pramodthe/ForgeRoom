@@ -42,3 +42,7 @@ Run browser component/API fixtures, keyboard/axe checks, 1440 px visual snapshot
 - Outcome:
 - Open risks:
 - Follow-up tasks:
+
+## Work log
+
+- 2026-08-27 — PR #36 added a fixture-driven parallel frontend prototype for the coworker, Task and Save-as-skill review surfaces. This is visual and interaction progress only: the task remains blocked and unchecked until the server-backed revisions, authorized mutations, refresh recovery and complete P0 E2E evidence satisfy the acceptance criteria above.

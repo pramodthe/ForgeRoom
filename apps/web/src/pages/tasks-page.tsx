@@ -1,9 +1,16 @@
 import { Link, useParams } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { LoadingState, RouteErrorState } from "@forgeroom/ui-components";
-import type { TaskRecordV1 } from "@forgeroom/contracts";
+import type { TaskRecordV1, TaskStatus } from "@forgeroom/contracts";
 import { useState, type ReactNode } from "react";
-import { getTask, listTasks } from "../api/workspace-api";
+import {
+  getTask,
+  listChannels,
+  listCoworkers,
+  listTasks,
+  updateFixtureTaskStatus,
+} from "../api/workspace-api";
+import { isFixtureMode } from "../api/mode";
 import { workspaceTaskDetailPath, workspaceTasksPath } from "../routes/paths";
 import { Avatar } from "../ui/avatar";
 
@@ -18,13 +25,40 @@ const STATUS_STYLE: Record<TaskRecordV1["status"], string> = {
 
 export function TasksPage() {
   const { workspaceId } = useParams({ from: "/w/$workspaceId/tasks" });
+  const [filter, setFilter] = useState<"All" | "Open" | "Mine">("All");
+  const [sort, setSort] = useState<"updated" | "due">("updated");
   const tasksQuery = useQuery({
     queryKey: ["tasks", workspaceId],
     queryFn: () => listTasks(workspaceId),
   });
-  if (tasksQuery.isLoading) return <LoadingState title="Loading tasks…" />;
-  if (tasksQuery.error) return <RouteErrorState title="Unable to load tasks" />;
+  const coworkersQuery = useQuery({
+    queryKey: ["coworkers", workspaceId],
+    queryFn: () => listCoworkers(workspaceId),
+  });
+  if (tasksQuery.isLoading || coworkersQuery.isLoading)
+    return <LoadingState title="Loading tasks…" />;
+  if (tasksQuery.error || coworkersQuery.error)
+    return <RouteErrorState title="Unable to load tasks" />;
   const tasks = tasksQuery.data ?? [];
+  const coworkers = new Map((coworkersQuery.data ?? []).map((coworker) => [coworker.id, coworker]));
+  const open = tasks.filter((task) => !["done", "cancelled"].includes(task.status));
+  const needsAttention = tasks.filter((task) => ["blocked", "in_review"].includes(task.status));
+  const completed = tasks.filter((task) => task.status === "done");
+  const visibleTasks = tasks
+    .filter((task) =>
+      filter === "Open"
+        ? !["done", "cancelled"].includes(task.status)
+        : filter === "Mine"
+          ? task.assignee_type === "human"
+          : true,
+    )
+    .sort((left, right) => {
+      const leftValue = sort === "due" ? (left.due_at ?? "9999") : left.updated_at;
+      const rightValue = sort === "due" ? (right.due_at ?? "9999") : right.updated_at;
+      return sort === "due"
+        ? leftValue.localeCompare(rightValue)
+        : rightValue.localeCompare(leftValue);
+    });
 
   return (
     <main className="min-h-0 flex-1 overflow-y-auto bg-zinc-50/60">
@@ -39,41 +73,76 @@ export function TasksPage() {
           </div>
           <button
             type="button"
-            className="rounded-xl bg-zinc-950 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-zinc-800"
+            disabled
+            title="Task creation API is not connected yet"
+            className="rounded-xl bg-zinc-300 px-4 py-2.5 text-sm font-semibold text-white shadow-sm disabled:cursor-not-allowed"
           >
-            New task
+            Task creation pending
           </button>
         </div>
         <div className="mt-6 grid grid-cols-3 gap-3">
-          <Summary label="Open tasks" value="2" detail="1 assigned" />
-          <Summary label="Needs attention" value="1" detail="Approval pending" tone="amber" />
-          <Summary label="Completed this week" value="7" detail="+3 from last week" tone="green" />
+          <Summary
+            label="Open tasks"
+            value={String(open.length)}
+            detail={`${open.filter((task) => task.assignee_id !== null).length} assigned`}
+          />
+          <Summary
+            label="Needs attention"
+            value={String(needsAttention.length)}
+            detail={needsAttention.length ? "Blocked or in review" : "Nothing waiting"}
+            tone="amber"
+          />
+          <Summary
+            label="Completed"
+            value={String(completed.length)}
+            detail="From loaded records"
+            tone="green"
+          />
         </div>
         <section className="mt-5 overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm">
           <div className="flex items-center justify-between border-b border-zinc-100 px-4 py-3">
             <div className="flex gap-1 rounded-lg bg-zinc-100 p-1">
-              {["All", "Open", "Mine"].map((filter, index) => (
+              {(["All", "Open", "Mine"] as const).map((option) => (
                 <button
-                  key={filter}
+                  key={option}
                   type="button"
-                  className={`rounded-md px-3 py-1.5 text-xs font-medium ${index === 0 ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500"}`}
+                  onClick={() => setFilter(option)}
+                  className={`rounded-md px-3 py-1.5 text-xs font-medium ${filter === option ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500"}`}
                 >
-                  {filter}
+                  {option}
                 </button>
               ))}
             </div>
             <label className="text-xs text-zinc-500">
               Sort
-              <select className="ml-1 rounded-lg border border-zinc-200 bg-white px-2 py-1.5 text-zinc-700">
-                <option>Recently updated</option>
-                <option>Due date</option>
+              <select
+                value={sort}
+                onChange={(event) => setSort(event.target.value as "updated" | "due")}
+                className="ml-1 rounded-lg border border-zinc-200 bg-white px-2 py-1.5 text-zinc-700"
+              >
+                <option value="updated">Recently updated</option>
+                <option value="due">Due date</option>
               </select>
             </label>
           </div>
           <div className="divide-y divide-zinc-100">
-            {tasks.map((task) => (
-              <TaskRow key={task.id} task={task} workspaceId={workspaceId} />
+            {visibleTasks.map((task) => (
+              <TaskRow
+                key={task.id}
+                task={task}
+                workspaceId={workspaceId}
+                assigneeName={
+                  task.assignee_type === "coworker" && task.assignee_id
+                    ? coworkers.get(task.assignee_id)?.name
+                    : undefined
+                }
+              />
             ))}
+            {visibleTasks.length === 0 ? (
+              <p className="px-4 py-8 text-center text-sm text-zinc-500">
+                No tasks match this filter.
+              </p>
+            ) : null}
           </div>
         </section>
       </div>
@@ -103,8 +172,15 @@ function Summary({
   );
 }
 
-function TaskRow({ task, workspaceId }: { task: TaskRecordV1; workspaceId: string }) {
-  const assigned = task.assignee_id === "cw_operator_001";
+function TaskRow({
+  task,
+  workspaceId,
+  assigneeName,
+}: {
+  task: TaskRecordV1;
+  workspaceId: string;
+  assigneeName?: string;
+}) {
   return (
     <Link
       to={workspaceTaskDetailPath(workspaceId, task.id)}
@@ -124,16 +200,18 @@ function TaskRow({ task, workspaceId }: { task: TaskRecordV1; workspaceId: strin
         </p>
       </div>
       <div className="flex items-center gap-2">
-        {assigned ? (
+        {assigneeName ? (
           <>
-            <Avatar name="Operator" tone="blue" size="sm" />
-            <span className="text-xs text-zinc-600">Operator</span>
+            <Avatar name={assigneeName} tone="blue" size="sm" />
+            <span className="text-xs text-zinc-600">{assigneeName}</span>
           </>
         ) : (
           <span className="text-xs text-zinc-400">Unassigned</span>
         )}
       </div>
-      <div className="text-xs text-zinc-500">{task.due_at ? "Due Sep 1" : "No due date"}</div>
+      <div className="text-xs text-zinc-500">
+        {task.due_at ? `Due ${formatDate(task.due_at)}` : "No due date"}
+      </div>
       <div className="text-right text-xs text-zinc-400">Rev {task.current_revision} →</div>
     </Link>
   );
@@ -145,7 +223,18 @@ export function TaskDetailPage() {
     queryKey: ["task", workspaceId, taskId],
     queryFn: () => getTask(workspaceId, taskId),
   });
-  if (taskQuery.isLoading) return <LoadingState title="Loading task…" />;
+  const channelsQuery = useQuery({
+    queryKey: ["channels", workspaceId],
+    queryFn: () => listChannels(workspaceId),
+  });
+  const coworkersQuery = useQuery({
+    queryKey: ["coworkers", workspaceId],
+    queryFn: () => listCoworkers(workspaceId),
+  });
+  if (taskQuery.isLoading || channelsQuery.isLoading || coworkersQuery.isLoading)
+    return <LoadingState title="Loading task…" />;
+  if (taskQuery.error || channelsQuery.error || coworkersQuery.error)
+    return <RouteErrorState title="Unable to load task" />;
   const task = taskQuery.data;
   if (!task) {
     return (
@@ -155,6 +244,11 @@ export function TaskDetailPage() {
       />
     );
   }
+  const channel = (channelsQuery.data ?? []).find((candidate) => candidate.id === task.channel_id);
+  const assignee =
+    task.assignee_type === "coworker" && task.assignee_id
+      ? (coworkersQuery.data ?? []).find((candidate) => candidate.id === task.assignee_id)
+      : null;
 
   return (
     <main className="min-h-0 flex-1 overflow-y-auto bg-zinc-50/60">
@@ -183,7 +277,9 @@ export function TaskDetailPage() {
               </div>
               <button
                 type="button"
-                className="rounded-lg border border-zinc-200 px-3 py-2 text-xs font-medium text-zinc-600"
+                disabled
+                title="Additional task actions are not connected yet"
+                className="cursor-not-allowed rounded-lg border border-zinc-200 px-3 py-2 text-xs font-medium text-zinc-400"
               >
                 •••
               </button>
@@ -192,23 +288,25 @@ export function TaskDetailPage() {
               <h2 className="text-sm font-semibold text-zinc-900">Activity</h2>
               <div className="mt-4 space-y-5">
                 <History
-                  title="Operator started work"
-                  detail="Assigned from the General channel"
-                  time="Today, 9:02 AM"
+                  title="Task created"
+                  detail={`Created by ${task.created_by_type} ${task.created_by_id}`}
+                  time={formatDateTime(task.created_at)}
                   tone="blue"
                 />
                 <History
-                  title="Task updated to in progress"
-                  detail="Revision 2 · source Run run_seed_001"
-                  time="Today, 9:03 AM"
+                  title={`Status: ${task.status.replace("_", " ")}`}
+                  detail={`Current revision ${task.current_revision}`}
+                  time={formatDateTime(task.updated_at)}
                   tone="violet"
                 />
-                <History
-                  title="Approval requested"
-                  detail="Publish updated support macro"
-                  time="Today, 9:04 AM"
-                  tone="amber"
-                />
+                {task.source_run_id ? (
+                  <History
+                    title="Linked to source run"
+                    detail={task.source_run_id}
+                    time={formatDateTime(task.created_at)}
+                    tone="amber"
+                  />
+                ) : null}
               </div>
             </div>
           </section>
@@ -219,16 +317,24 @@ export function TaskDetailPage() {
               </h2>
               <dl className="mt-4 space-y-4 text-xs">
                 <Detail label="Assignee">
-                  <div className="flex items-center gap-2">
-                    <Avatar name="Operator" tone="blue" size="sm" />
-                    <span className="font-medium text-zinc-800">Operator</span>
-                  </div>
+                  {assignee ? (
+                    <div className="flex items-center gap-2">
+                      <Avatar name={assignee.name} tone="blue" size="sm" />
+                      <span className="font-medium text-zinc-800">{assignee.name}</span>
+                    </div>
+                  ) : (
+                    <span className="text-zinc-500">Unassigned</span>
+                  )}
                 </Detail>
                 <Detail label="Channel">
-                  <span className="font-medium text-zinc-800"># General</span>
+                  <span className="font-medium text-zinc-800">
+                    {channel ? `# ${channel.name}` : task.channel_id}
+                  </span>
                 </Detail>
                 <Detail label="Due">
-                  <span className="font-medium text-zinc-800">September 1</span>
+                  <span className="font-medium text-zinc-800">
+                    {task.due_at ? formatDate(task.due_at) : "No due date"}
+                  </span>
                 </Detail>
                 <Detail label="Revision">
                   <span className="font-medium text-zinc-800">{task.current_revision}</span>
@@ -239,12 +345,23 @@ export function TaskDetailPage() {
               <h2 className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
                 Allowed transitions
               </h2>
-              <TaskTransitionPanel currentRevision={task.current_revision} />
+              <TaskTransitionPanel workspaceId={workspaceId} task={task} />
             </section>
             <section className="rounded-2xl border border-violet-100 bg-violet-50 p-4 text-xs leading-5 text-violet-800">
-              <strong>Source lineage preserved.</strong>
-              <br />
-              Message msg_seed_001 · Run run_seed_001
+              <strong>
+                {task.source_message_id || task.source_run_id
+                  ? "Source lineage preserved."
+                  : "No source lineage."}
+              </strong>
+              {task.source_message_id || task.source_run_id ? (
+                <>
+                  <br />
+                  {task.source_message_id
+                    ? `Message ${task.source_message_id}`
+                    : "No source message"}
+                  {task.source_run_id ? ` · Run ${task.source_run_id}` : ""}
+                </>
+              ) : null}
             </section>
           </aside>
         </div>
@@ -253,54 +370,44 @@ export function TaskDetailPage() {
   );
 }
 
-function TaskTransitionPanel({ currentRevision }: { currentRevision: number }) {
-  const [phase, setPhase] = useState<"idle" | "conflict" | "saved">("idle");
-  const [note, setNote] = useState(
-    "Validated the updated support macro and seven-day review plan.",
-  );
+function TaskTransitionPanel({ workspaceId, task }: { workspaceId: string; task: TaskRecordV1 }) {
+  const queryClient = useQueryClient();
+  const mutation = useMutation({
+    mutationFn: (status: TaskStatus) =>
+      updateFixtureTaskStatus({ workspaceId, taskId: task.id, status }),
+    onSuccess: async (updated) => {
+      queryClient.setQueryData(["task", workspaceId, task.id], updated);
+      await queryClient.invalidateQueries({ queryKey: ["tasks", workspaceId] });
+    },
+  });
 
   return (
     <div className="mt-3 space-y-2">
-      <label className="block text-[11px] text-zinc-500">
-        Transition note
-        <textarea
-          rows={3}
-          value={note}
-          onChange={(event) => setNote(event.target.value)}
-          className="mt-1.5 w-full resize-none rounded-lg border border-zinc-200 p-2 text-xs leading-5 text-zinc-700"
-        />
-      </label>
-      {phase === "conflict" ? (
-        <div
-          className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-[11px] leading-4 text-amber-900"
-          role="alert"
-        >
-          <strong>Revision conflict.</strong> Operator updated this Task to revision{" "}
-          {currentRevision}
-          while you were editing. Your note is preserved. Review the latest revision, then retry.
-        </div>
+      {!isFixtureMode ? (
+        <p className="rounded-lg bg-zinc-100 p-3 text-[11px] text-zinc-600">
+          Task transitions are unavailable until the live Task API is connected.
+        </p>
       ) : null}
-      {phase === "saved" ? (
-        <div className="rounded-lg bg-emerald-50 p-3 text-[11px] text-emerald-800" role="status">
-          Task updated to done as revision {currentRevision + 1}.
-        </div>
+      {mutation.error ? (
+        <p className="rounded-lg bg-red-50 p-3 text-[11px] text-red-800" role="alert">
+          {mutation.error.message}
+        </p>
       ) : null}
       <button
         type="button"
-        onClick={() => setPhase(phase === "conflict" ? "saved" : "conflict")}
-        className="w-full rounded-lg bg-zinc-950 px-3 py-2 text-xs font-semibold text-white"
+        onClick={() => mutation.mutate("done")}
+        disabled={!isFixtureMode || mutation.isPending || task.status === "done"}
+        className="w-full rounded-lg bg-zinc-950 px-3 py-2 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:bg-zinc-300"
       >
-        {phase === "conflict"
-          ? "Retry against latest revision"
-          : phase === "saved"
-            ? "Done recorded"
-            : "Mark done"}
+        {task.status === "done" ? "Done recorded" : mutation.isPending ? "Saving…" : "Mark done"}
       </button>
       <button
         type="button"
-        className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-xs font-medium text-zinc-700"
+        onClick={() => mutation.mutate("blocked")}
+        disabled={!isFixtureMode || mutation.isPending || task.status === "blocked"}
+        className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-xs font-medium text-zinc-700 disabled:cursor-not-allowed disabled:text-zinc-400"
       >
-        Mark blocked
+        {task.status === "blocked" ? "Blocked recorded" : "Mark blocked"}
       </button>
     </div>
   );
@@ -337,4 +444,21 @@ function Detail({ label, children }: { label: string; children: ReactNode }) {
       <dd>{children}</dd>
     </div>
   );
+}
+
+function formatDate(value: string): string {
+  return new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  }).format(new Date(value));
+}
+
+function formatDateTime(value: string): string {
+  return new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(new Date(value));
 }

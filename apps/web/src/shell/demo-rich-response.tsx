@@ -1,4 +1,6 @@
+import { Link } from "@tanstack/react-router";
 import { useState } from "react";
+import { workspaceConnectionsPath } from "../routes/paths";
 
 const SUPPORT_DATA = [
   { label: "Billing", value: 38, color: "bg-violet-500" },
@@ -259,7 +261,9 @@ function Metric(props: { label: string; value: string; delta: string; warning?: 
 }
 
 export function OperationsPlanCards() {
-  const [decision, setDecision] = useState<"pending" | "approved" | "denied">("pending");
+  const [decision, setDecision] = useState<"pending" | "approved" | "denied" | "changes_requested">(
+    "pending",
+  );
   return (
     <div className="space-y-3">
       <section className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
@@ -328,6 +332,7 @@ export function OperationsPlanCards() {
             <button
               type="button"
               className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-xs font-medium text-zinc-700 hover:bg-zinc-50"
+              onClick={() => setDecision("changes_requested")}
             >
               Request changes
             </button>
@@ -341,7 +346,7 @@ export function OperationsPlanCards() {
           </div>
         ) : (
           <div
-            className={`mt-4 rounded-lg px-3 py-2 text-sm font-medium ${decision === "approved" ? "bg-emerald-50 text-emerald-800" : "bg-red-50 text-red-800"}`}
+            className={`mt-4 rounded-lg px-3 py-2 text-sm font-medium ${decision === "approved" ? "bg-emerald-50 text-emerald-800" : decision === "changes_requested" ? "bg-amber-50 text-amber-800" : "bg-red-50 text-red-800"}`}
             role="status"
           >
             Decision recorded: {decision}. The coworker will resume after the approval group is
@@ -353,7 +358,7 @@ export function OperationsPlanCards() {
   );
 }
 
-export function ConnectionRecoveryCards() {
+export function ConnectionRecoveryCards({ workspaceId }: { workspaceId: string }) {
   const [answer, setAnswer] = useState("reconnect");
   const [submitted, setSubmitted] = useState(false);
   const [questionAnswered, setQuestionAnswered] = useState(false);
@@ -376,12 +381,12 @@ export function ConnectionRecoveryCards() {
             Action needed
           </span>
         </div>
-        <button
-          type="button"
+        <Link
+          to={workspaceConnectionsPath(workspaceId)}
           className="mt-3 rounded-lg bg-zinc-950 px-3 py-2 text-xs font-semibold text-white"
         >
           Open trusted reconnect flow
-        </button>
+        </Link>
       </section>
 
       <section className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
@@ -438,6 +443,7 @@ export function ConnectionRecoveryCards() {
             <div className="flex justify-end gap-2 pt-1">
               <button
                 type="button"
+                onClick={() => setAnswer("reconnect")}
                 className="rounded-lg px-3 py-2 text-xs font-medium text-zinc-500"
               >
                 Cancel

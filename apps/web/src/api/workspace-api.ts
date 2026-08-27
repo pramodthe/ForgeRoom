@@ -12,6 +12,7 @@ import type {
   SkillDraft,
   SkillVersion,
   TaskRecordV1,
+  TaskStatus,
 } from "@forgeroom/contracts";
 import {
   channelRosterResponseSchema,
@@ -19,6 +20,8 @@ import {
   channelTimelineMessagesResponseSchema,
   coworkerProfileSchema,
   coworkerUpdateCommandSchema,
+  skillVersionSchema,
+  taskRecordV1Schema,
 } from "@forgeroom/contracts";
 import type { ConnectionFixture } from "./mock-fixtures";
 import {
@@ -47,8 +50,12 @@ export type CoworkerDetail = CoworkerProfile & { config: CoworkerEditableConfig 
 
 const fixtureCoworkers = new Map<string, CoworkerDetail>();
 const fixtureTimelines = new Map<string, ChannelTimelineMessagesResponse>();
+const fixtureTasks = new Map<string, TaskRecordV1>();
+let fixtureRunSkill: SkillVersion | null = null;
 const FIXTURE_COWORKER_STORAGE_PREFIX = "forgeroom:fixture:coworker:v1:";
 const FIXTURE_TIMELINE_STORAGE_PREFIX = "forgeroom:fixture:timeline:v1:";
+const FIXTURE_TASK_STORAGE_PREFIX = "forgeroom:fixture:task:v1:";
+const FIXTURE_RUN_SKILL_STORAGE_KEY = "forgeroom:fixture:skill:v1:run_4A91";
 
 const FIXTURE_RESEARCHER_PROFILE = coworkerProfileSchema.parse({
   schemaVersion: 1,
@@ -179,6 +186,52 @@ function persistFixtureTimeline(timeline: ChannelTimelineMessagesResponse): void
   );
 }
 
+function fixtureTask(task: TaskRecordV1): TaskRecordV1 {
+  const existing = fixtureTasks.get(task.id);
+  if (existing) return existing;
+  const storage = fixtureStorage();
+  if (storage) {
+    const storageKey = `${FIXTURE_TASK_STORAGE_PREFIX}${task.id}`;
+    try {
+      const raw = storage.getItem(storageKey);
+      if (raw) {
+        const stored = taskRecordV1Schema.parse(JSON.parse(raw));
+        fixtureTasks.set(stored.id, stored);
+        return stored;
+      }
+    } catch {
+      storage.removeItem(storageKey);
+    }
+  }
+  fixtureTasks.set(task.id, task);
+  return task;
+}
+
+function persistFixtureTask(task: TaskRecordV1): void {
+  fixtureTasks.set(task.id, task);
+  fixtureStorage()?.setItem(`${FIXTURE_TASK_STORAGE_PREFIX}${task.id}`, JSON.stringify(task));
+}
+
+function storedFixtureRunSkill(): SkillVersion | null {
+  if (fixtureRunSkill) return fixtureRunSkill;
+  const storage = fixtureStorage();
+  if (!storage) return null;
+  try {
+    const raw = storage.getItem(FIXTURE_RUN_SKILL_STORAGE_KEY);
+    if (!raw) return null;
+    fixtureRunSkill = skillVersionSchema.parse(JSON.parse(raw));
+    return fixtureRunSkill;
+  } catch {
+    storage.removeItem(FIXTURE_RUN_SKILL_STORAGE_KEY);
+    return null;
+  }
+}
+
+function persistFixtureRunSkill(skill: SkillVersion): void {
+  fixtureRunSkill = skill;
+  fixtureStorage()?.setItem(FIXTURE_RUN_SKILL_STORAGE_KEY, JSON.stringify(skill));
+}
+
 function fixtureCoworker(coworker: CoworkerProfile): CoworkerDetail {
   const existing = fixtureCoworkers.get(coworker.id);
   if (existing) return existing;
@@ -277,7 +330,7 @@ export async function listChannelRoster(
 export async function listTasks(workspaceId: string): Promise<TaskRecordV1[]> {
   if (useMockApi) {
     assertWorkspace(workspaceId);
-    return MOCK_TASKS;
+    return MOCK_TASKS.map((task) => fixtureTask(task));
   }
   // Task API arrives in later P0 tasks; keep mock-empty for live mode until then.
   return [];
@@ -286,9 +339,29 @@ export async function listTasks(workspaceId: string): Promise<TaskRecordV1[]> {
 export async function getTask(workspaceId: string, taskId: string): Promise<TaskRecordV1 | null> {
   if (useMockApi) {
     assertWorkspace(workspaceId);
-    return MOCK_TASKS.find((task) => task.id === taskId) ?? null;
+    const task = MOCK_TASKS.find((candidate) => candidate.id === taskId);
+    return task ? fixtureTask(task) : null;
   }
   return null;
+}
+
+export async function updateFixtureTaskStatus(input: {
+  workspaceId: string;
+  taskId: string;
+  status: TaskStatus;
+}): Promise<TaskRecordV1> {
+  if (!useMockApi) throw new Error("Task updates are not connected in live mode yet.");
+  assertWorkspace(input.workspaceId);
+  const current = await getTask(input.workspaceId, input.taskId);
+  if (!current) throw new Error("task_not_found");
+  const updated = taskRecordV1Schema.parse({
+    ...current,
+    status: input.status,
+    current_revision: current.current_revision + 1,
+    updated_at: new Date().toISOString(),
+  });
+  persistFixtureTask(updated);
+  return updated;
 }
 
 export async function listCoworkers(workspaceId: string): Promise<CoworkerProfile[]> {
@@ -566,7 +639,8 @@ export async function listSkillDrafts(workspaceId: string): Promise<SkillDraft[]
 export async function listSkillVersions(workspaceId: string): Promise<SkillVersion[]> {
   if (useMockApi) {
     assertWorkspace(workspaceId);
-    return MOCK_SKILL_VERSIONS;
+    const runSkill = storedFixtureRunSkill();
+    return runSkill ? [...MOCK_SKILL_VERSIONS, runSkill] : MOCK_SKILL_VERSIONS;
   }
   return [];
 }
@@ -582,9 +656,58 @@ export async function getSkillDraft(workspaceId: string, skillId: string) {
 export async function getSkillVersion(workspaceId: string, skillId: string) {
   if (useMockApi) {
     assertWorkspace(workspaceId);
-    return MOCK_SKILL_VERSIONS.find((skill) => skill.skill_id === skillId) ?? null;
+    return (
+      (await listSkillVersions(workspaceId)).find((skill) => skill.skill_id === skillId) ?? null
+    );
   }
   return null;
+}
+
+export async function publishFixtureRunSkill(workspaceId: string): Promise<SkillVersion> {
+  if (!useMockApi) throw new Error("Skill publishing is not connected in live mode yet.");
+  assertWorkspace(workspaceId);
+  const existing = storedFixtureRunSkill();
+  if (existing) return existing;
+  const now = new Date().toISOString();
+  const skill = skillVersionSchema.parse({
+    schemaVersion: 1,
+    id: "skill_version_support_ops_run_001",
+    skill_id: "skill_support_ops_run_001",
+    version: 1,
+    state: "published",
+    manifest_hash: "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    content_hash: "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+    source_run_id: "run_4A91",
+    source_step_ids: ["step_analyst_001", "step_operator_002"],
+    required_tools: [
+      "support.read",
+      "sandbox.publish_summary",
+      "TaskRecord.create",
+      "INTERCOM_UPDATE_MACRO",
+    ],
+    required_components: [
+      "component_bar_line_chart_v1",
+      "component_data_table_v1",
+      "component_task_card_v1",
+      "component_artifact_card_v1",
+    ],
+    required_approvals: ["external_write"],
+    created_by: MOCK_SESSION.user.id,
+    created_at: now,
+    published_at: now,
+  });
+  const operator = findFixtureCoworker("cw_operator_001");
+  if (!operator || operator.status !== "active") throw new Error("operator_not_available");
+  persistFixtureCoworker({
+    ...operator,
+    config_revision: operator.config_revision + 1,
+    config: {
+      ...operator.config,
+      skill_version_ids: [...new Set([...operator.config.skill_version_ids, skill.id])],
+    },
+  });
+  persistFixtureRunSkill(skill);
+  return skill;
 }
 
 export async function listConnections(workspaceId: string): Promise<ConnectionFixture[]> {

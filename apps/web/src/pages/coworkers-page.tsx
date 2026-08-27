@@ -1,7 +1,7 @@
 import { Link, useParams } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { LoadingState, RouteErrorState } from "@forgeroom/ui-components";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
   createFixtureResearcher,
   disableCoworker,
@@ -15,6 +15,7 @@ import { isFixtureMode } from "../api/mode";
 import { useSession } from "../auth/session-context";
 import { workspaceCoworkerDetailPath, workspaceCoworkersPath } from "../routes/paths";
 import { Avatar } from "../ui/avatar";
+import { useDialogFocus } from "../ui/use-dialog-focus";
 
 export function CoworkersPage() {
   const { workspaceId } = useParams({ from: "/w/$workspaceId/coworkers" });
@@ -149,6 +150,8 @@ function CoworkerBuilder({
   onClose: () => void;
   onCreated: () => Promise<unknown>;
 }) {
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useDialogFocus(dialogRef, onClose);
   const [stage, setStage] = useState<
     "prompt" | "gathering" | "review" | "confirming" | "creating" | "ready"
   >("prompt");
@@ -179,7 +182,11 @@ function CoworkerBuilder({
       aria-modal="true"
       aria-labelledby="builder-title"
     >
-      <div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-3xl bg-white shadow-2xl">
+      <div
+        ref={dialogRef}
+        tabIndex={-1}
+        className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-3xl bg-white shadow-2xl"
+      >
         <div className="flex items-center justify-between border-b border-zinc-100 px-6 py-4">
           <div>
             <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-violet-700">
@@ -205,6 +212,7 @@ function CoworkerBuilder({
                   What should this coworker own?
                 </label>
                 <textarea
+                  data-autofocus
                   id="coworker-job"
                   rows={5}
                   value={prompt}
@@ -404,6 +412,7 @@ export function CoworkerDetailPage() {
     queryFn: () => getCoworker(workspaceId, coworkerId),
   });
   if (coworkerQuery.isLoading) return <LoadingState title="Loading coworker…" />;
+  if (coworkerQuery.error) return <RouteErrorState title="Unable to load coworker" />;
   const coworker = coworkerQuery.data;
   if (!coworker)
     return (
@@ -598,10 +607,7 @@ function CoworkerEditor({
             </EditorSection>
             <EditorSection title="Exact tool grants">
               <div className="flex flex-wrap gap-2">
-                {(analyst
-                  ? ["GITHUB_GET_ISSUES", "SUPPORT_SEARCH", "DATATABLE_RENDER", "CHART_RENDER"]
-                  : ["INTERCOM_UPDATE_MACRO", "SANDBOX_RUN", "TASK_WRITE", "ARTIFACT_PUBLISH"]
-                ).map((tool) => (
+                {coworker.config.tool_grants.map((tool) => (
                   <span
                     key={tool}
                     className="rounded-lg border border-zinc-200 bg-zinc-50 px-2.5 py-1.5 text-xs font-medium text-zinc-700"
@@ -609,26 +615,15 @@ function CoworkerEditor({
                     ✓ {tool}
                   </span>
                 ))}
+                {coworker.config.tool_grants.length === 0 ? (
+                  <span className="text-xs text-zinc-400">No tool grants</span>
+                ) : null}
               </div>
             </EditorSection>
             <EditorSection title="Skills & controlled components">
               <div className="grid grid-cols-2 gap-3">
-                <GrantList
-                  title="Private skills"
-                  items={
-                    analyst
-                      ? ["Support insight brief"]
-                      : ["Support operations plan", "Publish approved macro"]
-                  }
-                />
-                <GrantList
-                  title="Components"
-                  items={
-                    analyst
-                      ? ["DataTable", "BarOrLineChart"]
-                      : ["TaskCard", "ArtifactCard", "ChoiceForm"]
-                  }
-                />
+                <GrantList title="Private skills" items={coworker.config.skill_version_ids} />
+                <GrantList title="Components" items={coworker.config.component_version_ids} />
               </div>
             </EditorSection>
           </section>
@@ -638,11 +633,27 @@ function CoworkerEditor({
                 Runtime
               </h2>
               <dl className="mt-4 space-y-3 text-xs">
-                <SideDetail label="Model preset" value="Default balanced" />
-                <SideDetail label="Turn budget" value="12k tokens" />
-                <SideDetail label="Tool limit" value="20 calls" />
-                <SideDetail label="Sandbox" value={analyst ? "Disabled" : "Enabled"} />
-                <SideDetail label="GenUI" value="Controlled only" />
+                <SideDetail label="Model preset" value={coworker.config.model_preset} />
+                <SideDetail
+                  label="Turn budget"
+                  value={`${coworker.config.budget.max_turn_tokens.toLocaleString()} tokens`}
+                />
+                <SideDetail
+                  label="Tool limit"
+                  value={`${coworker.config.budget.max_tool_calls} calls`}
+                />
+                <SideDetail
+                  label="Sandbox"
+                  value={
+                    coworker.config.tool_grants.some((tool) => tool.includes("SANDBOX"))
+                      ? "Granted"
+                      : "Not granted"
+                  }
+                />
+                <SideDetail
+                  label="GenUI components"
+                  value={String(coworker.config.component_version_ids.length)}
+                />
                 <SideDetail label="Native subagents" value="Unavailable in P0" />
               </dl>
             </section>
@@ -695,6 +706,7 @@ function GrantList({ title, items }: { title: string; items: string[] }) {
             ✓ {item}
           </li>
         ))}
+        {items.length === 0 ? <li className="text-xs text-zinc-400">None</li> : null}
       </ul>
     </div>
   );

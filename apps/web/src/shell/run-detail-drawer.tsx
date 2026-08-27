@@ -1,22 +1,29 @@
-import { useEffect, useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { useRef, useState } from "react";
+import { publishFixtureRunSkill } from "../api/workspace-api";
 import { Avatar } from "../ui/avatar";
+import { useDialogFocus } from "../ui/use-dialog-focus";
 
 type RunDetailDrawerProps = {
+  workspaceId: string;
   onClose: () => void;
 };
 
-export function RunDetailDrawer({ onClose }: RunDetailDrawerProps) {
-  const [skillReviewOpen, setSkillReviewOpen] = useState(false);
-  const closeRef = useRef<HTMLButtonElement>(null);
+const STOPPED_RUN_KEY = "forgeroom:fixture:run:v1:run_4A91:stopped";
 
-  useEffect(() => {
-    closeRef.current?.focus();
-    function onKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") onClose();
-    }
-    document.addEventListener("keydown", onKeyDown);
-    return () => document.removeEventListener("keydown", onKeyDown);
-  }, [onClose]);
+export function RunDetailDrawer({ workspaceId, onClose }: RunDetailDrawerProps) {
+  const [skillReviewOpen, setSkillReviewOpen] = useState(false);
+  const [stopped, setStopped] = useState(
+    () => typeof window !== "undefined" && window.localStorage.getItem(STOPPED_RUN_KEY) === "true",
+  );
+  const closeRef = useRef<HTMLButtonElement>(null);
+  const drawerRef = useRef<HTMLElement>(null);
+  useDialogFocus(drawerRef, onClose, !skillReviewOpen);
+
+  function stopRemainingWork() {
+    window.localStorage.setItem(STOPPED_RUN_KEY, "true");
+    setStopped(true);
+  }
 
   return (
     <div className="fixed inset-0 z-40 flex justify-end bg-zinc-950/30" role="presentation">
@@ -27,6 +34,8 @@ export function RunDetailDrawer({ onClose }: RunDetailDrawerProps) {
         onClick={onClose}
       />
       <section
+        ref={drawerRef}
+        tabIndex={-1}
         className="h-full w-full max-w-xl overflow-y-auto border-l border-zinc-200 bg-zinc-50 shadow-2xl"
         role="dialog"
         aria-modal="true"
@@ -66,7 +75,7 @@ export function RunDetailDrawer({ onClose }: RunDetailDrawerProps) {
                 </p>
               </div>
               <span className="rounded-full bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700">
-                Needs approval
+                {stopped ? "Stopped" : "Needs approval"}
               </span>
             </div>
           </section>
@@ -87,10 +96,14 @@ export function RunDetailDrawer({ onClose }: RunDetailDrawerProps) {
               <RunStep
                 name="Operator"
                 tone="blue"
-                state="Waiting for approval"
-                description="Created Task revision 2 and proposed the exact Intercom macro update."
+                state={stopped ? "Stopped" : "Waiting for approval"}
+                description={
+                  stopped
+                    ? "Remaining external work was cancelled by the workspace owner."
+                    : "Created Task revision 2 and proposed the exact Intercom macro update."
+                }
                 tool="INTERCOM_UPDATE_MACRO"
-                waiting
+                waiting={!stopped}
               />
             </div>
           </section>
@@ -128,21 +141,29 @@ export function RunDetailDrawer({ onClose }: RunDetailDrawerProps) {
               body="2 durable revisions"
               detail="PDF brief · CSV analysis"
             />
-            <Summary title="Decisions" body="1 waiting" detail="No questions · no failures" />
+            <Summary
+              title="Decisions"
+              body={stopped ? "0 waiting" : "1 waiting"}
+              detail={stopped ? "Remaining work stopped" : "No questions · no failures"}
+            />
           </div>
 
           <section className="rounded-2xl border border-violet-100 bg-violet-50 p-4 text-xs leading-5 text-violet-900">
             <strong>Safe receipt.</strong> Two persistent coworker steps ran. No native subagent or
-            coordinator was created. One external write remains paused until the trusted approval
-            group is resolved.
+            coordinator was created.{" "}
+            {stopped
+              ? "The remaining external write was stopped."
+              : "One external write remains paused until the trusted approval group is resolved."}
           </section>
 
           <div className="flex items-center justify-between border-t border-zinc-200 pt-4">
             <button
               type="button"
-              className="rounded-xl border border-zinc-300 bg-white px-4 py-2.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50"
+              onClick={stopRemainingWork}
+              disabled={stopped}
+              className="rounded-xl border border-zinc-300 bg-white px-4 py-2.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:text-zinc-400"
             >
-              Stop remaining work
+              {stopped ? "Remaining work stopped" : "Stop remaining work"}
             </button>
             <button
               type="button"
@@ -154,7 +175,9 @@ export function RunDetailDrawer({ onClose }: RunDetailDrawerProps) {
           </div>
         </div>
       </section>
-      {skillReviewOpen ? <SaveAsSkillReview onClose={() => setSkillReviewOpen(false)} /> : null}
+      {skillReviewOpen ? (
+        <SaveAsSkillReview workspaceId={workspaceId} onClose={() => setSkillReviewOpen(false)} />
+      ) : null}
     </div>
   );
 }
@@ -215,12 +238,28 @@ function Summary(props: { title: string; body: string; detail: string }) {
   );
 }
 
-function SaveAsSkillReview({ onClose }: { onClose: () => void }) {
+function SaveAsSkillReview({ workspaceId, onClose }: { workspaceId: string; onClose: () => void }) {
+  const queryClient = useQueryClient();
   const [stage, setStage] = useState<"review" | "publishing" | "attached">("review");
+  const [error, setError] = useState<string | null>(null);
+  const dialogRef = useRef<HTMLElement>(null);
+  useDialogFocus(dialogRef, onClose);
 
-  function publish() {
+  async function publish() {
+    setError(null);
     setStage("publishing");
-    window.setTimeout(() => setStage("attached"), 700);
+    try {
+      await publishFixtureRunSkill(workspaceId);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["skill-versions", workspaceId] }),
+        queryClient.invalidateQueries({ queryKey: ["coworkers", workspaceId] }),
+        queryClient.invalidateQueries({ queryKey: ["coworker", workspaceId, "cw_operator_001"] }),
+      ]);
+      setStage("attached");
+    } catch (publishError) {
+      setError(publishError instanceof Error ? publishError.message : "Unable to publish skill.");
+      setStage("review");
+    }
   }
 
   return (
@@ -229,6 +268,8 @@ function SaveAsSkillReview({ onClose }: { onClose: () => void }) {
       role="presentation"
     >
       <section
+        ref={dialogRef}
+        tabIndex={-1}
         className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-3xl bg-white shadow-2xl"
         role="dialog"
         aria-modal="true"
@@ -243,7 +284,12 @@ function SaveAsSkillReview({ onClose }: { onClose: () => void }) {
               Save support operations plan
             </h2>
           </div>
-          <button type="button" onClick={onClose} className="rounded-lg px-2 py-1 text-zinc-500">
+          <button
+            data-autofocus
+            type="button"
+            onClick={onClose}
+            className="rounded-lg px-2 py-1 text-zinc-500"
+          >
             Close
           </button>
         </header>
@@ -327,12 +373,17 @@ function SaveAsSkillReview({ onClose }: { onClose: () => void }) {
               </p>
               <button
                 type="button"
-                onClick={publish}
+                onClick={() => void publish()}
                 className="rounded-xl bg-zinc-950 px-4 py-2.5 text-sm font-semibold text-white"
               >
                 Publish v1 and attach
               </button>
             </div>
+            {error ? (
+              <p className="mt-4 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-800" role="alert">
+                {error}
+              </p>
+            ) : null}
           </div>
         ) : (
           <div className="p-12 text-center" role="status">

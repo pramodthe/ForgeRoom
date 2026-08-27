@@ -8,7 +8,6 @@ import {
   listSkillVersions,
 } from "../api/workspace-api";
 import { workspaceSkillDetailPath, workspaceSkillsPath } from "../routes/paths";
-import { Avatar } from "../ui/avatar";
 
 export function SkillsPage() {
   const { workspaceId } = useParams({ from: "/w/$workspaceId/skills" });
@@ -53,27 +52,26 @@ export function SkillsPage() {
                 </span>
                 <span className="text-zinc-300">→</span>
               </div>
-              <h2 className="mt-4 font-semibold text-zinc-950">Support operations plan</h2>
+              <h2 className="mt-4 font-semibold text-zinc-950">{skillTitle(skill.skill_id)}</h2>
               <p className="mt-1 text-sm leading-6 text-zinc-600">
                 Turn support evidence into a sourced action plan, TaskRecord, and approval-ready
                 external update.
               </p>
               <div className="mt-4 flex flex-wrap gap-1.5">
-                {["sandbox.publish_summary", "TaskCard", "ArtifactCard"].map((item) => (
+                {[...skill.required_tools, ...skill.required_components].map((item) => (
                   <span
                     key={item}
                     className="rounded-md bg-zinc-100 px-2 py-1 text-[10px] text-zinc-600"
                   >
-                    {item}
+                    {formatCapability(item)}
                   </span>
                 ))}
+                {skill.required_tools.length + skill.required_components.length === 0 ? (
+                  <span className="text-[11px] text-zinc-400">No tool or component grants</span>
+                ) : null}
               </div>
-              <div className="mt-4 flex items-center gap-2 border-t border-zinc-100 pt-3">
-                <Avatar name="Operator" tone="blue" size="sm" />
-                <div className="text-[11px]">
-                  <div className="font-medium text-zinc-700">Attached to Operator</div>
-                  <div className="text-zinc-400">Source Run {skill.source_run_id}</div>
-                </div>
+              <div className="mt-4 border-t border-zinc-100 pt-3 text-[11px] text-zinc-500">
+                Source Run {skill.source_run_id} · exact manifest requirements shown above
               </div>
             </Link>
           ))}
@@ -157,7 +155,9 @@ export function SkillDetailPage() {
               </span>
               <button
                 type="button"
-                className="rounded-lg border border-zinc-200 px-3 py-2 text-xs font-medium text-zinc-600"
+                disabled
+                title="Skill editing is not connected yet"
+                className="cursor-not-allowed rounded-lg border border-zinc-200 px-3 py-2 text-xs font-medium text-zinc-400"
               >
                 Edit draft
               </button>
@@ -214,8 +214,14 @@ export function SkillDetailPage() {
                   label="Tools"
                   items={draft?.required_tools ?? version?.required_tools ?? []}
                 />
-                <Requirement label="Components" items={["TaskCard", "ArtifactCard"]} />
-                <Requirement label="Approval boundary" items={["Every external write"]} />
+                <Requirement
+                  label="Components"
+                  items={draft?.required_components ?? version?.required_components ?? []}
+                />
+                <Requirement
+                  label="Approval boundary"
+                  items={draft?.required_approvals ?? version?.required_approvals ?? []}
+                />
               </div>
             </section>
             <section className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
@@ -229,21 +235,16 @@ export function SkillDetailPage() {
                     {draft?.source_run_id ?? version?.source_run_id}
                   </dd>
                 </div>
-                <div>
-                  <dt className="text-zinc-400">Attached coworker</dt>
-                  <dd className="mt-2 flex items-center gap-2">
-                    <Avatar name="Operator" tone="blue" size="sm" />
-                    <span className="font-medium text-zinc-700">Operator</span>
-                  </dd>
-                </div>
               </dl>
             </section>
             {draft ? (
               <button
                 type="button"
-                className="w-full rounded-xl bg-zinc-950 px-4 py-3 text-sm font-semibold text-white"
+                disabled
+                title="Draft publishing API is not connected yet"
+                className="w-full cursor-not-allowed rounded-xl bg-zinc-300 px-4 py-3 text-sm font-semibold text-white"
               >
-                Review and publish
+                Publishing integration pending
               </button>
             ) : null}
           </aside>
@@ -268,10 +269,26 @@ function Requirement({ label, items }: { label: string; items: string[] }) {
       <div className="mt-1.5 flex flex-wrap gap-1">
         {items.map((item) => (
           <span key={item} className="rounded-md bg-zinc-100 px-2 py-1 text-[10px] text-zinc-600">
-            {item}
+            {formatCapability(item)}
           </span>
         ))}
+        {items.length === 0 ? <span className="text-[10px] text-zinc-400">None</span> : null}
       </div>
     </div>
   );
+}
+
+function skillTitle(skillId: string): string {
+  return skillId === "skill_support_ops_run_001"
+    ? "Support operations plan from Run 4A91"
+    : "Support operations plan";
+}
+
+function formatCapability(value: string): string {
+  return value
+    .replace(/^component_/, "")
+    .replace(/_v\d+$/, "")
+    .split("_")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
 }

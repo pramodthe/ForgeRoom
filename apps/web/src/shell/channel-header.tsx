@@ -1,5 +1,6 @@
 import { Link } from "@tanstack/react-router";
 import type { ChannelRosterCoworker, ChannelRosterResponse } from "@forgeroom/contracts";
+import type { ConnectionFixture } from "../api/mock-fixtures";
 import { workspaceCoworkersPath } from "../routes/paths";
 import { Avatar } from "../ui/avatar";
 
@@ -18,6 +19,7 @@ type ChannelHeaderProps = {
   channelName: string;
   missionBrief: string;
   roster: ChannelRosterResponse;
+  connections: ConnectionFixture[];
   workspaceCoworkers: Array<{ id: string; handle: string; name: string; status: string }>;
   onAddCoworker: (coworkerId: string) => void;
   onRemoveCoworker: (coworkerId: string) => void;
@@ -31,6 +33,7 @@ export function ChannelHeader({
   channelName,
   missionBrief,
   roster,
+  connections,
   workspaceCoworkers,
   onAddCoworker,
   onRemoveCoworker,
@@ -44,6 +47,10 @@ export function ChannelHeader({
     (coworker) => coworker.status === "active" && !memberIds.has(coworker.id),
   );
   const attentionCount = roster.coworkers.filter((row) => row.availability === "needs_you").length;
+  const activeConnections = connections.filter(
+    (connection) => connection.status === "active",
+  ).length;
+  const connectionsHealthy = connections.length > 0 && activeConnections === connections.length;
 
   return (
     <header className="border-b border-zinc-200 bg-white px-5 py-3.5">
@@ -68,7 +75,12 @@ export function ChannelHeader({
             className="inline-flex items-center gap-1.5 rounded-full border border-zinc-200 bg-zinc-50 px-2 py-1 text-zinc-600"
             aria-label="Connector health"
           >
-            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />3 connections healthy
+            <span
+              className={`h-1.5 w-1.5 rounded-full ${connectionsHealthy ? "bg-emerald-500" : "bg-amber-500"}`}
+            />
+            {connections.length === 0
+              ? "Connection status unavailable"
+              : `${activeConnections} of ${connections.length} connections healthy`}
           </span>
           <span
             className="shrink-0 rounded-full border border-zinc-200 bg-white px-2 py-1 text-zinc-500"

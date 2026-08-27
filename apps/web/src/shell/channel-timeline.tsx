@@ -21,12 +21,15 @@ const CONNECTION_LABEL: Record<TimelineConnection, string> = {
 };
 
 export function ChannelTimeline(props: {
+  workspaceId: string;
   channelId: string;
   messages: TimelineMessage[];
   runs: Record<string, TimelineRun>;
   roster: readonly ChannelRosterCoworker[];
   connection: TimelineConnection;
   archived: boolean;
+  currentHumanId: string | null;
+  currentHumanName: string;
 }) {
   const bottomRef = useRef<HTMLDivElement>(null);
   const coworkerById = new Map(props.roster.map((coworker) => [coworker.coworker_id, coworker]));
@@ -76,6 +79,10 @@ export function ChannelTimeline(props: {
           props.messages.map((message) => {
             const coworker =
               message.kind === "coworker" ? coworkerById.get(message.authorId) : undefined;
+            const isCurrentHuman =
+              message.kind === "human" && message.authorId === props.currentHumanId;
+            const humanLabel = isCurrentHuman ? "You" : "Workspace member";
+            const humanName = isCurrentHuman ? props.currentHumanName : "Workspace member";
             const richResponse =
               isFixtureMode &&
               props.channelId === "ch_general_001" &&
@@ -101,7 +108,7 @@ export function ChannelTimeline(props: {
                 props.channelId === "ch_ops_002" &&
                 message.authorId === "cw_operator_001" ? (
                 <ControlledComponentSlot slotId="ui_connection_recovery_rev_1">
-                  <ConnectionRecoveryCards />
+                  <ConnectionRecoveryCards workspaceId={props.workspaceId} />
                 </ControlledComponentSlot>
               ) : null;
             return (
@@ -113,7 +120,7 @@ export function ChannelTimeline(props: {
                     className={`flex max-w-[88%] items-start gap-2.5 ${message.kind === "human" ? "flex-row-reverse" : ""}`}
                   >
                     <Avatar
-                      name={message.kind === "human" ? "Pramod" : (coworker?.name ?? "Coworker")}
+                      name={message.kind === "human" ? humanName : (coworker?.name ?? "Coworker")}
                       tone={
                         message.kind === "human"
                           ? "zinc"
@@ -133,7 +140,7 @@ export function ChannelTimeline(props: {
                       <div
                         className={`mb-1 text-xs font-medium ${message.kind === "human" ? "text-zinc-300" : "text-zinc-500"}`}
                       >
-                        {message.kind === "human" ? "You" : (coworker?.name ?? "Coworker")}
+                        {message.kind === "human" ? humanLabel : (coworker?.name ?? "Coworker")}
                       </div>
                       <p className="whitespace-pre-wrap text-sm leading-6">
                         {message.content || (message.status === "streaming" ? "Working…" : "")}

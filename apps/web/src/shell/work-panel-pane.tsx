@@ -6,7 +6,11 @@ import { RunDetailDrawer } from "./run-detail-drawer";
 const TABS = ["Work", "Artifacts", "Context"] as const;
 type WorkTab = (typeof TABS)[number];
 
-export function WorkPanelPane(props: { channelId: string; channelName: string }) {
+export function WorkPanelPane(props: {
+  workspaceId: string;
+  channelId: string;
+  channelName: string;
+}) {
   const [activeTab, setActiveTab] = useState<WorkTab>("Work");
   const [runDrawerOpen, setRunDrawerOpen] = useState(false);
 
@@ -43,7 +47,9 @@ export function WorkPanelPane(props: { channelId: string; channelName: string })
           <EmptyPanel tab={activeTab} />
         )}
       </div>
-      {runDrawerOpen ? <RunDetailDrawer onClose={() => setRunDrawerOpen(false)} /> : null}
+      {runDrawerOpen ? (
+        <RunDetailDrawer workspaceId={props.workspaceId} onClose={() => setRunDrawerOpen(false)} />
+      ) : null}
     </aside>
   );
 }
