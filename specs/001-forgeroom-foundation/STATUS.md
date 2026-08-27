@@ -2,10 +2,10 @@
 
 | Field | Current value |
 | --- | --- |
-| Overall | M1 Foundation done; P0-402 composer/roster in review; P0-210 AG-UI spike merged (in_review); P0-000 partial live probes |
+| Overall | M1 Foundation done; P0-402 composer/roster merged; P0-210 AG-UI spike merged (in_review); P0-000 partial live probes |
 | Current phase | Phase 1 — Foundation |
-| Active task | P0-402 (in_review); P0-000 (in_progress); P0-210 (in_review, live proofs deferred to P0-211) |
-| Next task | Merge PR for P0-402; finish P0-000 TrueForge probes (add keys to `.env`); start P0-105 demo fixtures |
+| Active task | P0-000 (in_progress); P0-210 (in_review, live proofs deferred to P0-211) |
+| Next task | Finish P0-000 TrueForge probes (add keys to `.env`); start P0-105 demo fixtures |
 | P0 blockers | TrueForge model presets, Research permission preview, Save-as-skill Run binding, TrueForge→artifact path, demo durable storage — Composio/Daytona SDK/local adapter verified 2026-08-26; **DB migrations applied locally** |
 | Last updated | 2026-08-26 |
 
@@ -49,6 +49,7 @@ Never put credentials in this file.
 
 ## Recently completed
 
+- P0-402 channel composer and coworker roster merged via PR #19 (`eb560d3`).
 - P0-401 authenticated three-pane app shell merged via PR #15 (`c4e08e3`).
 - P0-108 bounded channel context and pins merged to `main` via PR #10 (`1c3589b`).
 - P0-205 mention/team router merged to `main` via PR #11 (`fe36cd1`).
