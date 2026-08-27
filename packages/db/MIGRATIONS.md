@@ -20,6 +20,10 @@ remediation guidance; after those rows are corrected, rerunning the migration is
 The migration holds an exclusive session-table lock from validation through enforcement so
 concurrent session creation cannot race the backfill.
 
+`0003_runs_source_message_unique.sql` enforces the application invariant that one channel-owned
+human message creates exactly one Run. It stops with remediation guidance when legacy duplicate
+Runs exist instead of selecting or deleting a canonical Run automatically.
+
 Re-running `migrate` is idempotent through `forgeroom_schema_migrations`. Forward and rollback
 operations hold the same transaction-scoped PostgreSQL advisory lock, so concurrent deployers
 serialize before reading or changing the migration journal.

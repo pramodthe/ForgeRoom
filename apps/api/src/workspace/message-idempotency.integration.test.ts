@@ -115,4 +115,63 @@ describe("channel message idempotency recovery", () => {
       expect(runs).toHaveLength(1);
     });
   }, 60_000);
+
+  it("converges concurrent repair retries on one Run", async () => {
+    await withMigratedDatabase(async (sql) => {
+      await seedRuntime(sql);
+      await seedParticipants(sql);
+      const workspace = createWorkspaceService({
+        store: createPostgresWorkspaceStore(sql),
+        sql,
+      });
+      await sql.unsafe(`
+        CREATE FUNCTION fail_forgeroom_run_insert() RETURNS trigger AS $$
+        BEGIN
+          RAISE EXCEPTION 'injected run creation failure';
+        END;
+        $$ LANGUAGE plpgsql;
+        CREATE TRIGGER fail_forgeroom_run_insert_trigger
+        BEFORE INSERT ON runs
+        FOR EACH ROW EXECUTE FUNCTION fail_forgeroom_run_insert();
+      `);
+      const body = "@research repair this message concurrently";
+      const key = "agui:ch_1:cw_1:run_concurrent_recovery";
+
+      const failed = await workspace.postMessage(session, "ch_1", command(body, key));
+      expect(failed.ok).toBe(false);
+      await sql.unsafe(`
+        DROP TRIGGER fail_forgeroom_run_insert_trigger ON runs;
+        CREATE FUNCTION delay_forgeroom_run_insert() RETURNS trigger AS $$
+        BEGIN
+          PERFORM pg_sleep(0.2);
+          RETURN NEW;
+        END;
+        $$ LANGUAGE plpgsql;
+        CREATE TRIGGER delay_forgeroom_run_insert_trigger
+        BEFORE INSERT ON runs
+        FOR EACH ROW EXECUTE FUNCTION delay_forgeroom_run_insert();
+      `);
+
+      const [firstRetry, secondRetry] = await Promise.all([
+        workspace.postMessage(session, "ch_1", command(body, key)),
+        workspace.postMessage(session, "ch_1", command(body, key)),
+      ]);
+      expect(firstRetry.ok).toBe(true);
+      expect(secondRetry.ok).toBe(true);
+      if (!firstRetry.ok || !secondRetry.ok) {
+        throw new Error("concurrent repair did not converge");
+      }
+      expect(secondRetry.value.run_id).toBe(firstRetry.value.run_id);
+      expect(secondRetry.value.message_id).toBe(firstRetry.value.message_id);
+
+      const runs = await sql<{ id: string }[]>`
+        SELECT id FROM runs WHERE source_message_id = ${firstRetry.value.message_id}
+      `;
+      expect(runs).toHaveLength(1);
+      const steps = await sql<{ id: string }[]>`
+        SELECT id FROM run_steps WHERE run_id = ${runs[0]?.id ?? ""}
+      `;
+      expect(steps).toHaveLength(1);
+    });
+  }, 60_000);
 });
