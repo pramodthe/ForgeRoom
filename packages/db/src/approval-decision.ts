@@ -447,6 +447,8 @@ export async function recordApprovalDecision(
       WHERE id = ${row.required_action_id} AND state = 'pending'
     `;
 
+    // request_changes resolves the proposal for correction only — it must not
+    // advance PauseGroup readiness or trigger a TrueForge resume.
     const updatedGroup = await tx<
       {
         id: string;
@@ -457,20 +459,25 @@ export async function recordApprovalDecision(
     >`
       UPDATE pause_groups
       SET
-        resolved_action_count = resolved_action_count + 1,
+        resolved_action_count = CASE
+          WHEN ${decisionKind !== "request_changes"} THEN resolved_action_count + 1
+          ELSE resolved_action_count
+        END,
         state = CASE
-          WHEN resolved_action_count + 1 >= required_action_count THEN 'ready'
+          WHEN ${decisionKind !== "request_changes"}
+            AND resolved_action_count + 1 >= required_action_count THEN 'ready'
           ELSE state
         END,
         ready_at = CASE
-          WHEN resolved_action_count + 1 >= required_action_count THEN ${now}::timestamptz
+          WHEN ${decisionKind !== "request_changes"}
+            AND resolved_action_count + 1 >= required_action_count THEN ${now}::timestamptz
           ELSE ready_at
         END
       WHERE id = ${row.pause_group_id}
       RETURNING id, state, required_action_count, resolved_action_count
     `;
     const group = updatedGroup[0]!;
-    const pauseGroupReady = group.state === "ready";
+    const pauseGroupReady = decisionKind !== "request_changes" && group.state === "ready";
 
     let correctionDraft: {
       queueItemId: string;

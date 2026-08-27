@@ -100,6 +100,7 @@ export class TrueForgeClient {
     sessionId: string,
     turnId: string,
     sandboxPath: string,
+    maxBytes = 8_192,
   ): Promise<Uint8Array> {
     const params = new URLSearchParams({ path: sandboxPath });
     const path = `/api/v1/sessions/${encodeURIComponent(sessionId)}/turns/${encodeURIComponent(turnId)}/download-sandbox-file?${params}`;
@@ -113,8 +114,38 @@ export class TrueForgeClient {
         `TrueForge sandbox file download failed (${response.status}) for ${sandboxPath}`,
       );
     }
-    const buffer = await response.arrayBuffer();
-    return new Uint8Array(buffer);
+    if (!response.body) {
+      const buffer = await response.arrayBuffer();
+      if (buffer.byteLength > maxBytes) {
+        throw new Error(`TrueForge sandbox file exceeds ${maxBytes} byte limit`);
+      }
+      return new Uint8Array(buffer);
+    }
+    const reader = response.body.getReader();
+    const chunks: Uint8Array[] = [];
+    let total = 0;
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) {
+        break;
+      }
+      if (!value) {
+        continue;
+      }
+      total += value.byteLength;
+      if (total > maxBytes) {
+        await reader.cancel();
+        throw new Error(`TrueForge sandbox file exceeds ${maxBytes} byte limit`);
+      }
+      chunks.push(value);
+    }
+    const merged = new Uint8Array(total);
+    let offset = 0;
+    for (const chunk of chunks) {
+      merged.set(chunk, offset);
+      offset += chunk.byteLength;
+    }
+    return merged;
   }
 
   async cancelSession(

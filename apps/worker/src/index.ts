@@ -264,50 +264,6 @@ export async function executeClaimPauseGroupResume(
   });
 
   if (!claim.ok) {
-    // Competing worker: observe existing resume and never create another intent.
-    if (claim.reason === "already_resuming" && claim.existingPauseResumeId) {
-      const existing = await loadPauseResumeForCreate(options.sql, {
-        pauseResumeId: claim.existingPauseResumeId,
-        encryptionKey: options.encryptionKey,
-      });
-      if (!existing.ok) {
-        return { claim };
-      }
-      if (existing.responsePayloadHash !== command.payload.response_payload_hash) {
-        return { claim };
-      }
-      if (existing.trueforgeResumeTurnId) {
-        return { claim };
-      }
-      await markPauseResumeCreating(options.sql, { pauseResumeId: existing.pauseResumeId });
-      const createOrReconcileResponse = await createOrReconcileResponseTurn(
-        {
-          client: options.client,
-          lockForCreate: async () => ({ ok: true }),
-          bindResumeTurn: async () => undefined,
-          markUncertain: async ({ pauseResumeId, error }) => {
-            await markPauseResumeUncertain(options.sql, { pauseResumeId, error });
-          },
-        },
-        {
-          pauseResumeId: existing.pauseResumeId,
-          trueforgeSessionId: existing.trueforgeSessionId,
-          applicationRunToken: existing.applicationRunToken,
-          previousTrueforgeTurnId: existing.previousTrueforgeTurnId,
-          responses: existing.plaintext.responses,
-          localTrueforgeResumeTurnId: existing.trueforgeResumeTurnId,
-          forceReconcile: existing.state === "uncertain" || Boolean(existing.trueforgeResumeTurnId),
-        },
-      );
-      if (createOrReconcileResponse.ok) {
-        await completePauseResume(options.sql, {
-          pauseResumeId: existing.pauseResumeId,
-          trueforgeResumeTurnId: createOrReconcileResponse.trueforgeTurnId,
-          reconciled: !createOrReconcileResponse.created,
-        });
-      }
-      return { claim, createOrReconcileResponse };
-    }
     return { claim };
   }
 
@@ -328,7 +284,17 @@ export async function executeClaimPauseGroupResume(
     return { claim: { ok: false, reason: "missing_binding" } };
   }
 
-  await markPauseResumeCreating(options.sql, { pauseResumeId: claim.pauseResumeId });
+  const creating = await markPauseResumeCreating(options.sql, { pauseResumeId: claim.pauseResumeId });
+  if (!creating.ok) {
+    return {
+      claim: {
+        ok: false,
+        reason: "already_resuming",
+        existingPauseResumeId: claim.pauseResumeId,
+      },
+    };
+  }
+
   const createOrReconcileResponse = await createOrReconcileResponseTurn(
     {
       client: options.client,
@@ -345,15 +311,21 @@ export async function executeClaimPauseGroupResume(
       previousTrueforgeTurnId: claim.previousTrueforgeTurnId,
       responses: loaded.plaintext.responses,
       localTrueforgeResumeTurnId: loaded.trueforgeResumeTurnId,
-      forceReconcile: false,
+      forceReconcile: !loaded.trueforgeResumeTurnId,
     },
   );
   if (createOrReconcileResponse.ok) {
-    await completePauseResume(options.sql, {
+    const completed = await completePauseResume(options.sql, {
       pauseResumeId: claim.pauseResumeId,
       trueforgeResumeTurnId: createOrReconcileResponse.trueforgeTurnId,
       reconciled: !createOrReconcileResponse.created,
     });
+    if (!completed.ok) {
+      await markPauseResumeUncertain(options.sql, {
+        pauseResumeId: claim.pauseResumeId,
+        error: { reason: "complete_cas_failed" },
+      });
+    }
   }
   return { claim, createOrReconcileResponse };
 }
@@ -444,7 +416,10 @@ export function startWorkerProcess(options: WorkerProcessOptions | WorkerCommand
           })(),
         );
         const workspaceId =
-          resolved.workspaceId ?? process.env.WORKSPACE_ID ?? "workspace_1";
+          command.payload.workspace_id ??
+          resolved.workspaceId ??
+          process.env.WORKSPACE_ID ??
+          "workspace_1";
         const result = await executeClaimPauseGroupResume(
           { sql, client: trueforge, encryptionKey, workspaceId },
           command,

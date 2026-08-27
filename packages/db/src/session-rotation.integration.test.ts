@@ -8,7 +8,6 @@ import {
   atomicSwapSessionGeneration,
   beginSessionRotation,
   completeSessionRotation,
-  nextSessionRevisionOrdinal,
   recordMcpRotationOutcome,
 } from "./session-rotation";
 import { HASH, NOW, seedRuntime, withMigratedDatabase } from "./test-harness";
@@ -58,6 +57,7 @@ describe("session rotation", () => {
 
       const begun = await beginSessionRotation(sql, {
         channelAgentSessionId: "cas_1",
+        agentProfileId: "cw_1",
         reason: "grant_remove",
         previousTools: ["GITHUB_GET_AN_ISSUE", "GITHUB_ADD_LABELS_TO_AN_ISSUE"],
         nextTools: ["GITHUB_GET_AN_ISSUE"],
@@ -68,6 +68,7 @@ describe("session rotation", () => {
       expect(begun.isRestriction).toBe(true);
       expect(begun.previousGenerationId).toBe("gen_1");
       expect(begun.previousTrueforgeSessionId).toBe("tf_sess_1");
+      expect(begun.sourceConfigRevision).toBe(2);
 
       // Claim the priority head (pause response) — rotating blocks before generation binding.
       const blocked = await claimTurnQueueItem(sql, {
@@ -78,7 +79,7 @@ describe("session rotation", () => {
       });
       expect(blocked).toEqual({ ok: false, reason: "session_rotating" });
 
-      const ordinal = await nextSessionRevisionOrdinal(sql, "cw_1");
+      const ordinal = begun.sourceConfigRevision;
       expect(ordinal).toBe(2);
 
       const swap = await atomicSwapSessionGeneration(sql, {
@@ -228,6 +229,7 @@ describe("session rotation", () => {
 
       const begun = await beginSessionRotation(sql, {
         channelAgentSessionId: "cas_1",
+        agentProfileId: "cw_1",
         reason: "policy_tighten",
         previousTools: ["GITHUB_GET_AN_ISSUE", "GITHUB_ADD_LABELS_TO_AN_ISSUE"],
         nextTools: ["GITHUB_GET_AN_ISSUE"],
@@ -238,7 +240,7 @@ describe("session rotation", () => {
       expect(begun.requestActiveTurnCancellation).toBe(true);
       expect(begun.staleUnresolvedActions).toBe(true);
 
-      const ordinal = await nextSessionRevisionOrdinal(sql, "cw_1");
+      const ordinal = begun.sourceConfigRevision;
       const swap = await atomicSwapSessionGeneration(sql, {
         channelAgentSessionId: "cas_1",
         previousGenerationId: "gen_1",
@@ -286,8 +288,9 @@ describe("session rotation", () => {
       await seedRuntime(sql);
       await clearSeedTurn(sql);
 
-      await beginSessionRotation(sql, {
+      const begun = await beginSessionRotation(sql, {
         channelAgentSessionId: "cas_1",
+        agentProfileId: "cw_1",
         reason: "account_revoke",
         previousTools: ["GITHUB_GET_AN_ISSUE"],
         nextTools: [],
@@ -333,7 +336,7 @@ describe("session rotation", () => {
       `;
       expect(turn?.state).toBe("uncertain");
 
-      const ordinal = await nextSessionRevisionOrdinal(sql, "cw_1");
+      const ordinal = begun.sourceConfigRevision;
       await atomicSwapSessionGeneration(sql, {
         channelAgentSessionId: "cas_1",
         previousGenerationId: "gen_1",
@@ -374,6 +377,7 @@ describe("session rotation", () => {
 
       const begun = await beginSessionRotation(sql, {
         channelAgentSessionId: "cas_1",
+        agentProfileId: "cw_1",
         reason: "grant_add",
         previousTools: ["GITHUB_GET_AN_ISSUE"],
         nextTools: ["GITHUB_GET_AN_ISSUE", "GITHUB_ADD_LABELS_TO_AN_ISSUE"],
@@ -385,7 +389,7 @@ describe("session rotation", () => {
       expect(begun.requestActiveTurnCancellation).toBe(false);
       expect(begun.staleUnresolvedActions).toBe(false);
 
-      const ordinal = await nextSessionRevisionOrdinal(sql, "cw_1");
+      const ordinal = begun.sourceConfigRevision;
       const swap = await atomicSwapSessionGeneration(sql, {
         channelAgentSessionId: "cas_1",
         previousGenerationId: "gen_1",

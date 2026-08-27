@@ -33,9 +33,14 @@ import {
 } from "@forgeroom/composio";
 import {
   ConnectorBindingWorkspaceConflictError,
+  deleteExpiredConnectionReconnectIntents,
   ensureP0ConnectorBinding,
+  findActiveReconnectIntentForActor,
+  findReconnectIntentByIdempotencyKey,
   loadConnectorBinding,
+  saveConnectionReconnectIntent,
   updateConnectorBindingStatus,
+  type StoredReconnectIntent,
   type createSql,
 } from "@forgeroom/db";
 import { randomOpaqueId } from "../auth/crypto";
@@ -99,6 +104,43 @@ type ConnectionServiceOptions = {
   /** Optional callback URL appended to Connect Link creation. */
   reconnectCallbackUrl?: string;
 };
+
+function storedIntentToBinding(intent: StoredReconnectIntent): ReconnectBinding {
+  return {
+    intentId: intent.intentId,
+    connectionId: intent.connectionId,
+    workspaceId: intent.workspaceId,
+    actorUserId: intent.actorUserId,
+    expectedConnectedAccountId: intent.expectedConnectedAccountId,
+    redirectUrl: intent.redirectUrl,
+    expiresAt: intent.expiresAt,
+    provisionalConnectedAccountId: intent.provisionalConnectedAccountId,
+    createdAt: intent.createdAt,
+  };
+}
+
+function purgeExpiredIntents(intents: Map<string, ReconnectBinding>, now?: string): void {
+  const nowMs = Date.parse(now ?? new Date().toISOString());
+  for (const [intentId, binding] of intents) {
+    const expiresMs = Date.parse(binding.expiresAt);
+    if (Number.isFinite(expiresMs) && nowMs > expiresMs) {
+      intents.delete(intentId);
+    }
+  }
+}
+
+function reconnectResultFromBinding(binding: ReconnectBinding): ConnectionReconnectResult {
+  return connectionReconnectResultSchema.parse({
+    schemaVersion: 1,
+    connection_id: binding.connectionId,
+    intent_id: binding.intentId,
+    status: "connecting",
+    redirect_url: binding.redirectUrl,
+    expires_at: binding.expiresAt,
+    workspace_bound: true,
+    expected_account_suffix: binding.expectedConnectedAccountId.slice(-4),
+  });
+}
 
 export function createConnectionService(options: ConnectionServiceOptions): ConnectionService {
   const intents = new Map<string, ReconnectBinding>();
@@ -203,6 +245,15 @@ export function createConnectionService(options: ConnectionServiceOptions): Conn
     }
     try {
       const account = await composio.getConnectedAccountDetails();
+      if (!account.id) {
+        return {
+          ok: false,
+          error: {
+            code: "provider_unavailable",
+            message: "Composio did not confirm connected account identity.",
+          },
+        };
+      }
       const now = new Date().toISOString();
       const view = connectionStatusViewSchema.parse(
         buildConnectionStatusView({
@@ -233,6 +284,77 @@ export function createConnectionService(options: ConnectionServiceOptions): Conn
         },
       };
     }
+  }
+
+  async function loadReusableReconnectIntent(input: {
+    workspaceId: string;
+    connectionId: string;
+    actorUserId: string;
+    idempotencyKey: string;
+  }): Promise<ReconnectBinding | null> {
+    if (options.sql) {
+      await deleteExpiredConnectionReconnectIntents(options.sql);
+      const byKey = await findReconnectIntentByIdempotencyKey(options.sql, input);
+      if (byKey) {
+        return storedIntentToBinding(byKey);
+      }
+      const active = await findActiveReconnectIntentForActor(options.sql, {
+        workspaceId: input.workspaceId,
+        connectionId: input.connectionId,
+        actorUserId: input.actorUserId,
+      });
+      return active ? storedIntentToBinding(active) : null;
+    }
+
+    purgeExpiredIntents(intents);
+    for (const existing of intents.values()) {
+      if (
+        existing.connectionId === input.connectionId &&
+        existing.workspaceId === input.workspaceId &&
+        existing.actorUserId === input.actorUserId
+      ) {
+        return existing;
+      }
+    }
+    return null;
+  }
+
+  async function persistReconnectIntent(input: StoredReconnectIntent): Promise<ReconnectBinding> {
+    if (options.sql) {
+      const saved = await saveConnectionReconnectIntent(options.sql, input);
+      return storedIntentToBinding(saved);
+    }
+    const binding = storedIntentToBinding(input);
+    intents.set(binding.intentId, binding);
+    return binding;
+  }
+
+  async function loadActiveReconnectIntentForStatus(input: {
+    workspaceId: string;
+    connectionId: string;
+    actorUserId: string;
+  }): Promise<ReconnectBinding | null> {
+    if (options.sql) {
+      await deleteExpiredConnectionReconnectIntents(options.sql);
+      const active = await findActiveReconnectIntentForActor(options.sql, {
+        workspaceId: input.workspaceId,
+        connectionId: input.connectionId,
+        actorUserId: input.actorUserId,
+      });
+      return active ? storedIntentToBinding(active) : null;
+    }
+
+    purgeExpiredIntents(intents);
+    for (const binding of intents.values()) {
+      if (
+        binding.connectionId === input.connectionId &&
+        binding.workspaceId === input.workspaceId &&
+        binding.actorUserId === input.actorUserId
+      ) {
+        return binding;
+      }
+    }
+    return null;
   }
 
   return {
@@ -292,6 +414,15 @@ export function createConnectionService(options: ConnectionServiceOptions): Conn
       }
       try {
         const account = await composio.getConnectedAccountDetails();
+        if (!account.id) {
+          return {
+            ok: false,
+            error: {
+              code: "provider_unavailable",
+              message: "Composio did not confirm connected account identity.",
+            },
+          };
+        }
         const gate = evaluatePinnedConnectionGate({
           account,
           expectedConnectedAccountId: composio.pinnedConnectedAccountId,
@@ -369,33 +500,20 @@ export function createConnectionService(options: ConnectionServiceOptions): Conn
       }
 
       try {
-        // Idempotent reconnect: reuse an unexpired intent for the same key.
-        for (const existing of intents.values()) {
-          if (
-            existing.connectionId === connectionId &&
-            existing.workspaceId === session.workspace_id &&
-            existing.actorUserId === session.user.id
-          ) {
-            const bound = assertReconnectBoundToWorkspace({
-              binding: existing,
-              workspaceId: session.workspace_id,
-              connectionId,
-            });
-            if (bound.ok) {
-              return {
-                ok: true,
-                value: connectionReconnectResultSchema.parse({
-                  schemaVersion: 1,
-                  connection_id: connectionId,
-                  intent_id: existing.intentId,
-                  status: "connecting",
-                  redirect_url: existing.redirectUrl,
-                  expires_at: existing.expiresAt,
-                  workspace_bound: true,
-                  expected_account_suffix: existing.expectedConnectedAccountId.slice(-4),
-                }),
-              };
-            }
+        const reusable = await loadReusableReconnectIntent({
+          workspaceId: session.workspace_id,
+          connectionId,
+          actorUserId: session.user.id,
+          idempotencyKey: command.idempotency_key,
+        });
+        if (reusable) {
+          const bound = assertReconnectBoundToWorkspace({
+            binding: reusable,
+            workspaceId: session.workspace_id,
+            connectionId,
+          });
+          if (bound.ok) {
+            return { ok: true, value: reconnectResultFromBinding(reusable) };
           }
         }
 
@@ -406,18 +524,18 @@ export function createConnectionService(options: ConnectionServiceOptions): Conn
             : {}),
         });
         const intentId = randomOpaqueId("crec");
-        const binding: ReconnectBinding = {
+        const binding = await persistReconnectIntent({
           intentId,
           connectionId,
           workspaceId: session.workspace_id,
           actorUserId: session.user.id,
+          idempotencyKey: command.idempotency_key,
           expectedConnectedAccountId: composio.pinnedConnectedAccountId,
           redirectUrl: link.redirectUrl,
           expiresAt: link.expiresAt,
           provisionalConnectedAccountId: link.provisionalConnectedAccountId,
           createdAt: new Date().toISOString(),
-        };
-        intents.set(intentId, binding);
+        });
         if (options.sql) {
           await updateConnectorBindingStatus(options.sql, {
             connectionId,
@@ -426,19 +544,7 @@ export function createConnectionService(options: ConnectionServiceOptions): Conn
             verifiedAt: null,
           });
         }
-        return {
-          ok: true,
-          value: connectionReconnectResultSchema.parse({
-            schemaVersion: 1,
-            connection_id: connectionId,
-            intent_id: intentId,
-            status: "connecting",
-            redirect_url: link.redirectUrl,
-            expires_at: link.expiresAt,
-            workspace_bound: true,
-            expected_account_suffix: composio.pinnedConnectedAccountId.slice(-4),
-          }),
-        };
+        return { ok: true, value: reconnectResultFromBinding(binding) };
       } catch {
         return {
           ok: false,
@@ -463,17 +569,22 @@ export function createConnectionService(options: ConnectionServiceOptions): Conn
       }
 
       try {
-        let activeIntent: ReconnectBinding | null = null;
-        for (const binding of intents.values()) {
-          if (
-            binding.connectionId === connectionId &&
-            binding.workspaceId === session.workspace_id
-          ) {
-            activeIntent = binding;
-          }
-        }
+        const activeIntent = await loadActiveReconnectIntentForStatus({
+          workspaceId: session.workspace_id,
+          connectionId,
+          actorUserId: session.user.id,
+        });
 
         const account = await composio.getConnectedAccountDetails();
+        if (!account.id) {
+          return {
+            ok: false,
+            error: {
+              code: "provider_unavailable",
+              message: "Composio did not confirm connected account identity.",
+            },
+          };
+        }
         const gate = evaluatePinnedConnectionGate({
           account,
           expectedConnectedAccountId: composio.pinnedConnectedAccountId,
@@ -491,13 +602,27 @@ export function createConnectionService(options: ConnectionServiceOptions): Conn
             reconnectState = "expired";
           } else if (
             activeIntent.provisionalConnectedAccountId &&
-            activeIntent.provisionalConnectedAccountId !== composio.pinnedConnectedAccountId &&
-            gate.status !== "active"
+            activeIntent.provisionalConnectedAccountId !== composio.pinnedConnectedAccountId
           ) {
-            // Provisional link account differs from pinned pin — never adopt it.
-            reconnectState = "identity_mismatch";
+            try {
+              const provisional = await composio.getConnectedAccountDetails(
+                activeIntent.provisionalConnectedAccountId,
+              );
+              if (
+                provisional.id === activeIntent.provisionalConnectedAccountId &&
+                provisional.status.trim().toUpperCase() === "ACTIVE" &&
+                !provisional.isDisabled
+              ) {
+                reconnectState = "completed";
+              } else {
+                reconnectState = "pending";
+              }
+            } catch {
+              reconnectState = "pending";
+            }
           } else if (gate.status === "active") {
-            reconnectState = "completed";
+            // Pinned account was already active — wait for the Connect Link flow.
+            reconnectState = "pending";
           } else {
             reconnectState = "pending";
           }

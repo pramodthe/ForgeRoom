@@ -5,6 +5,39 @@ type SqlClient = ReturnType<typeof createSql>;
 const P0_SANDBOX_ARTIFACT_ROOT = "/home/daytona";
 const P0_TRUEFORGE_SANDBOX_FILE_WIRE_TYPE = "sandbox.file" as const;
 
+function collapseSlashes(value: string): string {
+  return value.replace(/\/+/g, "/");
+}
+
+function resolveSandboxPath(relativePath: string): { sandboxPath: string; relativePath: string } | null {
+  const trimmed = relativePath.trim();
+  if (!trimmed || trimmed.includes("\\") || trimmed.includes("\0")) {
+    return null;
+  }
+  const segments = collapseSlashes(trimmed).split("/").filter(Boolean);
+  if (segments.some((segment) => segment === "..")) {
+    return null;
+  }
+  const root = P0_SANDBOX_ARTIFACT_ROOT.replace(/\/+$/, "");
+  let normalized: string;
+  if (trimmed.startsWith("/")) {
+    normalized = collapseSlashes(trimmed);
+    if (normalized !== root && !normalized.startsWith(`${root}/`)) {
+      return null;
+    }
+  } else {
+    normalized = `${root}/${segments.join("/")}`;
+  }
+  if (!normalized.startsWith(`${root}/`)) {
+    return null;
+  }
+  const relative = normalized.slice(root.length + 1);
+  if (!relative) {
+    return null;
+  }
+  return { sandboxPath: normalized, relativePath: relative };
+}
+
 export type ArtifactDiscoveryBinding = {
   workspaceId: string;
   channelId: string;
@@ -39,28 +72,26 @@ function readNonNegativeInt(value: unknown): number | null {
   return value;
 }
 
-function resolveSandboxPath(relativePath: string): { sandboxPath: string; relativePath: string } | null {
-  const trimmed = relativePath.trim();
-  if (!trimmed || trimmed.includes("..") || trimmed.includes("\\")) {
-    return null;
-  }
-  const root = P0_SANDBOX_ARTIFACT_ROOT.replace(/\/+$/, "");
-  const sandboxPath = `${root}/${trimmed.replace(/^\/+/, "")}`;
-  if (!sandboxPath.startsWith(`${root}/`)) {
-    return null;
-  }
-  return { sandboxPath, relativePath: trimmed.replace(/^\/+/, "") };
+function readToolCallId(payload: Record<string, unknown>): string | null {
+  return readString(payload.tool_call_id) ?? readString(payload.toolCallId);
 }
 
 function resolveSandboxCommandState(
   events: Array<{ normalizedType: string; payload: Record<string, unknown> }>,
   sandboxId: string,
+  toolCallId?: string | null,
 ): ArtifactDiscoveryBinding["sandboxCommandState"] {
   let state: ArtifactDiscoveryBinding["sandboxCommandState"] = "creating";
   for (const event of events) {
     const eventSandboxId = readString(event.payload.sandbox_id) ?? readString(event.payload.sandboxId);
     if (eventSandboxId !== sandboxId) {
       continue;
+    }
+    if (toolCallId) {
+      const eventToolCallId = readToolCallId(event.payload);
+      if (eventToolCallId && eventToolCallId !== toolCallId) {
+        continue;
+      }
     }
     if (event.normalizedType === "sandbox.command_completed") {
       return "completed";
@@ -171,6 +202,7 @@ export async function loadSandboxArtifactDiscoveryBinding(
   if (!resolvedPath) {
     return null;
   }
+  const toolCallId = readToolCallId(payload);
 
   return {
     workspaceId: context.workspace_id,
@@ -192,6 +224,6 @@ export async function loadSandboxArtifactDiscoveryBinding(
       trueforgeEventId: discovered.trueforge_event_id,
       sourceWireType: P0_TRUEFORGE_SANDBOX_FILE_WIRE_TYPE,
     },
-    sandboxCommandState: resolveSandboxCommandState(sandboxEvents, sandboxId),
+    sandboxCommandState: resolveSandboxCommandState(sandboxEvents, sandboxId, toolCallId),
   };
 }

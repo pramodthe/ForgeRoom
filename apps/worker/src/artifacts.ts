@@ -76,6 +76,13 @@ export function createWorkerArtifactDiscoveryLoader(input: {
     if (!binding) {
       return null;
     }
+    if (
+      binding.runId !== command.payload.run_id ||
+      binding.runStepId !== command.payload.run_step_id ||
+      binding.discovery.sandboxId !== command.payload.sandbox_id
+    ) {
+      return null;
+    }
     return {
       workspaceId: binding.workspaceId,
       channelId: binding.channelId,

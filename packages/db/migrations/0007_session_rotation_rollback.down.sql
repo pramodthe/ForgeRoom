@@ -1,0 +1,1 @@
+-- No-op down: prior trigger body is restored by re-running 0001 migration function if needed.

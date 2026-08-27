@@ -32,8 +32,10 @@ export {
 export type { CoworkerCompiledAllowlist, PolicyDriftFinding } from "./policy";
 export {
   assertP0ManifestHealthy,
+  buildFrozenP0ManifestVerificationInput,
   compareAccountHealth,
   verifyP0Manifest,
+  verifyP0ManifestForDispatch,
 } from "./manifest-verification";
 export type {
   AccountDriftFinding,

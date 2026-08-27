@@ -163,7 +163,7 @@ export function evaluatePinnedConnectionGate(input: {
   observedAlternateAccountId?: string | null;
 }): ConnectionDispatchGate {
   const expected = input.expectedConnectedAccountId.trim();
-  const observed = input.account.id.trim();
+  const observed = input.account.id?.trim() ?? "";
   const findings = compareAccountHealth(input.account, P0_COMPOSIO_TOOLKIT);
   const findingKinds = findings.map((f) => f.kind);
 
@@ -176,7 +176,7 @@ export function evaluatePinnedConnectionGate(input: {
     fallbackAccountRejected = true;
   }
 
-  if (observed !== expected) {
+  if (!observed || observed !== expected) {
     return {
       status: "drifted",
       toolkitHealth: "drifted",

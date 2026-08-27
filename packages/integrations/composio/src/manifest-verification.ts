@@ -1,10 +1,14 @@
 import {
   compareDescriptorHashes,
+  P0_COMPOSIO_DESCRIPTOR_HASHES,
   type DescriptorDriftFinding,
   type ObservedToolDescriptor,
 } from "./descriptors";
 import {
   compareCompiledAllowlist,
+  P0_COMPOSIO_APPROVAL_REQUIRED_TOOLS,
+  P0_COMPOSIO_ENABLED_TOOLS,
+  P0_COMPOSIO_TRUEFORGE_CONNECTOR_NAME,
   type CoworkerCompiledAllowlist,
   type PolicyDriftFinding,
 } from "./policy";
@@ -172,4 +176,58 @@ export function assertP0ManifestHealthy(result: ManifestVerificationResult): voi
   throw new Error(
     `P0-302 manifest verification failed (dispatch blocked): ${summary || "unknown drift"}`,
   );
+}
+
+const FROZEN_P0_DESCRIPTOR_ROWS: ReadonlyArray<Pick<ObservedToolDescriptor, "toolSlug" | "sha256">> =
+  Object.entries(P0_COMPOSIO_DESCRIPTOR_HASHES).map(([toolSlug, sha256]) => ({
+    toolSlug,
+    sha256,
+  }));
+
+const FROZEN_P0_COMPILED_ALLOWLIST: CoworkerCompiledAllowlist = {
+  connectorName: P0_COMPOSIO_TRUEFORGE_CONNECTOR_NAME,
+  enabledTools: P0_COMPOSIO_ENABLED_TOOLS,
+  approvalRequiredTools: P0_COMPOSIO_APPROVAL_REQUIRED_TOOLS,
+};
+
+/** Build manifest verification input for the frozen P0 Composio connector. */
+export function buildFrozenP0ManifestVerificationInput(
+  account: ConnectedAccountHealth,
+): ManifestVerificationInput {
+  return {
+    descriptors: FROZEN_P0_DESCRIPTOR_ROWS,
+    account,
+    compiledAllowlist: FROZEN_P0_COMPILED_ALLOWLIST,
+  };
+}
+
+/**
+ * Fail-closed manifest/policy preflight before ordinary agent turn dispatch.
+ * Requires a live pinned connected-account observation from Composio.
+ */
+export async function verifyP0ManifestForDispatch(composio: {
+  getConnectedAccountDetails(): Promise<ConnectedAccountHealth>;
+}): Promise<ManifestVerificationResult> {
+  const account = await composio.getConnectedAccountDetails();
+  if (!account.id) {
+    const redacted: ManifestVerificationRedactedEvidence = {
+      ownerTask: "P0-302",
+      accountStatus: account.status,
+      accountSuffix: "",
+      descriptorSlugs: FROZEN_P0_DESCRIPTOR_ROWS.map((row) => row.toolSlug).sort(),
+      enabledTools: [...FROZEN_P0_COMPILED_ALLOWLIST.enabledTools],
+      approvalRequiredTools: [...FROZEN_P0_COMPILED_ALLOWLIST.approvalRequiredTools],
+      findingKinds: ["account_inactive"],
+      healthy: false,
+      blocksDispatch: true,
+    };
+    return {
+      ok: false,
+      healthy: false,
+      blocksDispatch: true,
+      findings: [{ kind: "account_inactive", status: account.status }],
+      redacted,
+    };
+  }
+  return verifyP0Manifest(buildFrozenP0ManifestVerificationInput(account));
 }

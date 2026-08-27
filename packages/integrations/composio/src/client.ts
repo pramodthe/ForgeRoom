@@ -6,6 +6,7 @@ import {
   assertP0ToolCount,
   findForbiddenSurfaces,
   P0_COMPOSIO_DIRECT_TOOLS,
+  P0_COMPOSIO_FORBIDDEN_SURFACES,
   P0_COMPOSIO_TOOLKIT,
 } from "./p0-contract";
 import type { ConnectedAccountHealth } from "./manifest-verification";
@@ -302,6 +303,9 @@ export class ComposioSessionClient {
   /** Exact pinned connected-account status (ACTIVE required for dispatch). */
   async getConnectedAccount(accountId = this.connectedAccountId): Promise<ConnectedAccountHealth> {
     const details = await this.getConnectedAccountDetails(accountId);
+    if (!details.id) {
+      throw new Error("Composio connected account response omitted account id");
+    }
     return {
       id: details.id,
       status: details.status,
@@ -317,10 +321,10 @@ export class ComposioSessionClient {
   async getConnectedAccountDetails(
     accountId = this.connectedAccountId,
   ): Promise<
-    ConnectedAccountHealth & {
+    (ConnectedAccountHealth & {
       scopes: string[];
       authConfigId?: string;
-    }
+    }) | null
   > {
     const payload = await this.request<Record<string, unknown>>(
       "GET",
@@ -341,7 +345,7 @@ export class ComposioSessionClient {
         ? (payload.auth_config as Record<string, unknown>)
         : {};
     return {
-      id: typeof payload.id === "string" ? payload.id : accountId,
+      id: typeof payload.id === "string" && payload.id.length > 0 ? payload.id : null,
       status: typeof payload.status === "string" ? payload.status : "UNKNOWN",
       isDisabled: payload.is_disabled === true,
       toolkitSlug,
@@ -433,6 +437,12 @@ export class ComposioSessionClient {
     authFailure: boolean;
   }> {
     const toolSlug = input.toolSlug.trim();
+    if (!(P0_COMPOSIO_DIRECT_TOOLS as readonly string[]).includes(toolSlug)) {
+      throw new Error(`executeDirectTool rejected unknown tool ${toolSlug}`);
+    }
+    if ((P0_COMPOSIO_FORBIDDEN_SURFACES as readonly string[]).includes(toolSlug)) {
+      throw new Error(`executeDirectTool rejected forbidden meta-tool ${toolSlug}`);
+    }
     const requested = input.connectedAccountId?.trim();
     if (requested && requested !== this.connectedAccountId) {
       throw new Error(

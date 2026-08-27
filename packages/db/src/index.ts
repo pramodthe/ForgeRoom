@@ -56,13 +56,14 @@ export type {
 } from "./pause-group";
 export {
   requestRunStepStop,
+  findRemoteActiveTurnForSession,
   markCancelCalled,
   settleCancelledStep,
   sessionHasCancellingStep,
   enqueueCorrectionForStep,
   markActiveTurnsNeedsAttentionOnRestart,
 } from "./run-control";
-export type { RequestStopResult, StoppableStepState } from "./run-control";
+export type { RequestStopResult, StoppableStepState, RemoteActiveTurn } from "./run-control";
 export {
   createDirectMultiAgentRun,
   refreshRunLifecycle,
@@ -163,6 +164,14 @@ export {
   listWorkspaceConnectorBindings,
   updateConnectorBindingStatus,
 } from "./connector-bindings";
+export {
+  deleteExpiredConnectionReconnectIntents,
+  findReconnectIntentByIdempotencyKey,
+  findActiveReconnectIntentForActor,
+  findLatestReconnectIntentForConnection,
+  saveConnectionReconnectIntent,
+} from "./connection-reconnect-intents";
+export type { StoredReconnectIntent } from "./connection-reconnect-intents";
 export type {
   ConnectorBindingRow,
   EnsureP0ConnectorBindingInput,

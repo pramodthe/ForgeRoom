@@ -47,6 +47,7 @@ export type GenerationInsert = {
 
 export type BeginSessionRotationInput = {
   channelAgentSessionId: string;
+  agentProfileId: string;
   reason: SessionRotationReason;
   previousTools: readonly string[];
   nextTools: readonly string[];
@@ -64,6 +65,7 @@ export type BeginSessionRotationResult = {
   previousTrueforgeSessionId: string;
   previousEffectiveSpecHash: string;
   previousApprovalPolicyHash: string;
+  sourceConfigRevision: number;
 };
 
 export type AtomicSwapSessionGenerationInput = {
@@ -90,6 +92,15 @@ export type AtomicSwapSessionGenerationResult = {
 
 export type CompleteSessionRotationInput = {
   channelAgentSessionId: string;
+  now?: string;
+};
+
+export type AbortSessionRotationInput = {
+  channelAgentSessionId: string;
+  /** Generation pointer to restore when aborting after a failed swap. */
+  restoreGenerationId: string;
+  /** Newly inserted generation to mark aborted when swap partially succeeded. */
+  abortGenerationId?: string | null;
   now?: string;
 };
 
@@ -176,6 +187,9 @@ export async function beginSessionRotation(
     if (!session) {
       throw new Error(`channel_agent_session not found: ${input.channelAgentSessionId}`);
     }
+    if (session.state === "rotating") {
+      throw new Error(`session rotation already in progress: ${session.id}`);
+    }
     if (!session.current_generation_id) {
       throw new Error(`channel_agent_session has no current generation: ${session.id}`);
     }
@@ -213,6 +227,18 @@ export async function beginSessionRotation(
       `;
     }
 
+    await tx`
+      SELECT id FROM agent_profiles
+      WHERE id = ${input.agentProfileId}
+      FOR UPDATE
+    `;
+    const revisionRows = await tx<{ max: number | null }[]>`
+      SELECT MAX(source_config_revision) AS max
+      FROM session_revisions
+      WHERE agent_profile_id = ${input.agentProfileId}
+    `;
+    const sourceConfigRevision = (revisionRows[0]?.max ?? 0) + 1;
+
     return {
       isRestriction,
       requestActiveTurnCancellation,
@@ -222,6 +248,7 @@ export async function beginSessionRotation(
       previousTrueforgeSessionId: generation.trueforge_session_id,
       previousEffectiveSpecHash: generation.effective_spec_hash,
       previousApprovalPolicyHash: generation.approval_policy_hash,
+      sourceConfigRevision,
     };
   });
 }
@@ -462,7 +489,7 @@ export async function completeSessionRotation(
 
 export async function abortSessionRotation(
   sql: SqlClient,
-  input: CompleteSessionRotationInput,
+  input: AbortSessionRotationInput,
 ): Promise<void> {
   const now = input.now ?? new Date().toISOString();
   await sql.begin(async (tx) => {
@@ -482,20 +509,52 @@ export async function abortSessionRotation(
     if (!session || session.state !== "rotating") {
       return;
     }
-    if (session.current_generation_id) {
+
+    if (
+      input.abortGenerationId &&
+      session.current_generation_id === input.abortGenerationId
+    ) {
+      await tx`
+        UPDATE channel_agent_session_generations
+        SET state = 'failed', retired_at = ${now}
+        WHERE id = ${input.abortGenerationId}
+          AND state IN ('ready', 'rotating')
+      `;
+      await tx`
+        UPDATE channel_agent_session_generations
+        SET state = 'ready', retired_at = NULL
+        WHERE id = ${input.restoreGenerationId}
+          AND state = 'retired'
+      `;
+      await tx`
+        UPDATE channel_agent_sessions
+        SET current_generation_id = ${input.restoreGenerationId},
+            state = 'active',
+            updated_at = ${now}
+        WHERE id = ${session.id}
+          AND state = 'rotating'
+      `;
+    } else if (session.current_generation_id === input.restoreGenerationId) {
       await tx`
         UPDATE channel_agent_session_generations
         SET state = 'ready'
-        WHERE id = ${session.current_generation_id}
+        WHERE id = ${input.restoreGenerationId}
+          AND state = 'rotating'
+      `;
+      await tx`
+        UPDATE channel_agent_sessions
+        SET state = 'active', updated_at = ${now}
+        WHERE id = ${session.id}
+          AND state = 'rotating'
+      `;
+    } else {
+      await tx`
+        UPDATE channel_agent_sessions
+        SET state = 'active', updated_at = ${now}
+        WHERE id = ${session.id}
           AND state = 'rotating'
       `;
     }
-    await tx`
-      UPDATE channel_agent_sessions
-      SET state = 'active', updated_at = ${now}
-      WHERE id = ${session.id}
-        AND state = 'rotating'
-    `;
   });
 }
 

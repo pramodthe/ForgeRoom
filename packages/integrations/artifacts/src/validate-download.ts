@@ -6,6 +6,7 @@ import {
 } from "./extraction-p0-contract";
 import type { DiscoveredSandboxArtifact } from "./discovery";
 import { hashArtifactContent } from "./hash";
+import { validateSandboxArtifactPath } from "./sandbox-path";
 
 export type ArtifactDownloadValidationFailure =
   | "path_invalid"
@@ -44,7 +45,8 @@ export function validateDiscoveredArtifactDownload(input: {
   content: Buffer;
 }): { ok: true; value: ValidatedArtifactDownload } | { ok: false; reason: ArtifactDownloadValidationFailure } {
   const { discovery, content } = input;
-  if (!discovery.sandboxPath.startsWith("/home/daytona/")) {
+  const validatedPath = validateSandboxArtifactPath(discovery.sandboxPath);
+  if (!validatedPath.ok) {
     return { ok: false, reason: "path_invalid" };
   }
   if (isForbiddenArtifactMimeType(discovery.mimeType)) {
@@ -79,7 +81,8 @@ export function validateDiscoveredArtifactDownload(input: {
 export function validateDiscoveredArtifactMetadata(
   discovery: DiscoveredSandboxArtifact,
 ): { ok: true } | { ok: false; reason: ArtifactDownloadValidationFailure } {
-  if (!discovery.sandboxPath.startsWith("/home/daytona/")) {
+  const validatedPath = validateSandboxArtifactPath(discovery.sandboxPath);
+  if (!validatedPath.ok) {
     return { ok: false, reason: "path_invalid" };
   }
   if (isForbiddenArtifactMimeType(discovery.mimeType)) {
