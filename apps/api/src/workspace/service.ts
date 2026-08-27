@@ -34,6 +34,12 @@ import {
   type TurnCreationStatus,
 } from "@forgeroom/orchestration";
 import type { TrueForgeClient } from "@forgeroom/trueforge";
+import {
+  enqueueCorrectionForStep,
+  markCancelCalled,
+  requestRunStepStop,
+  createSql,
+} from "@forgeroom/db";
 import { randomOpaqueId } from "../auth/crypto";
 import { customAguiEvent, messageCreatedAguiEvent, pinAguiEvent } from "./event-builders";
 import { ChannelEventPersistenceError } from "./event-guard";
@@ -391,6 +397,35 @@ export type WorkspaceService = {
     coworkerId: string,
     command: CoworkerDisableCommand,
   ): Promise<WorkspaceServiceResult<CoworkerProfile>>;
+  cancelRunStep(
+    session: SessionResponse,
+    runId: string,
+    runStepId: string,
+  ): Promise<
+    WorkspaceServiceResult<{
+      run_id: string;
+      run_step_id: string;
+      state: "cancelling" | "cancelled";
+      cancel_called: boolean;
+    }>
+  >;
+  steerCorrection(
+    session: SessionResponse,
+    runId: string,
+    input: {
+      priorRunStepId: string;
+      channelAgentSessionId: string;
+      content: string;
+      boundSessionGenerationId: string | null;
+    },
+  ): Promise<
+    WorkspaceServiceResult<{
+      run_id: string;
+      queue_item_id: string;
+      run_step_id: string;
+      input_type: "correction";
+    }>
+  >;
   /** Test/fixture helper — not exposed as HTTP create. */
   seedCoworker(input: {
     workspaceId: string;
@@ -410,11 +445,14 @@ export function createWorkspaceService(options?: {
   eventHub?: ChannelEventHub;
   /** When set, adding a coworker to a channel provisions a TrueForge session generation. */
   trueforgeClient?: TrueForgeClient;
+  /** Postgres client for run stop/steer (P0-204). */
+  sql?: ReturnType<typeof createSql>;
 }): WorkspaceService {
   const store = options?.store ?? createMemoryWorkspaceStore();
   const now = options?.now ?? (() => new Date());
   const eventHub = options?.eventHub ?? createChannelEventHub();
   const trueforgeClient = options?.trueforgeClient;
+  const sql = options?.sql;
 
   function publish(result: { envelope: AgentChannelEnvelope }): void {
     eventHub.publish(result.envelope);
@@ -2464,6 +2502,89 @@ export function createWorkspaceService(options?: {
       };
       await store.insertCoworker(coworker, version);
       return coworker;
+    },
+
+    async cancelRunStep(session, runId, runStepId) {
+      if (!sql) {
+        return {
+          ok: false,
+          error: { code: "not_found", message: "Run control requires a database-backed API." },
+        };
+      }
+      void session;
+      const stop = await requestRunStepStop(sql, { runStepId });
+      if (!stop.ok) {
+        return {
+          ok: false,
+          error: {
+            code: stop.reason === "not_found" ? "not_found" : "validation_failed",
+            message:
+              stop.reason === "run_not_stoppable"
+                ? "Run step is not stoppable."
+                : "Run step not found.",
+          },
+        };
+      }
+      let cancelCalled = false;
+      if (stop.decision.callCancel && stop.trueforgeSessionId && trueforgeClient) {
+        await trueforgeClient.cancelSession(stop.trueforgeSessionId);
+        cancelCalled = true;
+        if (stop.agentTurnId) {
+          await markCancelCalled(sql, { agentTurnId: stop.agentTurnId });
+        }
+      }
+      const owned = await sql<{ run_id: string }[]>`
+        SELECT run_id FROM run_steps WHERE id = ${runStepId} LIMIT 1
+      `;
+      if (owned[0] && owned[0].run_id !== runId) {
+        return {
+          ok: false,
+          error: { code: "not_found", message: "Run step does not belong to this run." },
+        };
+      }
+      return {
+        ok: true,
+        value: {
+          run_id: runId,
+          run_step_id: runStepId,
+          state: stop.decision.action === "already_settled" ? "cancelled" : "cancelling",
+          cancel_called: cancelCalled,
+        },
+      };
+    },
+
+    async steerCorrection(session, runId, input) {
+      if (!sql) {
+        return {
+          ok: false,
+          error: { code: "not_found", message: "Run control requires a database-backed API." },
+        };
+      }
+      void session;
+      const prior = await sql<{ run_id: string }[]>`
+        SELECT run_id FROM run_steps WHERE id = ${input.priorRunStepId} LIMIT 1
+      `;
+      if (!prior[0] || prior[0].run_id !== runId) {
+        return {
+          ok: false,
+          error: { code: "not_found", message: "Prior run step not found on this run." },
+        };
+      }
+      const queued = await enqueueCorrectionForStep(sql, {
+        channelAgentSessionId: input.channelAgentSessionId,
+        priorRunStepId: input.priorRunStepId,
+        content: input.content,
+        boundSessionGenerationId: input.boundSessionGenerationId,
+      });
+      return {
+        ok: true,
+        value: {
+          run_id: runId,
+          queue_item_id: queued.queueItemId,
+          run_step_id: queued.runStepId,
+          input_type: "correction" as const,
+        },
+      };
     },
   };
 }

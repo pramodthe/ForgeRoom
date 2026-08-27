@@ -2,10 +2,10 @@
 
 | Field | Current value |
 | --- | --- |
-| Overall | M1 Foundation done; P0-202 merged; P0-203 turn events in progress |
+| Overall | M1 Foundation done; P0-203 merged; P0-204 reconnect/stop/correction in progress |
 | Current phase | Phase 1 — Foundation |
-| Active task | P0-203 (in_progress) |
-| Next task | Finish P0-203 PR; then P0-204 run limits or P0-205 routing |
+| Active task | P0-204 (in_progress) |
+| Next task | Finish P0-204 PR; then P0-206 multi-agent run or P0-208 rotation |
 | P0 blockers | Save-as-skill Run binding, TrueForge→artifact path, demo durable storage, run-limit hard enforcement |
 | Last updated | 2026-08-26 |
 

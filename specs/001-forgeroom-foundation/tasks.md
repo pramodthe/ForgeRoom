@@ -26,8 +26,8 @@ Each task file is authoritative for its status and evidence. Keep this index and
 | [ ] | [P0-109](./tasks/P0-109-task-record.md) | Application-owned TaskRecord | blocked | P0-103, P0-104, P0-107, P0-203, P0-208 |
 | [x] | [P0-201](./tasks/P0-201-trueforge-sessions.md) | TrueForge adapter and sessions | done | P0-000, P0-103, P0-105 |
 | [x] | [P0-202](./tasks/P0-202-turn-queue.md) | Per-session serial turn queue | done | P0-103, P0-201 |
-| [ ] | [P0-203](./tasks/P0-203-turn-events.md) | Turn creation and event normalization | in_progress | P0-107, P0-202 |
-| [ ] | [P0-204](./tasks/P0-204-reconnect-stop.md) | Reconnect, stop and correction | blocked | P0-203 |
+| [x] | [P0-203](./tasks/P0-203-turn-events.md) | Turn creation and event normalization | done | P0-107, P0-202 |
+| [ ] | [P0-204](./tasks/P0-204-reconnect-stop.md) | Reconnect, stop and correction | in_progress | P0-203 |
 | [x] | [P0-205](./tasks/P0-205-router.md) | Direct mention/team router | done | P0-102, P0-106 |
 | [ ] | [P0-206](./tasks/P0-206-multi-agent-run.md) | Direct multi-agent Run engine | blocked | P0-202, P0-203, P0-205 |
 | [ ] | [P0-208](./tasks/P0-208-session-rotation.md) | Capability/skill intersection and rotation | blocked | P0-202, P0-302, P0-314 |

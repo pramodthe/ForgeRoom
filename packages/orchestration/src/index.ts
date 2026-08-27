@@ -75,10 +75,30 @@ export {
   normalizeTrueForgeEvent,
   evaluateTurnDoneOutcome,
 } from "./event-normalize";
-export type { NormalizedRunEvent, TurnDoneOutcome } from "./event-normalize";
+export type {
+  NormalizedRunEvent,
+  TurnDoneOutcome,
+} from "./event-normalize";
 export { createOrReconcileTurn } from "./create-or-reconcile-turn";
 export type {
   CreateOrReconcileTurnInput,
   CreateOrReconcileTurnResult,
   CreateOrReconcileTurnDeps,
 } from "./create-or-reconcile-turn";
+export {
+  decideStop,
+  normalMessageImpliesStop,
+  buildCorrectionQueueIntent,
+  markNeedsAttentionOnRestart,
+  RESTART_ACTIVE_TURN_STATES,
+  dedupeReplayEnvelopes,
+  blocksNewRemoteTurn,
+  renderInFlightMcpOutcome,
+} from "./stop-correction";
+export type {
+  StoppableStepState,
+  StopDecision,
+  CorrectionQueueIntent,
+  RestartTurnMark,
+  McpInFlightOutcome,
+} from "./stop-correction";

@@ -8,7 +8,8 @@
     "./session": "./src/session.ts",
     "./turn-queue": "./src/turn-queue.ts",
     "./event-normalize": "./src/event-normalize.ts",
-    "./turn-creation": "./src/turn-creation.ts"
+    "./turn-creation": "./src/turn-creation.ts",
+    "./stop-correction": "./src/stop-correction.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit",

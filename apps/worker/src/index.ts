@@ -5,9 +5,14 @@ import {
   createSql,
   ingestNormalizedTrueForgeEvent,
   lockAgentTurnForCreate,
+  markActiveTurnsNeedsAttentionOnRestart,
   markAgentTurnUncertain,
+  markCancelCalled,
+  requestRunStepStop,
+  settleCancelledStep,
   type ClaimTurnQueueItemResult,
   type IngestRunEventResult,
+  type RequestStopResult,
 } from "@forgeroom/db";
 import {
   createOrReconcileTurn,
@@ -36,7 +41,7 @@ export type WorkerProcessOptions = {
   /** When set, DB-backed commands run against this client. */
   sql?: ReturnType<typeof createSql>;
   databaseUrl?: string;
-  trueforge?: Pick<TrueForgeClientType, "createTurn" | "listTurns">;
+  trueforge?: Pick<TrueForgeClientType, "createTurn" | "listTurns" | "cancelSession">;
   loadTurnCreateContext?: (agentTurnId: string) => Promise<{
     applicationRunToken: string;
     content: string;
@@ -44,6 +49,8 @@ export type WorkerProcessOptions = {
     localTrueforgeTurnId: string | null;
     trueforgeSessionId: string;
   } | null>;
+  /** When true (default with sql), mark active turns needs_attention on start. */
+  markNeedsAttentionOnStart?: boolean;
 };
 
 export async function executeClaimQueueItem(
@@ -147,6 +154,39 @@ export async function executeIngestTrueForgeEvent(
   });
 }
 
+export async function executeStopCancelOnce(
+  options: {
+    sql: ReturnType<typeof createSql>;
+    client: Pick<TrueForgeClientType, "cancelSession">;
+  },
+  input: { runStepId: string },
+): Promise<
+  | { ok: true; stop: Extract<RequestStopResult, { ok: true }>; cancelCalled: boolean }
+  | { ok: false; reason: "not_found" | "run_not_stoppable" }
+> {
+  const stop = await requestRunStepStop(options.sql, { runStepId: input.runStepId });
+  if (!stop.ok) {
+    return stop;
+  }
+  let cancelCalled = false;
+  if (stop.decision.callCancel && stop.trueforgeSessionId) {
+    await options.client.cancelSession(stop.trueforgeSessionId);
+    cancelCalled = true;
+    if (stop.agentTurnId) {
+      await markCancelCalled(options.sql, { agentTurnId: stop.agentTurnId });
+    }
+  }
+  return { ok: true, stop, cancelCalled };
+}
+
+export async function executeRestartNeedsAttention(
+  sql: ReturnType<typeof createSql>,
+): Promise<{ marked: number }> {
+  return markActiveTurnsNeedsAttentionOnRestart(sql);
+}
+
+export { settleCancelledStep, requestRunStepStop };
+
 export function startWorkerProcess(options: WorkerProcessOptions | WorkerCommandExecutor = {}) {
   const resolved: WorkerProcessOptions =
     typeof options === "function" ? { executeCommand: options } : options;
@@ -162,8 +202,17 @@ export function startWorkerProcess(options: WorkerProcessOptions | WorkerCommand
         })
       : undefined);
 
+  const startup =
+    canUseDb && resolved.markNeedsAttentionOnStart === true
+      ? (async () => {
+          sql ??= createSql(resolved.databaseUrl);
+          return executeRestartNeedsAttention(sql);
+        })()
+      : Promise.resolve({ marked: 0 });
+
   return {
     ...worker,
+    startup,
     async dispatchCommand(input: unknown): Promise<WorkerDispatchResult> {
       const command = parseWorkerCommand(input);
 

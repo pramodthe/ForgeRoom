@@ -275,6 +275,18 @@ export async function claimTurnQueueItem(
       return eligibility;
     }
 
+    const cancelling = await tx<{ id: string }[]>`
+      SELECT rs.id
+      FROM run_steps AS rs
+      JOIN agent_turns AS t ON t.run_step_id = rs.id
+      WHERE t.channel_agent_session_id = ${item.channel_agent_session_id}
+        AND rs.state = 'cancelling'
+      LIMIT 1
+    `;
+    if (cancelling.length > 0) {
+      return { ok: false, reason: "session_busy" };
+    }
+
     const binding = resolveClaimGenerationBinding({
       inputType: item.input_type,
       boundGenerationId: item.bound_session_generation_id,
