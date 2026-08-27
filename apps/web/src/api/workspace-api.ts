@@ -359,8 +359,16 @@ export async function listTasks(workspaceId: string): Promise<TaskRecordV1[]> {
     assertWorkspace(workspaceId);
     return MOCK_TASKS.map((task) => fixtureTask(task));
   }
-  // Task API arrives in later P0 tasks; keep mock-empty for live mode until then.
-  return [];
+  const channels = await listChannels(workspaceId);
+  const responses = await Promise.all(
+    channels.map(async (channel) => {
+      const body = await apiFetch<{ tasks: unknown[]; request_id: string }>(
+        `/api/channels/${encodeURIComponent(channel.id)}/tasks`,
+      );
+      return taskRecordV1Schema.array().parse(stripRequestId(body).tasks);
+    }),
+  );
+  return responses.flat();
 }
 
 export async function getTask(workspaceId: string, taskId: string): Promise<TaskRecordV1 | null> {
@@ -369,15 +377,42 @@ export async function getTask(workspaceId: string, taskId: string): Promise<Task
     const task = MOCK_TASKS.find((candidate) => candidate.id === taskId);
     return task ? fixtureTask(task) : null;
   }
-  return null;
+  try {
+    const body = await apiFetch<{ task: unknown; request_id: string }>(
+      `/api/tasks/${encodeURIComponent(taskId)}`,
+    );
+    const task = taskRecordV1Schema.parse(stripRequestId(body).task);
+    return task.workspace_id === workspaceId ? task : null;
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 404) return null;
+    throw error;
+  }
 }
 
 export async function updateFixtureTaskStatus(input: {
   workspaceId: string;
   taskId: string;
   status: TaskStatus;
+  csrfToken?: string;
 }): Promise<TaskRecordV1> {
-  if (!useMockApi) throw new Error("Task updates are not connected in live mode yet.");
+  if (!useMockApi) {
+    const current = await getTask(input.workspaceId, input.taskId);
+    if (!current) throw new Error("task_not_found");
+    const body = await apiFetch<{ task: unknown; request_id: string }>(
+      `/api/tasks/${encodeURIComponent(input.taskId)}`,
+      {
+        method: "PATCH",
+        csrfToken: input.csrfToken ?? "",
+        body: JSON.stringify({
+          schemaVersion: 1,
+          expected_revision: current.current_revision,
+          idempotency_key: newIdempotencyKey("task_update"),
+          status: input.status,
+        }),
+      },
+    );
+    return taskRecordV1Schema.parse(stripRequestId(body).task);
+  }
   assertWorkspace(input.workspaceId);
   const current = await getTask(input.workspaceId, input.taskId);
   if (!current) throw new Error("task_not_found");

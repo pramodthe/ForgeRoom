@@ -9,6 +9,8 @@ import {
   createDb,
   createSql,
   messages,
+  taskRevisions,
+  tasks,
   taskGrants,
   workspaceCommandReceipts,
 } from "@forgeroom/db";
@@ -41,6 +43,9 @@ import type {
   PinRecord,
   SafeArtifactRecord,
   TaskGrantRecord,
+  TaskRecord,
+  TaskRevisionRecord,
+  TaskWriteResult,
   WorkspaceCatalogStore,
 } from "./store";
 import {
@@ -200,6 +205,44 @@ function mapSafeArtifact(row: typeof artifacts.$inferSelect): SafeArtifactRecord
     sha256: row.sha256,
     revision: row.revision,
     createdAt: asIso(row.createdAt),
+  };
+}
+
+function mapTask(row: typeof tasks.$inferSelect): TaskRecord {
+  return {
+    schemaVersion: 1,
+    id: row.id,
+    workspace_id: row.workspaceId,
+    channel_id: row.channelId,
+    title: row.title,
+    description: row.description,
+    status: row.status as TaskRecord["status"],
+    assignee_type: row.assigneeType as TaskRecord["assignee_type"],
+    assignee_id: row.assigneeId,
+    source_message_id: row.sourceMessageId,
+    source_run_id: row.sourceRunId,
+    due_at: row.dueAt,
+    current_revision: row.currentRevision,
+    created_by_type: row.createdByType as TaskRecord["created_by_type"],
+    created_by_id: row.createdById,
+    created_at: row.createdAt,
+    updated_at: row.updatedAt,
+  };
+}
+
+function mapTaskRevision(row: typeof taskRevisions.$inferSelect): TaskRevisionRecord {
+  return {
+    schemaVersion: 1,
+    id: row.id,
+    task_id: row.taskId,
+    revision: row.revision,
+    data: row.dataJson as TaskRevisionRecord["data"],
+    data_hash: row.dataHash,
+    changed_fields: row.changedFieldsJson as string[],
+    actor_type: row.actorType as TaskRevisionRecord["actor_type"],
+    actor_id: row.actorId,
+    command_id: row.commandId,
+    created_at: row.createdAt,
   };
 }
 
@@ -405,6 +448,193 @@ export function createPostgresWorkspaceStore(sql: SqlClient): WorkspaceCatalogSt
       }
       const rows = await db.update(channels).set(set).where(eq(channels.id, id)).returning();
       return rows[0] ? mapChannel(rows[0]) : null;
+    },
+    async getTask(id) {
+      const rows = await db.select().from(tasks).where(eq(tasks.id, id)).limit(1);
+      return rows[0] ? mapTask(rows[0]) : null;
+    },
+    async listTasks(channelId) {
+      const rows = await db.select().from(tasks).where(eq(tasks.channelId, channelId));
+      return rows.map(mapTask).sort((a, b) => a.created_at.localeCompare(b.created_at));
+    },
+    async listTaskHistory(taskId) {
+      const rows = await db.select().from(taskRevisions).where(eq(taskRevisions.taskId, taskId));
+      return rows.map(mapTaskRevision).sort((a, b) => a.revision - b.revision);
+    },
+    async insertTaskWithRevision(input): Promise<TaskWriteResult> {
+      let event: AppendChannelEventResult;
+      try {
+        event = await sql.begin(async (tx) => {
+          const channelRows = await tx<
+            {
+              id: string;
+              workspace_id: string;
+              name: string;
+              mission_brief: string;
+              summary: string | null;
+              policy_json: unknown;
+              next_sequence: number;
+              status: string;
+              created_by: string;
+              created_at: string | Date;
+              updated_at: string | Date;
+            }[]
+          >`SELECT * FROM channels WHERE id = ${input.task.channel_id} FOR UPDATE`;
+          const channel = channelRows[0];
+          if (!channel) throw new Error("channel_not_found");
+          await tx`
+            INSERT INTO tasks (
+              id, workspace_id, channel_id, title, description, status,
+              assignee_type, assignee_id, source_message_id, source_run_id,
+              due_at, current_revision, created_by_type, created_by_id, created_at, updated_at
+            ) VALUES (
+              ${input.task.id}, ${input.task.workspace_id}, ${input.task.channel_id},
+              ${input.task.title}, ${input.task.description}, ${input.task.status},
+              ${input.task.assignee_type}, ${input.task.assignee_id},
+              ${input.task.source_message_id}, ${input.task.source_run_id},
+              ${input.task.due_at}, ${input.task.current_revision},
+              ${input.task.created_by_type}, ${input.task.created_by_id},
+              ${input.task.created_at}, ${input.task.updated_at}
+            )
+          `;
+          await tx`
+            INSERT INTO task_revisions (
+              id, task_id, revision, data_json, data_hash, changed_fields_json,
+              actor_type, actor_id, command_id, created_at
+            ) VALUES (
+              ${input.revision.id}, ${input.revision.task_id}, ${input.revision.revision},
+              ${JSON.stringify(input.revision.data)}::jsonb, ${input.revision.data_hash},
+              ${JSON.stringify(input.revision.changed_fields)}::jsonb,
+              ${input.revision.actor_type}, ${input.revision.actor_id},
+              ${input.revision.command_id}, ${input.revision.created_at}
+            )
+          `;
+          const sequence = channel.next_sequence;
+          const written = await insertDurableEventSql(
+            tx as unknown as SqlClient,
+            input.task.channel_id,
+            sequence,
+            input.event,
+          );
+          await tx`
+            UPDATE channels SET next_sequence = ${sequence + 1}, updated_at = ${input.event.createdAt}
+            WHERE id = ${input.task.channel_id}
+          `;
+          return {
+            sequence,
+            channel: {
+              id: channel.id,
+              workspaceId: channel.workspace_id,
+              name: channel.name,
+              missionBrief: channel.mission_brief,
+              summary: channel.summary,
+              policyJson: (channel.policy_json ?? {}) as Record<string, unknown>,
+              nextSequence: sequence + 1,
+              status: channel.status as ChannelRecord["status"],
+              createdBy: channel.created_by,
+              createdAt: asIso(channel.created_at),
+              updatedAt: input.event.createdAt,
+            },
+            envelope: written.envelope,
+            event: written.event,
+          } satisfies AppendChannelEventResult;
+        });
+      } catch (error) {
+        if (
+          typeof error === "object" &&
+          error !== null &&
+          "code" in error &&
+          error.code === "23505"
+        ) {
+          return { ok: false, reason: "conflict" };
+        }
+        throw error;
+      }
+      return { ok: true, task: input.task, revision: input.revision, event };
+    },
+    async updateTaskWithRevision(input): Promise<TaskWriteResult> {
+      return sql.begin(async (tx) => {
+        const rows = await tx<{ current_revision: number; channel_id: string }[]>`
+          SELECT current_revision, channel_id FROM tasks WHERE id = ${input.task.id} FOR UPDATE
+        `;
+        const current = rows[0];
+        if (!current) return { ok: false, reason: "not_found" };
+        if (current.current_revision !== input.expectedRevision) {
+          return { ok: false, reason: "conflict", actualRevision: current.current_revision };
+        }
+        const channelRows = await tx<
+          {
+            id: string;
+            workspace_id: string;
+            name: string;
+            mission_brief: string;
+            summary: string | null;
+            policy_json: unknown;
+            next_sequence: number;
+            status: string;
+            created_by: string;
+            created_at: string | Date;
+            updated_at: string | Date;
+          }[]
+        >`SELECT * FROM channels WHERE id = ${current.channel_id} FOR UPDATE`;
+        const channel = channelRows[0];
+        if (!channel) return { ok: false, reason: "not_found" };
+        await tx`
+          UPDATE tasks SET
+            title = ${input.task.title}, description = ${input.task.description},
+            status = ${input.task.status}, assignee_type = ${input.task.assignee_type},
+            assignee_id = ${input.task.assignee_id}, source_message_id = ${input.task.source_message_id},
+            source_run_id = ${input.task.source_run_id}, due_at = ${input.task.due_at},
+            current_revision = ${input.task.current_revision}, updated_at = ${input.task.updated_at}
+          WHERE id = ${input.task.id}
+        `;
+        await tx`
+          INSERT INTO task_revisions (
+            id, task_id, revision, data_json, data_hash, changed_fields_json,
+            actor_type, actor_id, command_id, created_at
+          ) VALUES (
+            ${input.revision.id}, ${input.revision.task_id}, ${input.revision.revision},
+            ${JSON.stringify(input.revision.data)}::jsonb, ${input.revision.data_hash},
+            ${JSON.stringify(input.revision.changed_fields)}::jsonb,
+            ${input.revision.actor_type}, ${input.revision.actor_id},
+            ${input.revision.command_id}, ${input.revision.created_at}
+          )
+        `;
+        const sequence = channel.next_sequence;
+        const written = await insertDurableEventSql(
+          tx as unknown as SqlClient,
+          current.channel_id,
+          sequence,
+          input.event,
+        );
+        await tx`
+          UPDATE channels SET next_sequence = ${sequence + 1}, updated_at = ${input.event.createdAt}
+          WHERE id = ${current.channel_id}
+        `;
+        return {
+          ok: true,
+          task: input.task,
+          revision: input.revision,
+          event: {
+            sequence,
+            channel: {
+              id: channel.id,
+              workspaceId: channel.workspace_id,
+              name: channel.name,
+              missionBrief: channel.mission_brief,
+              summary: channel.summary,
+              policyJson: (channel.policy_json ?? {}) as Record<string, unknown>,
+              nextSequence: sequence + 1,
+              status: channel.status as ChannelRecord["status"],
+              createdBy: channel.created_by,
+              createdAt: asIso(channel.created_at),
+              updatedAt: input.event.createdAt,
+            },
+            envelope: written.envelope,
+            event: written.event,
+          },
+        };
+      });
     },
     async listParticipants(channelId) {
       const rows = await db

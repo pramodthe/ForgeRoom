@@ -3,6 +3,7 @@ import type {
   P0PersistedAguiEvent,
   SessionResponse,
 } from "@forgeroom/contracts";
+import type { TaskRecordV1, TaskRevision } from "@forgeroom/contracts";
 import { clampEventLimit } from "./event-read";
 import { materializeChannelEvent } from "./event-persist";
 
@@ -96,6 +97,13 @@ export type TaskGrantRecord = {
   createdAt: string;
   revokedAt: string | null;
 };
+
+export type TaskRecord = TaskRecordV1;
+export type TaskRevisionRecord = TaskRevision;
+
+export type TaskWriteResult =
+  | { ok: true; task: TaskRecord; revision: TaskRevisionRecord; event: AppendChannelEventResult }
+  | { ok: false; reason: "not_found" | "conflict"; actualRevision?: number };
 
 export type ChannelEventRecord = {
   id: string;
@@ -319,6 +327,21 @@ export type WorkspaceCatalogStore = {
   insertChannel(channel: ChannelRecord): Promise<void>;
   /** Updates metadata only — never overwrites nextSequence. */
   patchChannel(id: string, patch: ChannelPatch): Promise<ChannelRecord | null>;
+
+  getTask(id: string): Promise<TaskRecord | null>;
+  listTasks(channelId: string): Promise<TaskRecord[]>;
+  listTaskHistory(taskId: string): Promise<TaskRevisionRecord[]>;
+  insertTaskWithRevision(input: {
+    task: TaskRecord;
+    revision: TaskRevisionRecord;
+    event: ChannelEventInsert;
+  }): Promise<TaskWriteResult>;
+  updateTaskWithRevision(input: {
+    task: TaskRecord;
+    revision: TaskRevisionRecord;
+    expectedRevision: number;
+    event: ChannelEventInsert;
+  }): Promise<TaskWriteResult>;
 
   listParticipants(channelId: string): Promise<ParticipantRecord[]>;
   getParticipant(
@@ -565,6 +588,8 @@ export function createMemoryWorkspaceStore(): WorkspaceCatalogStore {
   const events = new Map<string, ChannelEventRecord>();
   const messages = new Map<string, MessageRecord>();
   const pins = new Map<string, PinRecord>();
+  const tasks = new Map<string, TaskRecord>();
+  const taskRevisions = new Map<string, TaskRevisionRecord[]>();
   const artifacts = new Map<string, SafeArtifactRecord>();
   const agentSessions = new Map<string, ChannelAgentSessionRecord>();
   const sessionRevisions = new Map<
@@ -737,6 +762,61 @@ export function createMemoryWorkspaceStore(): WorkspaceCatalogStore {
       };
       channels.set(id, structuredClone(updated));
       return structuredClone(updated);
+    },
+    async getTask(id) {
+      const row = tasks.get(id);
+      return row ? structuredClone(row) : null;
+    },
+    async listTasks(channelId) {
+      return [...tasks.values()]
+        .filter((row) => row.channel_id === channelId)
+        .sort((a, b) => a.created_at.localeCompare(b.created_at))
+        .map((row) => structuredClone(row));
+    },
+    async listTaskHistory(taskId) {
+      return (taskRevisions.get(taskId) ?? [])
+        .slice()
+        .sort((a, b) => a.revision - b.revision)
+        .map((row) => structuredClone(row));
+    },
+    async insertTaskWithRevision(input) {
+      return withChannelLock(input.task.channel_id, () => {
+        if (tasks.has(input.task.id)) return { ok: false, reason: "conflict" };
+        const event = appendEventLocked({ channelId: input.task.channel_id, event: input.event });
+        tasks.set(input.task.id, structuredClone(input.task));
+        taskRevisions.set(input.task.id, [structuredClone(input.revision)]);
+        return {
+          ok: true,
+          task: structuredClone(input.task),
+          revision: structuredClone(input.revision),
+          event,
+        };
+      });
+    },
+    async updateTaskWithRevision(input) {
+      return withChannelLock(input.task.channel_id, () => {
+        const current = tasks.get(input.task.id);
+        if (!current) return { ok: false, reason: "not_found" };
+        if (current.current_revision !== input.expectedRevision) {
+          return {
+            ok: false,
+            reason: "conflict",
+            actualRevision: current.current_revision,
+          };
+        }
+        const event = appendEventLocked({ channelId: input.task.channel_id, event: input.event });
+        tasks.set(input.task.id, structuredClone(input.task));
+        taskRevisions.set(input.task.id, [
+          ...(taskRevisions.get(input.task.id) ?? []),
+          structuredClone(input.revision),
+        ]);
+        return {
+          ok: true,
+          task: structuredClone(input.task),
+          revision: structuredClone(input.revision),
+          event,
+        };
+      });
     },
     async listParticipants(channelId) {
       return [...participants.values()].filter((row) => row.channelId === channelId);

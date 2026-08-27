@@ -5,6 +5,7 @@ import {
   coworkerProfileSchema,
   errorEnvelopeSchema,
   sessionResponseSchema,
+  taskRecordV1Schema,
 } from "@forgeroom/contracts";
 import { withMigratedDatabase } from "@forgeroom/db/test-harness";
 import { loadApiEnv } from "../env";
@@ -265,6 +266,85 @@ describe("channel and coworker API", () => {
     });
     expect(createBlocked.status).toBe(404);
     expect(errorEnvelopeSchema.parse(await createBlocked.json()).error.code).toBe("not_found");
+  });
+
+  it("creates, lists, updates and replays TaskRecord revisions", async () => {
+    const { app, env } = await createTestApp();
+    const { session, cookie } = await login(app, env);
+    const channelRes = await app.request(`/api/workspaces/${env.workspaceId}/channels`, {
+      method: "POST",
+      headers: mutationHeaders(env, cookie, session.csrf_token),
+      body: JSON.stringify({
+        schemaVersion: 1,
+        name: "Task room",
+        mission_brief: "Track work",
+        idempotency_key: "idem_task_channel",
+      }),
+    });
+    const channel = channelSchema.parse(withoutRequestId(await channelRes.json()));
+
+    const createBody = {
+      schemaVersion: 1,
+      title: "Review connector health",
+      description: "Check the fixed service identity.",
+      status: "todo",
+      assignee_type: null,
+      assignee_id: null,
+      source_message_id: null,
+      source_run_id: null,
+      due_at: null,
+      idempotency_key: "idem_task_create",
+    };
+    const created = await app.request(`/api/channels/${channel.id}/tasks`, {
+      method: "POST",
+      headers: mutationHeaders(env, cookie, session.csrf_token),
+      body: JSON.stringify(createBody),
+    });
+    expect(created.status).toBe(201);
+    const task = taskRecordV1Schema.parse(
+      (withoutRequestId(await created.json()) as { task: unknown }).task,
+    );
+    expect(task.status).toBe("todo");
+
+    const listed = await app.request(`/api/channels/${channel.id}/tasks`, {
+      headers: { cookie: `${env.sessionCookieName}=${cookie}` },
+    });
+    expect(listed.status).toBe(200);
+    expect(((await listed.json()) as { tasks: unknown[] }).tasks).toHaveLength(1);
+
+    const updated = await app.request(`/api/tasks/${task.id}`, {
+      method: "PATCH",
+      headers: mutationHeaders(env, cookie, session.csrf_token),
+      body: JSON.stringify({
+        schemaVersion: 1,
+        expected_revision: 1,
+        status: "in_progress",
+        idempotency_key: "idem_task_update",
+      }),
+    });
+    expect(updated.status).toBe(200);
+    expect(
+      taskRecordV1Schema.parse((withoutRequestId(await updated.json()) as { task: unknown }).task),
+    ).toMatchObject({ status: "in_progress", current_revision: 2 });
+
+    const stale = await app.request(`/api/tasks/${task.id}`, {
+      method: "PATCH",
+      headers: mutationHeaders(env, cookie, session.csrf_token),
+      body: JSON.stringify({
+        schemaVersion: 1,
+        expected_revision: 1,
+        status: "done",
+        idempotency_key: "idem_task_stale",
+      }),
+    });
+    expect(stale.status).toBe(409);
+    expect(errorEnvelopeSchema.parse(await stale.json()).error.code).toBe("stale_task_revision");
+
+    const history = await app.request(`/api/tasks/${task.id}/history`, {
+      headers: { cookie: `${env.sessionCookieName}=${cookie}` },
+    });
+    expect(history.status).toBe(200);
+    expect(((await history.json()) as { revisions: unknown[] }).revisions).toHaveLength(2);
   });
 
   it("validates membership, rejects coordinator role, and isolates grant edits", async () => {

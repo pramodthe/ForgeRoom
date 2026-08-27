@@ -14,6 +14,7 @@ import {
 import { isFixtureMode } from "../api/mode";
 import { workspaceTaskDetailPath, workspaceTasksPath } from "../routes/paths";
 import { Avatar } from "../ui/avatar";
+import { useSession } from "../auth/session-context";
 
 const STATUS_STYLE: Record<TaskRecordV1["status"], string> = {
   todo: "bg-zinc-100 text-zinc-700",
@@ -372,10 +373,16 @@ export function TaskDetailPage() {
 }
 
 function TaskTransitionPanel({ workspaceId, task }: { workspaceId: string; task: TaskRecordV1 }) {
+  const { session } = useSession();
   const queryClient = useQueryClient();
   const mutation = useMutation({
     mutationFn: (status: TaskStatus) =>
-      updateFixtureTaskStatus({ workspaceId, taskId: task.id, status }),
+      updateFixtureTaskStatus({
+        workspaceId,
+        taskId: task.id,
+        status,
+        csrfToken: session?.csrf_token,
+      }),
     onSuccess: async (updated) => {
       queryClient.setQueryData(["task", workspaceId, task.id], updated);
       await queryClient.invalidateQueries({ queryKey: ["tasks", workspaceId] });
