@@ -55,6 +55,11 @@ export {
   reduceUiPresentationState,
   type UiPresentationState,
 } from "./ui-state-reducer";
+export {
+  initialActivityPresentationState,
+  reduceActivityPresentationState,
+  type ActivityPresentationState,
+} from "./activity-reducer";
 export { HttpAgent, type AgentSubscriber, type RunAgentParameters } from "@ag-ui/client";
 export { formatAgUiSseBody, formatAgUiSseEvent } from "./sse";
 export { buildAgUiCoworkerCapabilities, type AgUiCoworkerCapabilities } from "./capabilities";

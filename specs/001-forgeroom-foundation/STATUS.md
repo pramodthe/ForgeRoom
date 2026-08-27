@@ -2,9 +2,9 @@
 
 | Field | Current value |
 | --- | --- |
-| Overall | M1 Foundation done; P0-314 done; P0-212 state/hash slice in progress |
+| Overall | M1 Foundation done; P0-314 done; P0-212 activity slice in progress |
 | Current phase | Phase 1 — Foundation |
-| Active task | P0-212 second slice — JCS event hashing + ChannelUIState/ThreadUIState |
+| Active task | P0-212 third slice — ACTIVITY_SNAPSHOT/DELTA revisioning |
 | Next task | Finish P0-212; P0-208 remains blocked on P0-302 |
 | P0 blockers | Save-as-skill Run binding, TrueForge→artifact path, demo durable storage, run-limit hard enforcement, P0-301→P0-302 for session rotation |
 | Last updated | 2026-08-27 |

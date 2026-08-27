@@ -172,4 +172,64 @@ describe("toPersistedAgUiEvent", () => {
       }),
     ).toBeNull();
   });
+
+  it("projects ACTIVITY_SNAPSHOT and ACTIVITY_DELTA while dropping extras", () => {
+    const content = {
+      schemaVersion: 1 as const,
+      activityRevision: 0,
+      activityType: "forgeroom.coworker_work.v1" as const,
+      coworkerId: "cw_1",
+      logicalThreadId: "thread_1",
+      assignment: "Inspect",
+      phase: "running" as const,
+    };
+    expect(
+      toPersistedAgUiEvent({
+        type: "ACTIVITY_SNAPSHOT",
+        messageId: "act_1",
+        activityType: "forgeroom.coworker_work.v1",
+        replace: true,
+        content,
+        metadata: { provider: "hidden" },
+      }),
+    ).toEqual({
+      type: "ACTIVITY_SNAPSHOT",
+      messageId: "act_1",
+      activityType: "forgeroom.coworker_work.v1",
+      replace: true,
+      content,
+    });
+
+    expect(
+      toPersistedAgUiEvent({
+        type: "ACTIVITY_DELTA",
+        messageId: "act_1",
+        activityType: "forgeroom.coworker_work.v1",
+        patch: [
+          { op: "test", path: "/activityRevision", value: 0 },
+          { op: "replace", path: "/phase", value: "interrupted" },
+          { op: "replace", path: "/activityRevision", value: 1 },
+        ],
+        rawEvent: { secret: true },
+      }),
+    ).toEqual({
+      type: "ACTIVITY_DELTA",
+      messageId: "act_1",
+      activityType: "forgeroom.coworker_work.v1",
+      patch: [
+        { op: "test", path: "/activityRevision", value: 0 },
+        { op: "replace", path: "/phase", value: "interrupted" },
+        { op: "replace", path: "/activityRevision", value: 1 },
+      ],
+    });
+
+    expect(
+      toPersistedAgUiEvent({
+        type: "ACTIVITY_DELTA",
+        messageId: "act_1",
+        activityType: "forgeroom.coworker_work.v1",
+        patch: [{ op: "replace", path: "/phase", value: "interrupted" }],
+      }),
+    ).toBeNull();
+  });
 });
