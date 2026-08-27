@@ -163,6 +163,9 @@ importers:
 
   apps/worker:
     dependencies:
+      '@forgeroom/artifacts':
+        specifier: workspace:*
+        version: link:../../packages/integrations/artifacts
       '@forgeroom/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts

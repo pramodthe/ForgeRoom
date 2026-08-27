@@ -172,6 +172,8 @@ export {
   loadArtifactById,
   publishArtifactRecord,
 } from "./artifact-storage";
+export { loadSandboxArtifactDiscoveryBinding } from "./artifact-discovery-binding";
+export type { ArtifactDiscoveryBinding } from "./artifact-discovery-binding";
 export type {
   ArtifactRecord,
   PublishArtifactRecordInput,

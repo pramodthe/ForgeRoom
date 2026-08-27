@@ -128,6 +128,51 @@ describe("P0-312 sandbox artifact publication", () => {
     expect(result.ok).toBe(true);
   });
 
+  it("rejects hash mismatch before durable publish", async () => {
+    const sha256 = hashArtifactContent(fixtureContent);
+    const command = {
+      schemaVersion: 1 as const,
+      command_id: "cmd_hash_mismatch",
+      name: "publish_sandbox_artifact" as const,
+      payload: {
+        sandbox_id: discovery.sandboxId,
+        run_id: "run_1",
+        run_step_id: "step_1",
+        artifact_id: "artifact_1",
+        expected_sandbox_state: "command_completed" as const,
+        expected_artifact_revision: 0,
+        next_artifact_revision: 1,
+        content_hash: "0".repeat(64),
+        byte_size: fixtureContent.byteLength,
+      },
+    };
+
+    let published = false;
+    const result = await executePublishSandboxArtifactCommand(
+      {
+        downloadSandboxFile: async () => fixtureContent,
+        publishArtifact: async () => {
+          published = true;
+          return {
+            ok: true,
+            created: true,
+            sha256,
+            byteSize: fixtureContent.byteLength,
+          };
+        },
+        loadDiscovery: async () => baseInput,
+      },
+      command,
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok) {
+      return;
+    }
+    expect(result.kind).toBe("hash_mismatch");
+    expect(published).toBe(false);
+  });
+
   it("requires sandbox download only at publication time", async () => {
     const first = await publishSandboxArtifactFromDiscovery(
       {

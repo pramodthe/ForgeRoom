@@ -124,8 +124,12 @@ export async function loadArtifactById(
 
 export async function findArtifactByContentRevision(
   sql: SqlClient,
-  sha256: string,
-  revision: number,
+  input: {
+    workspaceId: string;
+    channelId: string;
+    sha256: string;
+    revision: number;
+  },
 ): Promise<ArtifactRecord | null> {
   const rows = await sql<ArtifactRow[]>`
     SELECT
@@ -133,8 +137,10 @@ export async function findArtifactByContentRevision(
       kind, name, mime_type, storage_key, byte_size, sha256,
       source_sandbox_id, source_sandbox_path, revision, metadata_json, created_at
     FROM artifacts
-    WHERE sha256 = ${sha256}
-      AND revision = ${revision}
+    WHERE workspace_id = ${input.workspaceId}
+      AND channel_id = ${input.channelId}
+      AND sha256 = ${input.sha256}
+      AND revision = ${input.revision}
     LIMIT 1
   `;
   return rows[0] ? mapArtifactRow(rows[0]) : null;
@@ -144,7 +150,12 @@ export async function publishArtifactRecord(
   sql: SqlClient,
   input: PublishArtifactRecordInput,
 ): Promise<PublishArtifactRecordResult> {
-  const byContent = await findArtifactByContentRevision(sql, input.sha256, input.revision);
+  const byContent = await findArtifactByContentRevision(sql, {
+    workspaceId: input.workspaceId,
+    channelId: input.channelId,
+    sha256: input.sha256,
+    revision: input.revision,
+  });
   if (byContent) {
     if (
       byContent.storageKey !== input.storageKey ||
@@ -189,7 +200,12 @@ export async function publishArtifactRecord(
     const err = error as { code?: string };
     if (err.code === "23505") {
       const existing =
-        (await findArtifactByContentRevision(sql, input.sha256, input.revision)) ??
+        (await findArtifactByContentRevision(sql, {
+          workspaceId: input.workspaceId,
+          channelId: input.channelId,
+          sha256: input.sha256,
+          revision: input.revision,
+        })) ??
         (await loadArtifactById(sql, input.id));
       if (existing) {
         if (

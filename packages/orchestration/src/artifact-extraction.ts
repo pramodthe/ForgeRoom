@@ -38,6 +38,8 @@ export type SandboxArtifactPublishInput = {
   revision: number;
   discovery: DiscoveredSandboxArtifact;
   sandboxCommandState: "creating" | "running" | "completed" | "failed";
+  /** When set, downloaded bytes must match before durable publish. */
+  contentBinding?: { sha256: string; byteSize: number };
 };
 
 export type SandboxArtifactPublishAdapters = {
@@ -231,6 +233,25 @@ export async function publishSandboxArtifactFromDiscovery(
     };
   }
 
+  if (input.contentBinding) {
+    if (validated.value.sha256 !== input.contentBinding.sha256) {
+      return {
+        ok: false,
+        kind: "hash_mismatch",
+        reason: "downloaded content hash does not match command binding",
+        events: [discoveredEvent],
+      };
+    }
+    if (validated.value.byteSize !== input.contentBinding.byteSize) {
+      return {
+        ok: false,
+        kind: "size_mismatch",
+        reason: "downloaded byte size does not match command binding",
+        events: [discoveredEvent],
+      };
+    }
+  }
+
   const published = await adapters.publishArtifact({
     id: input.artifactId,
     workspaceId: input.workspaceId,
@@ -288,11 +309,11 @@ export async function publishSandboxArtifactFromDiscovery(
 
 export async function executePublishSandboxArtifactCommand(
   adapters: SandboxArtifactPublishAdapters & {
-    loadDiscovery: (artifactId: string) => Promise<SandboxArtifactPublishInput | null>;
+    loadDiscovery: (command: PublishSandboxArtifactCommand) => Promise<SandboxArtifactPublishInput | null>;
   },
   command: PublishSandboxArtifactCommand,
 ): Promise<SandboxArtifactPublishResult> {
-  const loaded = await adapters.loadDiscovery(command.payload.artifact_id);
+  const loaded = await adapters.loadDiscovery(command);
   if (!loaded) {
     return {
       ok: false,
@@ -335,27 +356,13 @@ export async function executePublishSandboxArtifactCommand(
     };
   }
 
-  const result = await publishSandboxArtifactFromDiscovery(adapters, loaded);
-  if (!result.ok) {
-    return result;
-  }
-  if (result.sha256 !== command.payload.content_hash) {
-    return {
-      ok: false,
-      kind: "hash_mismatch",
-      reason: "downloaded content hash does not match command binding",
-      events: result.events,
-    };
-  }
-  if (result.byteSize !== command.payload.byte_size) {
-    return {
-      ok: false,
-      kind: "size_mismatch",
-      reason: "downloaded byte size does not match command binding",
-      events: result.events,
-    };
-  }
-  return result;
+  return publishSandboxArtifactFromDiscovery(adapters, {
+    ...loaded,
+    contentBinding: {
+      sha256: command.payload.content_hash,
+      byteSize: command.payload.byte_size,
+    },
+  });
 }
 
 export function createTrueForgeDownloadAdapter(

@@ -42,6 +42,10 @@ import {
   type SandboxArtifactPublishInput,
 } from "@forgeroom/orchestration/artifact-extraction";
 import { TrueForgeClient, type TrueForgeClient as TrueForgeClientType } from "@forgeroom/trueforge";
+import {
+  createWorkerArtifactDiscoveryLoader,
+  createWorkerArtifactPublishAdapter,
+} from "./artifacts";
 
 export function parseWorkerCommand(input: unknown): InternalWorkerCommand {
   return internalWorkerCommandSchema.parse(input);
@@ -79,7 +83,7 @@ export type WorkerProcessOptions = {
     trueforgeSessionId: string;
   } | null>;
   loadArtifactDiscovery?: (
-    artifactId: string,
+    command: PublishSandboxArtifactCommand,
   ) => Promise<SandboxArtifactPublishInput | null>;
   publishArtifact?: SandboxArtifactPublishAdapters["publishArtifact"];
   /** When true (default with sql), mark active turns needs_attention on start. */
@@ -468,14 +472,27 @@ export function startWorkerProcess(options: WorkerProcessOptions | WorkerCommand
       }
 
       if (command.name === "publish_sandbox_artifact") {
-        if (!trueforge || !resolved.loadArtifactDiscovery || !resolved.publishArtifact) {
-          return { command, publishSandboxArtifact: { ok: false, kind: "not_found", reason: "unavailable", events: [] } };
+        if (!trueforge || !canUseDb) {
+          return {
+            command,
+            publishSandboxArtifact: {
+              ok: false,
+              kind: "not_found",
+              reason: "unavailable",
+              events: [],
+            },
+          };
         }
+        sql ??= createSql(resolved.databaseUrl);
+        const loadDiscovery =
+          resolved.loadArtifactDiscovery ?? createWorkerArtifactDiscoveryLoader({ sql });
+        const publishArtifact =
+          resolved.publishArtifact ?? createWorkerArtifactPublishAdapter({ sql });
         const publishSandboxArtifact = await executePublishSandboxArtifact(
           {
             client: trueforge,
-            loadDiscovery: resolved.loadArtifactDiscovery,
-            publishArtifact: resolved.publishArtifact,
+            loadDiscovery,
+            publishArtifact,
           },
           command,
         );
