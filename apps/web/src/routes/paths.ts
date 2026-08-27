@@ -23,6 +23,10 @@ export function loginPath(): string {
   return P0_ROUTES.login;
 }
 
+export function workspaceChannelsPath(workspaceId: string): string {
+  return `/w/${segment(workspaceId)}/channels`;
+}
+
 export function workspaceChannelPath(workspaceId: string, channelId: string): string {
   return `/w/${segment(workspaceId)}/channels/${segment(channelId)}`;
 }

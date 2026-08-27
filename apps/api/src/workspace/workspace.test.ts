@@ -370,7 +370,7 @@ describe("channel and coworker API", () => {
   });
 
   it("lists channel roster with availability and effective tools", async () => {
-    const { app, env, workspace } = await createTestApp();
+    const { app, env, workspace, workspaceStore } = await createTestApp();
     const { session, cookie } = await login(app, env);
     const channelRes = await app.request(`/api/workspaces/${env.workspaceId}/channels`, {
       method: "POST",
@@ -434,7 +434,83 @@ describe("channel and coworker API", () => {
     expect(roster.coworkers).toHaveLength(1);
     expect(roster.coworkers[0]?.handle).toBe("alpha");
     expect(roster.coworkers[0]?.availability).toBe("available");
+    expect(
+      (roster.coworkers[0] as { assignment_summary?: string | null }).assignment_summary,
+    ).toBeNull();
     expect(roster.coworkers[0]?.effective_tools).toEqual(["PROVIDER_READ_TOOL"]);
+
+    await workspaceStore.upsertChannelAgentSession({
+      id: "cas_alpha_rotating",
+      workspaceId: env.workspaceId,
+      channelId: channel.id,
+      agentProfileId: alpha.id,
+      state: "rotating",
+    });
+    const rotatingRosterRes = await app.request(`/api/channels/${channel.id}/roster`, {
+      headers: { cookie: `${env.sessionCookieName}=${cookie}` },
+    });
+    expect(rotatingRosterRes.status).toBe(200);
+    const rotatingRoster = withoutRequestId(await rotatingRosterRes.json()) as {
+      coworkers: Array<{ availability: string; assignment_summary: string | null }>;
+    };
+    expect(rotatingRoster.coworkers[0]?.availability).toBe("cancelling");
+    expect(rotatingRoster.coworkers[0]?.assignment_summary).toBe("Rotating session");
+  });
+
+  it("replays identical message posts under the same idempotency key", async () => {
+    const { app, env, workspace } = await createTestApp();
+    const { session, cookie } = await login(app, env);
+    const channelRes = await app.request(`/api/workspaces/${env.workspaceId}/channels`, {
+      method: "POST",
+      headers: mutationHeaders(env, cookie, session.csrf_token),
+      body: JSON.stringify({
+        schemaVersion: 1,
+        name: "Idem",
+        mission_brief: "Idem",
+        idempotency_key: "idem_msg_channel",
+      }),
+    });
+    const channel = channelSchema.parse(withoutRequestId(await channelRes.json()));
+    const coworker = await workspace.seedCoworker({
+      workspaceId: env.workspaceId,
+      createdBy: env.ownerUserId,
+      handle: "solo",
+      name: "Solo",
+      title: "Operator",
+    });
+    await app.request(`/api/channels/${channel.id}/participants`, {
+      method: "POST",
+      headers: mutationHeaders(env, cookie, session.csrf_token),
+      body: JSON.stringify({
+        schemaVersion: 1,
+        participant_type: "coworker",
+        participant_id: coworker.id,
+        role: "member",
+        idempotency_key: "idem_msg_add",
+      }),
+    });
+    const payload = {
+      body: "status please",
+      recipient_handles: [],
+      routing_mode: "direct",
+      parent_message_id: null,
+      idempotency_key: "idem_msg_send_1",
+    };
+    const first = await app.request(`/api/channels/${channel.id}/messages`, {
+      method: "POST",
+      headers: mutationHeaders(env, cookie, session.csrf_token),
+      body: JSON.stringify(payload),
+    });
+    expect(first.status).toBe(201);
+    const firstBody = withoutRequestId(await first.json()) as { message_id: string };
+    const second = await app.request(`/api/channels/${channel.id}/messages`, {
+      method: "POST",
+      headers: mutationHeaders(env, cookie, session.csrf_token),
+      body: JSON.stringify(payload),
+    });
+    expect(second.status).toBe(201);
+    const secondBody = withoutRequestId(await second.json()) as { message_id: string };
+    expect(secondBody.message_id).toBe(firstBody.message_id);
   });
 
   it("blocks messages and participant edits on archived channels", async () => {

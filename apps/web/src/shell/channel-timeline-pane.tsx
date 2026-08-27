@@ -25,18 +25,18 @@ type ChannelTimelinePaneProps = {
 export function ChannelTimelinePane({ workspaceId, channel }: ChannelTimelinePaneProps) {
   const { session } = useSession();
   const queryClient = useQueryClient();
+  const archived = channel.status === "archived";
 
   const rosterQuery = useQuery({
     queryKey: ["channel-roster", channel.id],
     queryFn: () => listChannelRoster(workspaceId, channel.id),
+    refetchInterval: archived ? false : 15_000,
   });
 
   const coworkersQuery = useQuery({
     queryKey: ["coworkers", workspaceId],
     queryFn: () => listCoworkers(workspaceId),
   });
-
-  const archived = channel.status === "archived";
 
   const membershipMutation = useMutation({
     mutationFn: async (input: { action: "add" | "remove"; coworkerId: string }) => {

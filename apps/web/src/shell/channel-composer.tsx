@@ -26,6 +26,7 @@ export function ChannelComposer({
   const [body, setBody] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [sendIdempotencyKey, setSendIdempotencyKey] = useState<string | null>(null);
 
   const preview = useMemo(
     () => previewComposerRecipients({ body: body.trim(), roster }),
@@ -41,7 +42,9 @@ export function ChannelComposer({
     }
     setSubmitting(true);
     setError(null);
-    const commandResult = buildComposerMessageCommand({ body, roster });
+    const idempotencyKey = sendIdempotencyKey ?? `msg_${crypto.randomUUID()}`;
+    setSendIdempotencyKey(idempotencyKey);
+    const commandResult = buildComposerMessageCommand({ body, roster, idempotencyKey });
     if (!commandResult.ok) {
       setError(commandResult.message);
       setSubmitting(false);
@@ -55,6 +58,7 @@ export function ChannelComposer({
         command: commandResult.command,
       });
       setBody("");
+      setSendIdempotencyKey(null);
       onSent?.(result.message_id);
     } catch (sendError) {
       setError(sendError instanceof Error ? sendError.message : "Unable to send message.");

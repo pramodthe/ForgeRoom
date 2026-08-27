@@ -3,7 +3,7 @@ import { HostButton } from "@forgeroom/ui-components";
 import { useSession } from "../auth/session-context";
 import {
   loginPath,
-  workspaceChannelPath,
+  workspaceChannelsPath,
   workspaceConnectionsPath,
   workspaceCoworkersPath,
   workspaceSkillsPath,
@@ -21,7 +21,7 @@ const NAV_ITEMS = [
 function navHref(workspaceId: string, segment: (typeof NAV_ITEMS)[number]["segment"]): string {
   switch (segment) {
     case "channels":
-      return workspaceChannelPath(workspaceId, "ch_general_001");
+      return workspaceChannelsPath(workspaceId);
     case "tasks":
       return workspaceTasksPath(workspaceId);
     case "coworkers":

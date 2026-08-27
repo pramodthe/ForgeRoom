@@ -25,6 +25,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   });
 
   const clearSession = useCallback(async () => {
+    await queryClient.cancelQueries({ queryKey: ["session"] });
     queryClient.setQueryData(["session"], null);
   }, [queryClient]);
 

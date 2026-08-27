@@ -196,6 +196,17 @@ function mapRosterAvailability(
   return "available";
 }
 
+/** P0 assignment line until Run/Task cards land — surface session rotation work. */
+function mapAssignmentSummary(sessionState: ChannelAgentSessionState | undefined): string | null {
+  if (sessionState === "rotating") {
+    return "Rotating session";
+  }
+  if (sessionState === "disabled") {
+    return "Session disabled";
+  }
+  return null;
+}
+
 function pinSourceMatchesCommand(
   row: PinRecord,
   sourceEventId: string | null,
@@ -874,7 +885,7 @@ export function createWorkspaceService(options?: {
           title: profile.title,
           role: "member",
           availability: mapRosterAvailability(profile, sessionStateByCoworker.get(profile.id)),
-          assignment_summary: null,
+          assignment_summary: mapAssignmentSummary(sessionStateByCoworker.get(profile.id)),
           effective_tools: [...profile.editableConfigJson.tool_grants],
         });
       }
@@ -1357,72 +1368,134 @@ export function createWorkspaceService(options?: {
           },
         };
       }
-      const createdAt = now().toISOString();
-      const eventId = randomOpaqueId("evt");
-      const messageId = randomOpaqueId("msg");
-      try {
-        const appended = await store.appendMessage({
-          channelId,
-          event: {
-            id: eventId,
-            type: "message.created",
-            actorType: "human",
-            actorId: session.user.id,
-            runId: null,
-            createdAt,
-            draft: {
-              actorKind: "human",
-              sourceMessageId: messageId,
-              aguiEvent: messageCreatedAguiEvent({
-                routing_mode: routing.routing_mode,
-                recipient_handles: routing.recipient_handles,
-              }),
-            },
-          },
-          message: {
-            id: messageId,
+
+      type MessagePostResult = {
+        message_id: string;
+        event_id: string;
+        sequence: number;
+        recipient_handles: string[];
+        routing_mode: "direct" | "team";
+      };
+
+      const appendMessage = async (
+        messageId: string,
+        eventId: string,
+      ): Promise<WorkspaceServiceResult<MessagePostResult>> => {
+        const createdAt = now().toISOString();
+        try {
+          const appended = await store.appendMessage({
             channelId,
-            eventId,
-            authorType: "human",
-            authorId: session.user.id,
-            body: command.body,
-            parentMessageId: command.parent_message_id,
-            createdAt,
-          },
+            event: {
+              id: eventId,
+              type: "message.created",
+              actorType: "human",
+              actorId: session.user.id,
+              runId: null,
+              createdAt,
+              draft: {
+                actorKind: "human",
+                sourceMessageId: messageId,
+                aguiEvent: messageCreatedAguiEvent({
+                  routing_mode: routing.routing_mode,
+                  recipient_handles: routing.recipient_handles,
+                }),
+              },
+            },
+            message: {
+              id: messageId,
+              channelId,
+              eventId,
+              authorType: "human",
+              authorId: session.user.id,
+              body: command.body,
+              parentMessageId: command.parent_message_id,
+              createdAt,
+            },
+          });
+          publish(appended);
+          return {
+            ok: true,
+            value: {
+              message_id: messageId,
+              event_id: eventId,
+              sequence: appended.sequence,
+              recipient_handles: routing.recipient_handles,
+              routing_mode: routing.routing_mode,
+            },
+          };
+        } catch (error) {
+          if (error instanceof ChannelEventPersistenceError) {
+            return {
+              ok: false,
+              error: {
+                code: "validation_failed",
+                message: error.message,
+              },
+            };
+          }
+          if (error instanceof Error && error.message.includes("channel_archived")) {
+            return {
+              ok: false,
+              error: {
+                code: "conflict",
+                message: "Archived channels cannot accept new messages.",
+                details: { reason: "channel_archived" },
+              },
+            };
+          }
+          throw error;
+        }
+      };
+
+      const reloadPostedMessage = async (messageId: string): Promise<MessagePostResult | null> => {
+        const message = await store.getMessage(messageId);
+        if (!message || message.channelId !== channelId) {
+          return null;
+        }
+        let afterSequence = -1;
+        while (true) {
+          const page = await store.listEventsAfter(channelId, afterSequence, { limit: 512 });
+          for (const row of page.events) {
+            if (row.id !== message.eventId) {
+              continue;
+            }
+            const agui = row.aguiEventJson;
+            const payload =
+              agui && agui.type === "CUSTOM" && agui.name === "message.created"
+                ? (agui.payload as {
+                    routing_mode?: "direct" | "team";
+                    recipient_handles?: string[];
+                  })
+                : null;
+            return {
+              message_id: message.id,
+              event_id: message.eventId,
+              sequence: row.sequence,
+              recipient_handles: payload?.recipient_handles ?? [...routing.recipient_handles],
+              routing_mode: payload?.routing_mode ?? routing.routing_mode,
+            };
+          }
+          if (!page.hasMore || page.events.length === 0) {
+            return null;
+          }
+          afterSequence = page.events[page.events.length - 1]!.sequence;
+        }
+      };
+
+      if (command.idempotency_key) {
+        const messageId = randomOpaqueId("msg");
+        const eventId = randomOpaqueId("evt");
+        return withIdempotency({
+          workspaceId: loaded.value.workspaceId,
+          commandKind: "channel.message",
+          idempotencyKey: command.idempotency_key,
+          resultId: messageId,
+          reload: reloadPostedMessage,
+          run: async () => appendMessage(messageId, eventId),
         });
-        publish(appended);
-        return {
-          ok: true,
-          value: {
-            message_id: messageId,
-            event_id: eventId,
-            sequence: appended.sequence,
-            recipient_handles: routing.recipient_handles,
-            routing_mode: routing.routing_mode,
-          },
-        };
-      } catch (error) {
-        if (error instanceof ChannelEventPersistenceError) {
-          return {
-            ok: false,
-            error: {
-              code: "validation_failed",
-              message: error.message,
-            },
-          };
-        }
-        if (error instanceof Error && error.message.includes("channel_archived")) {
-          return {
-            ok: false,
-            error: {
-              code: "conflict",
-              message: "Archived channels cannot accept new messages.",
-              details: { reason: "channel_archived" },
-            },
-          };
-        }
-        throw error;
       }
+
+      return appendMessage(randomOpaqueId("msg"), randomOpaqueId("evt"));
     },
 
     async createPin(session, channelId, command) {

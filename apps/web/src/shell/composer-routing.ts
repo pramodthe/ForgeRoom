@@ -7,6 +7,7 @@ export type ComposerMessageCommand = {
   recipient_handles: string[];
   routing_mode: "direct" | "team";
   parent_message_id: null;
+  idempotency_key: string;
 };
 
 export type ComposerRecipientPreview = {
@@ -85,6 +86,7 @@ export function composerBlockReason(resolution: RoutingResolution): string | nul
 export function buildComposerMessageCommand(input: {
   body: string;
   roster: readonly ChannelRosterCoworker[];
+  idempotencyKey: string;
 }): { ok: true; command: ComposerMessageCommand } | { ok: false; message: string } {
   const trimmed = input.body.trim();
   const preview = previewComposerRecipients({ body: trimmed, roster: input.roster });
@@ -98,6 +100,7 @@ export function buildComposerMessageCommand(input: {
       recipient_handles: preview.resolution.recipient_handles,
       routing_mode: preview.resolution.routing_mode,
       parent_message_id: null,
+      idempotency_key: input.idempotencyKey,
     },
   };
 }

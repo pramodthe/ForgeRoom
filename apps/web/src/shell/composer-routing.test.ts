@@ -82,7 +82,11 @@ describe("buildComposerMessageCommand", () => {
   const roster = [rosterRow("analyst"), rosterRow("builder")];
 
   it("submits previewed direct routing for a mention", () => {
-    const built = buildComposerMessageCommand({ body: "@analyst review", roster });
+    const built = buildComposerMessageCommand({
+      body: "@analyst review",
+      roster,
+      idempotencyKey: "msg_test_1",
+    });
     expect(built.ok).toBe(true);
     if (built.ok) {
       expect(built.command).toEqual({
@@ -90,16 +94,22 @@ describe("buildComposerMessageCommand", () => {
         recipient_handles: ["analyst"],
         routing_mode: "direct",
         parent_message_id: null,
+        idempotency_key: "msg_test_1",
       });
     }
   });
 
   it("submits previewed team fan-out for @team", () => {
-    const built = buildComposerMessageCommand({ body: "@team ship", roster });
+    const built = buildComposerMessageCommand({
+      body: "@team ship",
+      roster,
+      idempotencyKey: "msg_test_2",
+    });
     expect(built.ok).toBe(true);
     if (built.ok) {
       expect(built.command.recipient_handles).toEqual(["analyst", "builder"]);
       expect(built.command.routing_mode).toBe("team");
+      expect(built.command.idempotency_key).toBe("msg_test_2");
     }
   });
 });
