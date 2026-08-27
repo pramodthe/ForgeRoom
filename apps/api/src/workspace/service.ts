@@ -9,6 +9,7 @@ import type {
   ChannelPin,
   ChannelPinCreateCommand,
   ChannelPinRemoveCommand,
+  ChannelRosterResponse,
   ChannelUpdateCommand,
   CoworkerDisableCommand,
   CoworkerProfile,
@@ -18,6 +19,7 @@ import type {
 } from "@forgeroom/contracts";
 import {
   channelPinSchema,
+  channelRosterResponseSchema,
   channelSchema,
   coworkerProfileSchema,
   isReservedCoworkerHandle,
@@ -44,6 +46,7 @@ import {
   parsePinReceiptResultId,
   pinCreateTargetId,
   type AgentVersionRecord,
+  type ChannelAgentSessionState,
   type ChannelEventInsert,
   type ChannelRecord,
   type CoworkerEditableConfig,
@@ -175,6 +178,24 @@ function participantResultId(channelId: string, participantId: string): string {
   return `${channelId}:${participantId}`;
 }
 
+const P0_SERVICE_ACCOUNT_LABEL = "Workspace service account";
+
+function mapRosterAvailability(
+  coworker: CoworkerRecord,
+  sessionState: ChannelAgentSessionState | undefined,
+): ChannelRosterResponse["coworkers"][number]["availability"] {
+  if (coworker.status === "disabled") {
+    return "disabled";
+  }
+  if (sessionState === "rotating") {
+    return "cancelling";
+  }
+  if (sessionState === "disabled") {
+    return "disabled";
+  }
+  return "available";
+}
+
 function pinSourceMatchesCommand(
   row: PinRecord,
   sourceEventId: string | null,
@@ -225,6 +246,10 @@ export type WorkspaceService = {
     workspaceId: string,
   ): Promise<WorkspaceServiceResult<Channel[]>>;
   getChannel(session: SessionResponse, channelId: string): Promise<WorkspaceServiceResult<Channel>>;
+  listChannelRoster(
+    session: SessionResponse,
+    channelId: string,
+  ): Promise<WorkspaceServiceResult<ChannelRosterResponse>>;
   updateChannel(
     session: SessionResponse,
     channelId: string,
@@ -817,6 +842,54 @@ export function createWorkspaceService(options?: {
         return loaded;
       }
       return { ok: true, value: toChannel(loaded.value) };
+    },
+
+    async listChannelRoster(session, channelId) {
+      const loaded = await loadOwnedChannel(session, channelId);
+      if (!loaded.ok) {
+        return loaded;
+      }
+      const participants = await store.listParticipants(channelId);
+      const activeCoworkerParticipants = participants.filter(
+        (row) => row.participantType === "coworker" && row.removedAt === null,
+      );
+      const coworkers = await store.listCoworkers(loaded.value.workspaceId);
+      const coworkerById = new Map(coworkers.map((row) => [row.id, row]));
+      const sessions = await store.listChannelAgentSessions(channelId);
+      const sessionStateByCoworker = new Map(
+        sessions.map((row) => [row.agentProfileId, row.state] as const),
+      );
+
+      const rosterCoworkers: ChannelRosterResponse["coworkers"] = [];
+      for (const participant of activeCoworkerParticipants) {
+        const profile = coworkerById.get(participant.participantId);
+        if (!profile) {
+          continue;
+        }
+        rosterCoworkers.push({
+          participant_id: participant.participantId,
+          coworker_id: profile.id,
+          handle: profile.handle,
+          name: profile.name,
+          title: profile.title,
+          role: "member",
+          availability: mapRosterAvailability(profile, sessionStateByCoworker.get(profile.id)),
+          assignment_summary: null,
+          effective_tools: [...profile.editableConfigJson.tool_grants],
+        });
+      }
+
+      rosterCoworkers.sort((a, b) => a.handle.localeCompare(b.handle));
+
+      return {
+        ok: true,
+        value: channelRosterResponseSchema.parse({
+          schemaVersion: 1,
+          channel_id: channelId,
+          service_account_label: P0_SERVICE_ACCOUNT_LABEL,
+          coworkers: rosterCoworkers,
+        }),
+      };
     },
 
     async updateChannel(session, channelId, command) {

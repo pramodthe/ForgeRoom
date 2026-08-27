@@ -62,6 +62,17 @@ export type {
 } from "./channels";
 
 export {
+  channelRosterAvailabilitySchema,
+  channelRosterCoworkerSchema,
+  channelRosterResponseSchema,
+} from "./channel-roster";
+export type {
+  ChannelRosterAvailability,
+  ChannelRosterCoworker,
+  ChannelRosterResponse,
+} from "./channel-roster";
+
+export {
   channelContextEnvelopeSchema,
   channelContextRosterEntrySchema,
   channelContextPinRefSchema,

@@ -99,6 +99,9 @@ importers:
       '@forgeroom/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
+      '@forgeroom/orchestration':
+        specifier: workspace:*
+        version: link:../../packages/orchestration
       '@forgeroom/ui-components':
         specifier: workspace:*
         version: link:../../packages/ui/components

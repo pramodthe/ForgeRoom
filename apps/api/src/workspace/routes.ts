@@ -128,6 +128,22 @@ export function mountWorkspaceRoutes(
     return okJson(c, result.value, 200);
   });
 
+  app.get("/api/channels/:channelId/roster", async (c) => {
+    const authed = await requireSession(c, env, auth);
+    if (authed instanceof Response) {
+      return authed;
+    }
+    const channelId = requireParam(c, "channelId");
+    if (channelId instanceof Response) {
+      return channelId;
+    }
+    const result = await workspace.listChannelRoster(authed.session, channelId);
+    if (!result.ok) {
+      return fail(c, result.error);
+    }
+    return okJson(c, result.value, 200);
+  });
+
   app.patch("/api/channels/:channelId", async (c) => {
     const authed = await requireMutationSession(c, env, auth);
     if (authed instanceof Response) {

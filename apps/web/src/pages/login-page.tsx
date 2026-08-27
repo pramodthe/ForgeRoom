@@ -4,8 +4,9 @@ import { useState, type FormEvent } from "react";
 import { HostButton } from "@forgeroom/ui-components";
 import { login } from "../auth-api";
 import { useSession } from "../auth/session-context";
-import { defaultChannelId } from "../api/workspace-api";
+import { resolveDefaultChannelId } from "../api/workspace-api";
 import { postLoginDestination, loginPath } from "../routes/paths";
+import { AuthenticatedChannelRedirect } from "../shell/authenticated-channel-redirect";
 
 export function LoginPage() {
   const navigate = useNavigate();
@@ -20,8 +21,13 @@ export function LoginPage() {
     onSuccess: async (nextSession) => {
       setError(null);
       await refreshSession();
+      const channelId = await resolveDefaultChannelId(nextSession.workspace_id);
+      if (!channelId) {
+        setError("No channels are available in this workspace yet.");
+        return;
+      }
       await navigate({
-        to: postLoginDestination(search.redirect, nextSession.workspace_id, defaultChannelId()),
+        to: postLoginDestination(search.redirect, nextSession.workspace_id, channelId),
       });
     },
     onError: (err: Error) => setError(err.message),
@@ -38,9 +44,7 @@ export function LoginPage() {
 
   if (session) {
     return (
-      <Navigate
-        to={postLoginDestination(search.redirect, session.workspace_id, defaultChannelId())}
-      />
+      <AuthenticatedChannelRedirect workspaceId={session.workspace_id} redirect={search.redirect} />
     );
   }
 
@@ -94,10 +98,5 @@ export function RootRedirect() {
     return <Navigate to={loginPath()} />;
   }
 
-  return (
-    <Navigate
-      to={postLoginDestination(undefined, session.workspace_id, defaultChannelId())}
-      replace
-    />
-  );
+  return <AuthenticatedChannelRedirect workspaceId={session.workspace_id} />;
 }

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { SessionResponse } from "@forgeroom/contracts";
+import { notifyApiUnauthorized, setApiUnauthorizedHandler } from "./api/unauthorized";
 import { assertMockFixturesValid, MOCK_WORKSPACE_ID } from "./api/mock-fixtures";
 import { getSkillVersion } from "./api/workspace-api";
 import { isSessionExpired, liveSession, sessionWorkspaceMismatch } from "./auth/session";
@@ -113,5 +114,17 @@ describe("postLoginDestination", () => {
     expect(postLoginDestination("/w/%E0%A4%A/tasks", MOCK_WORKSPACE_ID, "ch_general_001")).toBe(
       "/w/workspace_1/channels/ch_general_001",
     );
+  });
+});
+
+describe("api unauthorized handler", () => {
+  it("notifies the registered session handler on 401", () => {
+    let notified = false;
+    setApiUnauthorizedHandler(() => {
+      notified = true;
+    });
+    notifyApiUnauthorized();
+    expect(notified).toBe(true);
+    setApiUnauthorizedHandler(null);
   });
 });
