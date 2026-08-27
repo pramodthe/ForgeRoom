@@ -272,7 +272,7 @@ describe("reduceActivityPresentationState", () => {
         content: { ...taskContent, activityRevision: 3, title: "Hijacked" },
       }),
     );
-    expect(state.activities.act_task?.content.title).toBe("Triage");
+    expect(state.activities.act_task?.content).toMatchObject({ title: "Triage" });
     expect(state.needActivitySnapshots.act_task).toBe(true);
   });
 });
