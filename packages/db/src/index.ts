@@ -137,6 +137,7 @@ export type {
 } from "./pause-resume";
 export {
   beginSessionRotation,
+  abortSessionRotation,
   atomicSwapSessionGeneration,
   completeSessionRotation,
   nextSessionRevisionOrdinal,
@@ -156,6 +157,7 @@ export type {
   SqlClient as SessionRotationSqlClient,
 } from "./session-rotation";
 export {
+  ConnectorBindingWorkspaceConflictError,
   ensureP0ConnectorBinding,
   loadConnectorBinding,
   listWorkspaceConnectorBindings,

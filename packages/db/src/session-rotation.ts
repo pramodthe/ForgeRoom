@@ -460,6 +460,45 @@ export async function completeSessionRotation(
   `;
 }
 
+export async function abortSessionRotation(
+  sql: SqlClient,
+  input: CompleteSessionRotationInput,
+): Promise<void> {
+  const now = input.now ?? new Date().toISOString();
+  await sql.begin(async (tx) => {
+    const sessions = await tx<
+      {
+        id: string;
+        state: string;
+        current_generation_id: string | null;
+      }[]
+    >`
+      SELECT id, state, current_generation_id
+      FROM channel_agent_sessions
+      WHERE id = ${input.channelAgentSessionId}
+      FOR UPDATE
+    `;
+    const session = sessions[0];
+    if (!session || session.state !== "rotating") {
+      return;
+    }
+    if (session.current_generation_id) {
+      await tx`
+        UPDATE channel_agent_session_generations
+        SET state = 'ready'
+        WHERE id = ${session.current_generation_id}
+          AND state = 'rotating'
+      `;
+    }
+    await tx`
+      UPDATE channel_agent_sessions
+      SET state = 'active', updated_at = ${now}
+      WHERE id = ${session.id}
+        AND state = 'rotating'
+    `;
+  });
+}
+
 /**
  * Record an honest MCP outcome during rotation. Never surfaces as claim denial.
  */

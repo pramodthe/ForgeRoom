@@ -32,6 +32,7 @@ import {
   type ReconnectBinding,
 } from "@forgeroom/composio";
 import {
+  ConnectorBindingWorkspaceConflictError,
   ensureP0ConnectorBinding,
   loadConnectorBinding,
   updateConnectorBindingStatus,
@@ -149,15 +150,28 @@ export function createConnectionService(options: ConnectionServiceOptions): Conn
       };
     }
     if (options.sql) {
-      await ensureP0ConnectorBinding(options.sql, {
-        connectionId: P0_COMPOSIO_CONNECTION_ID,
-        workspaceId: session.workspace_id,
-        composioUserId: composio.composioUserId,
-        trueforgeConnectorName: P0_COMPOSIO_TRUEFORGE_CONNECTOR_NAME,
-        allowedTools: P0_COMPOSIO_DIRECT_TOOLS,
-        actingIdentity: buildP0ActingIdentity(composio.pinnedConnectedAccountId),
-        status: "unconfigured",
-      });
+      try {
+        await ensureP0ConnectorBinding(options.sql, {
+          connectionId: P0_COMPOSIO_CONNECTION_ID,
+          workspaceId: session.workspace_id,
+          composioUserId: composio.composioUserId,
+          trueforgeConnectorName: P0_COMPOSIO_TRUEFORGE_CONNECTOR_NAME,
+          allowedTools: P0_COMPOSIO_DIRECT_TOOLS,
+          actingIdentity: buildP0ActingIdentity(composio.pinnedConnectedAccountId),
+          status: "unconfigured",
+        });
+      } catch (error) {
+        if (error instanceof ConnectorBindingWorkspaceConflictError) {
+          return {
+            ok: false,
+            error: {
+              code: "forbidden",
+              message: "Connection is outside this workspace.",
+            },
+          };
+        }
+        throw error;
+      }
       const loaded = await loadConnectorBinding(options.sql, {
         connectionId,
         workspaceId: session.workspace_id,
@@ -178,32 +192,47 @@ export function createConnectionService(options: ConnectionServiceOptions): Conn
     return { ok: true, value: true };
   }
 
-  async function observeStatus(session: SessionResponse): Promise<ConnectionStatusView> {
+  async function observeStatus(
+    session: SessionResponse,
+  ): Promise<ConnectionServiceResult<ConnectionStatusView>> {
     if (!composio) {
-      throw new Error("Composio client missing");
+      return {
+        ok: false,
+        error: { code: "provider_unavailable", message: "Composio is not configured." },
+      };
     }
-    const account = await composio.getConnectedAccountDetails();
-    const now = new Date().toISOString();
-    const view = connectionStatusViewSchema.parse(
-      buildConnectionStatusView({
-        workspaceId: session.workspace_id,
-        connectionId: P0_COMPOSIO_CONNECTION_ID,
-        account,
-        expectedConnectedAccountId: composio.pinnedConnectedAccountId,
-        verifiedAt: now,
-        actingIdentity: buildP0ActingIdentity(composio.pinnedConnectedAccountId),
-      }),
-    );
-    if (options.sql) {
-      await updateConnectorBindingStatus(options.sql, {
-        connectionId: P0_COMPOSIO_CONNECTION_ID,
-        workspaceId: session.workspace_id,
-        status: view.status,
-        verifiedAt: view.verified_at,
-        actingIdentity: view.acting_identity,
-      });
+    try {
+      const account = await composio.getConnectedAccountDetails();
+      const now = new Date().toISOString();
+      const view = connectionStatusViewSchema.parse(
+        buildConnectionStatusView({
+          workspaceId: session.workspace_id,
+          connectionId: P0_COMPOSIO_CONNECTION_ID,
+          account,
+          expectedConnectedAccountId: composio.pinnedConnectedAccountId,
+          verifiedAt: now,
+          actingIdentity: buildP0ActingIdentity(composio.pinnedConnectedAccountId),
+        }),
+      );
+      if (options.sql) {
+        await updateConnectorBindingStatus(options.sql, {
+          connectionId: P0_COMPOSIO_CONNECTION_ID,
+          workspaceId: session.workspace_id,
+          status: view.status,
+          verifiedAt: view.verified_at,
+          actingIdentity: view.acting_identity,
+        });
+      }
+      return { ok: true, value: view };
+    } catch {
+      return {
+        ok: false,
+        error: {
+          code: "provider_unavailable",
+          message: "Composio connection status could not be observed.",
+        },
+      };
     }
-    return view;
   }
 
   return {
@@ -217,13 +246,16 @@ export function createConnectionService(options: ConnectionServiceOptions): Conn
         return ready;
       }
       const view = await observeStatus(session);
+      if (!view.ok) {
+        return view;
+      }
       const items: ConnectionListItem[] = [
         connectionListItemSchema.parse({
-          id: view.id,
-          toolkit: view.toolkit,
-          status: view.status,
-          acting_identity: view.acting_identity,
-          verified_at: view.verified_at,
+          id: view.value.id,
+          toolkit: view.value.toolkit,
+          status: view.value.status,
+          acting_identity: view.value.acting_identity,
+          verified_at: view.value.verified_at,
         }),
       ];
       return { ok: true, value: { connections: items } };
@@ -235,7 +267,10 @@ export function createConnectionService(options: ConnectionServiceOptions): Conn
         return ready;
       }
       const view = await observeStatus(session);
-      return { ok: true, value: { connection: view } };
+      if (!view.ok) {
+        return view;
+      }
+      return { ok: true, value: { connection: view.value } };
     },
 
     async testConnection(session, connectionId, command) {
@@ -255,42 +290,55 @@ export function createConnectionService(options: ConnectionServiceOptions): Conn
           error: { code: "validation_failed", message: "expected_connection_id mismatch." },
         };
       }
-      const account = await composio.getConnectedAccountDetails();
-      const gate = evaluatePinnedConnectionGate({
-        account,
-        expectedConnectedAccountId: composio.pinnedConnectedAccountId,
-      });
-      let execute: { httpStatus: number; successful: boolean | null; authFailure: boolean } | null =
-        null;
-      if (!gate.blocksDispatch) {
-        const executed = await composio.executeDirectTool({
-          toolSlug: P0_COMPOSIO_READ_TOOL,
-          arguments: p0DemoReadArguments(),
-        });
-        execute = {
-          httpStatus: executed.httpStatus,
-          successful: executed.successful,
-          authFailure: executed.authFailure,
-        };
-      }
-      const result = connectionTestResultSchema.parse(
-        evaluateConnectionTest({
-          connectionId,
-          expectedDescriptorHash: command.expected_descriptor_hash,
+      try {
+        const account = await composio.getConnectedAccountDetails();
+        const gate = evaluatePinnedConnectionGate({
           account,
           expectedConnectedAccountId: composio.pinnedConnectedAccountId,
-          execute,
-        }),
-      );
-      if (options.sql) {
-        await updateConnectorBindingStatus(options.sql, {
-          connectionId,
-          workspaceId: session.workspace_id,
-          status: result.status,
-          verifiedAt: result.verified_at,
         });
+        let execute: {
+          httpStatus: number;
+          successful: boolean | null;
+          authFailure: boolean;
+        } | null = null;
+        if (!gate.blocksDispatch) {
+          const executed = await composio.executeDirectTool({
+            toolSlug: P0_COMPOSIO_READ_TOOL,
+            arguments: p0DemoReadArguments(),
+          });
+          execute = {
+            httpStatus: executed.httpStatus,
+            successful: executed.successful,
+            authFailure: executed.authFailure,
+          };
+        }
+        const result = connectionTestResultSchema.parse(
+          evaluateConnectionTest({
+            connectionId,
+            expectedDescriptorHash: command.expected_descriptor_hash,
+            account,
+            expectedConnectedAccountId: composio.pinnedConnectedAccountId,
+            execute,
+          }),
+        );
+        if (options.sql) {
+          await updateConnectorBindingStatus(options.sql, {
+            connectionId,
+            workspaceId: session.workspace_id,
+            status: result.status,
+            verifiedAt: result.verified_at,
+          });
+        }
+        return { ok: true, value: result };
+      } catch {
+        return {
+          ok: false,
+          error: {
+            code: "provider_unavailable",
+            message: "Composio connection test could not be completed.",
+          },
+        };
       }
-      return { ok: true, value: result };
     },
 
     async reconnect(session, connectionId, command) {

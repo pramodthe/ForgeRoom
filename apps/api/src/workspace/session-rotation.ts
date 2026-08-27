@@ -4,6 +4,7 @@
  */
 import {
   atomicSwapSessionGeneration,
+  abortSessionRotation,
   beginSessionRotation,
   completeSessionRotation,
   nextSessionRevisionOrdinal,
@@ -85,91 +86,99 @@ export async function rotateOwnedChannelCoworkerSession(
     now,
   });
 
-  if (input.mcpInFlightKnownTerminal !== null && input.mcpInFlightKnownTerminal !== undefined) {
-    await recordMcpRotationOutcome(input.sql, {
+  try {
+    if (input.mcpInFlightKnownTerminal !== null && input.mcpInFlightKnownTerminal !== undefined) {
+      await recordMcpRotationOutcome(input.sql, {
+        channelAgentSessionId: input.channelAgentSessionId,
+        agentTurnId: input.activeTurnId ?? null,
+        knownTerminal: input.mcpInFlightKnownTerminal,
+        now,
+      });
+    }
+
+    const client = input.client ?? loadTrueForgeClientFromEnv(input.env ?? process.env);
+    const sourceConfigRevision = await nextSessionRevisionOrdinal(input.sql, input.coworker.id);
+
+    const rotated = await rotateChannelCoworkerSession(client, {
       channelAgentSessionId: input.channelAgentSessionId,
-      agentTurnId: input.activeTurnId ?? null,
-      knownTerminal: input.mcpInFlightKnownTerminal,
+      reason: input.reason,
+      previousTools: input.previousTools,
+      nextGeneration: begun.previousGeneration + 1,
+      sourceConfigRevision,
+      agentVersionId: input.coworker.currentVersionId,
+      capability: input.capability,
+      componentCandidates: input.componentCandidates,
+      pinnedSkillNames: pinnedSkills,
+      skillManifests: input.skillManifests,
+      coworker: {
+        id: input.coworker.id,
+        handle: input.coworker.handle,
+        name: input.coworker.name,
+        title: input.coworker.title,
+        configRevision: input.coworker.configRevision,
+        standingInstructions: standingInstructionsFromCoworker(input.coworker),
+        modelPreset: modelPresetFromCoworker(input.coworker),
+        sandboxEnabled: sandboxEnabledFromCoworker(input.coworker),
+      },
+      channelId: input.channelId,
+      workspaceId: input.workspaceId,
+      createdBy: input.createdBy,
+      hasActiveTurn: input.hasActiveTurn ?? false,
+      mcpInFlightKnownTerminal: input.mcpInFlightKnownTerminal ?? null,
+    });
+
+    const swap = await atomicSwapSessionGeneration(input.sql, {
+      channelAgentSessionId: input.channelAgentSessionId,
+      previousGenerationId: begun.previousGenerationId,
+      staleUnresolvedActions: begun.staleUnresolvedActions,
+      now,
+      revision: {
+        id: rotated.revision.id,
+        agentProfileId: rotated.revision.agentProfileId,
+        sourceConfigRevision: rotated.revision.sourceConfigRevision,
+        effectiveConfigRedactedJson: rotated.revision.effectiveConfigRedacted,
+        effectiveSpecHash: rotated.revision.effectiveSpecHash,
+        approvalPolicyHash: rotated.revision.approvalPolicyHash,
+        createdBy: rotated.revision.createdBy,
+        createdAt: rotated.revision.createdAt,
+      },
+      generation: {
+        id: rotated.generation.id,
+        channelAgentSessionId: input.channelAgentSessionId,
+        generation: rotated.generation.generation,
+        agentVersionId: rotated.generation.agentVersionId,
+        sessionRevisionId: rotated.revision.id,
+        trueforgeSessionId: rotated.trueforgeSessionId,
+        effectiveSpecHash: rotated.revision.effectiveSpecHash,
+        approvalPolicyHash: rotated.revision.approvalPolicyHash,
+        state: "ready",
+        createdAt: rotated.generation.createdAt,
+        retiredAt: null,
+      },
+    });
+
+    await completeSessionRotation(input.sql, {
+      channelAgentSessionId: input.channelAgentSessionId,
       now,
     });
-  }
 
-  const client = input.client ?? loadTrueForgeClientFromEnv(input.env ?? process.env);
-  const sourceConfigRevision = await nextSessionRevisionOrdinal(input.sql, input.coworker.id);
-
-  const rotated = await rotateChannelCoworkerSession(client, {
-    channelAgentSessionId: input.channelAgentSessionId,
-    reason: input.reason,
-    previousTools: input.previousTools,
-    nextGeneration: begun.previousGeneration + 1,
-    sourceConfigRevision,
-    agentVersionId: input.coworker.currentVersionId,
-    capability: input.capability,
-    componentCandidates: input.componentCandidates,
-    pinnedSkillNames: pinnedSkills,
-    skillManifests: input.skillManifests,
-    coworker: {
-      id: input.coworker.id,
-      handle: input.coworker.handle,
-      name: input.coworker.name,
-      title: input.coworker.title,
-      configRevision: input.coworker.configRevision,
-      standingInstructions: standingInstructionsFromCoworker(input.coworker),
-      modelPreset: modelPresetFromCoworker(input.coworker),
-      sandboxEnabled: sandboxEnabledFromCoworker(input.coworker),
-    },
-    channelId: input.channelId,
-    workspaceId: input.workspaceId,
-    createdBy: input.createdBy,
-    hasActiveTurn: input.hasActiveTurn ?? false,
-    mcpInFlightKnownTerminal: input.mcpInFlightKnownTerminal ?? null,
-  });
-
-  const swap = await atomicSwapSessionGeneration(input.sql, {
-    channelAgentSessionId: input.channelAgentSessionId,
-    previousGenerationId: begun.previousGenerationId,
-    staleUnresolvedActions: begun.staleUnresolvedActions,
-    now,
-    revision: {
-      id: rotated.revision.id,
-      agentProfileId: rotated.revision.agentProfileId,
-      sourceConfigRevision: rotated.revision.sourceConfigRevision,
-      effectiveConfigRedactedJson: rotated.revision.effectiveConfigRedacted,
+    return {
+      sessionId: input.channelAgentSessionId,
+      newGenerationId: swap.newGenerationId,
+      newTrueforgeSessionId: rotated.trueforgeSessionId,
+      retiredGenerationId: swap.retiredGenerationId,
+      retainedOldTrueforgeSessionId: swap.retainedOldTrueforgeSessionId,
+      effectiveTools: rotated.effectiveTools,
       effectiveSpecHash: rotated.revision.effectiveSpecHash,
       approvalPolicyHash: rotated.revision.approvalPolicyHash,
-      createdBy: rotated.revision.createdBy,
-      createdAt: rotated.revision.createdAt,
-    },
-    generation: {
-      id: rotated.generation.id,
+      staleProposalIds: swap.staleProposalIds,
+      cancelRequested: begun.requestActiveTurnCancellation,
+    };
+  } catch (error) {
+    await abortSessionRotation(input.sql, {
       channelAgentSessionId: input.channelAgentSessionId,
-      generation: rotated.generation.generation,
-      agentVersionId: rotated.generation.agentVersionId,
-      sessionRevisionId: rotated.revision.id,
-      trueforgeSessionId: rotated.trueforgeSessionId,
-      effectiveSpecHash: rotated.revision.effectiveSpecHash,
-      approvalPolicyHash: rotated.revision.approvalPolicyHash,
-      state: "ready",
-      createdAt: rotated.generation.createdAt,
-      retiredAt: null,
-    },
-  });
-
-  await completeSessionRotation(input.sql, {
-    channelAgentSessionId: input.channelAgentSessionId,
-    now,
-  });
-
-  return {
-    sessionId: input.channelAgentSessionId,
-    newGenerationId: swap.newGenerationId,
-    newTrueforgeSessionId: rotated.trueforgeSessionId,
-    retiredGenerationId: swap.retiredGenerationId,
-    retainedOldTrueforgeSessionId: swap.retainedOldTrueforgeSessionId,
-    effectiveTools: rotated.effectiveTools,
-    effectiveSpecHash: rotated.revision.effectiveSpecHash,
-    approvalPolicyHash: rotated.revision.approvalPolicyHash,
-    staleProposalIds: swap.staleProposalIds,
-    cancelRequested: begun.requestActiveTurnCancellation,
-  };
+      now,
+    });
+    throw error;
+  }
 }

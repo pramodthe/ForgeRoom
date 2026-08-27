@@ -34,7 +34,9 @@ export type EnsureP0ConnectorBindingInput = {
   verifiedAt?: string | null;
 };
 
-/** Idempotently upsert the single P0 Composio connector binding (CN-001). */
+/** Idempotently upsert the single P0 Composio connector binding (CN-001).
+ * Refuses to overwrite a binding owned by a different workspace.
+ */
 export async function ensureP0ConnectorBinding(
   sql: SqlClient,
   input: EnsureP0ConnectorBindingInput,
@@ -49,38 +51,62 @@ export async function ensureP0ConnectorBinding(
   const verifiedAt = input.verifiedAt ?? null;
   const now = new Date().toISOString();
 
-  await sql`
-    INSERT INTO connector_bindings (
-      id, workspace_id, provider, credential_owner_type, credential_owner_id,
-      composio_user_id, trueforge_connector_name, config_version, config_hash,
-      allowed_tools_json, acting_identity_json, status, verified_at, created_at, updated_at
-    )
-    VALUES (
-      ${input.connectionId},
-      ${input.workspaceId},
-      'composio',
-      'workspace',
-      ${input.workspaceId},
-      ${input.composioUserId},
-      ${input.trueforgeConnectorName},
-      1,
-      ${configHash},
-      ${allowedToolsJson}::jsonb,
-      ${actingIdentityJson}::jsonb,
-      ${input.status},
-      ${verifiedAt},
-      ${now},
-      ${now}
-    )
-    ON CONFLICT (id) DO UPDATE SET
-      composio_user_id = EXCLUDED.composio_user_id,
-      config_hash = EXCLUDED.config_hash,
-      allowed_tools_json = EXCLUDED.allowed_tools_json,
-      acting_identity_json = EXCLUDED.acting_identity_json,
-      status = EXCLUDED.status,
-      verified_at = EXCLUDED.verified_at,
-      updated_at = EXCLUDED.updated_at
+  // Never mutate another workspace's row on the globally fixed P0 connection id.
+  const existing = await sql<
+    { id: string; workspace_id: string }[]
+  >`
+    SELECT id, workspace_id
+    FROM connector_bindings
+    WHERE id = ${input.connectionId}
+    LIMIT 1
   `;
+  const prior = existing[0];
+  if (prior && prior.workspace_id !== input.workspaceId) {
+    throw new ConnectorBindingWorkspaceConflictError(
+      `Connector binding ${input.connectionId} belongs to another workspace`,
+    );
+  }
+
+  if (prior) {
+    await sql`
+      UPDATE connector_bindings
+      SET
+        composio_user_id = ${input.composioUserId},
+        config_hash = ${configHash},
+        allowed_tools_json = ${allowedToolsJson}::jsonb,
+        acting_identity_json = ${actingIdentityJson}::jsonb,
+        status = ${input.status},
+        verified_at = ${verifiedAt},
+        updated_at = ${now}
+      WHERE id = ${input.connectionId}
+        AND workspace_id = ${input.workspaceId}
+    `;
+  } else {
+    await sql`
+      INSERT INTO connector_bindings (
+        id, workspace_id, provider, credential_owner_type, credential_owner_id,
+        composio_user_id, trueforge_connector_name, config_version, config_hash,
+        allowed_tools_json, acting_identity_json, status, verified_at, created_at, updated_at
+      )
+      VALUES (
+        ${input.connectionId},
+        ${input.workspaceId},
+        'composio',
+        'workspace',
+        ${input.workspaceId},
+        ${input.composioUserId},
+        ${input.trueforgeConnectorName},
+        1,
+        ${configHash},
+        ${allowedToolsJson}::jsonb,
+        ${actingIdentityJson}::jsonb,
+        ${input.status},
+        ${verifiedAt},
+        ${now},
+        ${now}
+      )
+    `;
+  }
 
   const loaded = await loadConnectorBinding(sql, {
     connectionId: input.connectionId,
@@ -90,6 +116,14 @@ export async function ensureP0ConnectorBinding(
     throw new Error("Failed to load connector binding after upsert");
   }
   return loaded.row;
+}
+
+export class ConnectorBindingWorkspaceConflictError extends Error {
+  readonly code = "forbidden" as const;
+  constructor(message: string) {
+    super(message);
+    this.name = "ConnectorBindingWorkspaceConflictError";
+  }
 }
 
 export async function loadConnectorBinding(

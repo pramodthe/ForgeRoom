@@ -60,15 +60,26 @@ export async function createOrReconcileResponseTurn(
 
   let history: TrueForgeTurn[] = [];
   if (input.forceReconcile || input.localTrueforgeResumeTurnId) {
-    let pageToken: string | undefined;
-    do {
-      const listed = await deps.client.listTurns(input.trueforgeSessionId, {
-        limit: 50,
-        pageToken,
+    try {
+      let pageToken: string | undefined;
+      do {
+        const listed = await deps.client.listTurns(input.trueforgeSessionId, {
+          limit: 50,
+          pageToken,
+        });
+        history = history.concat(listed.turns);
+        pageToken = listed.nextPageToken ?? undefined;
+      } while (pageToken);
+    } catch (error) {
+      await deps.markUncertain({
+        pauseResumeId: input.pauseResumeId,
+        error: {
+          reason: "history_read_failed",
+          message: error instanceof Error ? error.message : "unknown",
+        },
       });
-      history = history.concat(listed.turns);
-      pageToken = listed.nextPageToken ?? undefined;
-    } while (pageToken);
+      return { ok: false, reason: "create_failed" };
+    }
   }
 
   const decision = decideCreateOrReconcileResponseTurn({

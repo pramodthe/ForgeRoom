@@ -64,6 +64,17 @@ export function loadApiEnv(env: NodeJS.ProcessEnv = process.env): ApiEnv {
     throw new Error("OWNER_PASSWORD_HASH is required in production");
   }
 
+  const pausePayloadEncryptionSecret =
+    env.PAUSE_PAYLOAD_ENCRYPTION_SECRET?.trim() ||
+    env.OWNER_PASSWORD_HASH?.trim() ||
+    (nodeEnv === "production" ? "" : env.OWNER_PASSWORD?.trim() || "") ||
+    (nodeEnv === "production" ? "" : "forgeroom-dev-pause-payload-secret");
+  if (!pausePayloadEncryptionSecret) {
+    throw new Error(
+      "PAUSE_PAYLOAD_ENCRYPTION_SECRET (or OWNER_PASSWORD_HASH) is required in production",
+    );
+  }
+
   return {
     nodeEnv,
     host: env.HOST ?? "0.0.0.0",
@@ -97,11 +108,7 @@ export function loadApiEnv(env: NodeJS.ProcessEnv = process.env): ApiEnv {
     workspaceId: env.WORKSPACE_ID ?? "workspace_1",
     workspaceName: env.WORKSPACE_NAME ?? "ForgeRoom",
     workspaceSlug: env.WORKSPACE_SLUG ?? "forgeroom",
-    pausePayloadEncryptionSecret:
-      env.PAUSE_PAYLOAD_ENCRYPTION_SECRET?.trim() ||
-      env.OWNER_PASSWORD_HASH?.trim() ||
-      env.OWNER_PASSWORD?.trim() ||
-      "forgeroom-dev-pause-payload-secret",
+    pausePayloadEncryptionSecret,
     composioApiKey: env.COMPOSIO_API_KEY?.trim() || null,
     composioUserId: env.COMPOSIO_USER_ID?.trim() || null,
     composioConnectedAccountId: env.COMPOSIO_CONNECTED_ACCOUNT_ID?.trim() || null,

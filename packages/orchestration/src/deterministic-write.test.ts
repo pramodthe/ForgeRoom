@@ -329,6 +329,7 @@ describe("dispatchApprovalGatedDeterministicWrite", () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.kind).toBe("meta_tool_rejected");
-    expect(result.providerCalls).toBe(0);
+    // Invoke already happened; audit must not report a false zero.
+    expect(result.providerCalls).toBe(1);
   });
 });

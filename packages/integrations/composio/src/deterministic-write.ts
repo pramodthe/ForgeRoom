@@ -47,6 +47,7 @@ export type WritePreflightFailureReason =
   | "not_write_tool"
   | "not_approval_required"
   | "descriptor_hash_mismatch"
+  | "descriptor_hash_missing"
   | "unknown_write_blocked";
 
 export type WriteDispatchPreflightInput = {
@@ -274,10 +275,11 @@ export function preflightExactWriteDispatch(
     return failure("unknown_write_blocked", toolSlug, accountSuffix, findingKinds, null);
   }
 
-  if (
-    input.observedDescriptorHash &&
-    input.observedDescriptorHash !== policy.observedDescriptorHash
-  ) {
+  if (!input.observedDescriptorHash) {
+    findingKinds.push("descriptor_hash_missing");
+    return failure("descriptor_hash_missing", toolSlug, accountSuffix, findingKinds, null);
+  }
+  if (input.observedDescriptorHash !== policy.observedDescriptorHash) {
     findingKinds.push("descriptor_hash_mismatch");
     return failure("descriptor_hash_mismatch", toolSlug, accountSuffix, findingKinds, null);
   }

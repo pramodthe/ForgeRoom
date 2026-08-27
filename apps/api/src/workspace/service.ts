@@ -2820,7 +2820,8 @@ export function createWorkspaceService(options?: {
               });
               staleProposalIds.push(...rotated.staleProposalIds);
             } catch {
-              // Store still reports the affected session; durable rotation retries via worker.
+              // Config commit already succeeded; rotation abort restores session to active.
+              // Caller still learns which sessions were targeted via session_rotations.
             }
           }
         }

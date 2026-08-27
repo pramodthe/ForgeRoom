@@ -51,7 +51,7 @@ function asRecord(value: unknown): Record<string, unknown> {
 function parseConfigSnapshot(
   raw: Record<string, unknown>,
   fallbackUserId: string,
-  fallbackAccountId: string,
+  _fallbackAccountId: string,
 ): ComposioSessionConfigSnapshot {
   const toolkitsRaw = asRecord(raw.toolkits);
   const toolsRaw = asRecord(raw.tools);
@@ -71,18 +71,16 @@ function parseConfigSnapshot(
   return {
     userId: typeof raw.user_id === "string" ? raw.user_id : fallbackUserId,
     toolkits: {
-      enabled: enabledToolkits.length > 0 ? enabledToolkits : [P0_COMPOSIO_TOOLKIT],
+      // Fail closed: never invent expected toolkit values when the provider omitted them.
+      enabled: enabledToolkits,
     },
     tools: {
       github: {
-        enabled:
-          enabledGithubTools.length > 0
-            ? enabledGithubTools
-            : [...P0_COMPOSIO_DIRECT_TOOLS],
+        enabled: enabledGithubTools,
       },
     },
     connectedAccounts: {
-      github: connectedGithub.length > 0 ? connectedGithub : [fallbackAccountId],
+      github: connectedGithub,
     },
     manageConnections: {
       enabled: manage.enabled === true || manage.enable === true,
@@ -434,7 +432,13 @@ export class ComposioSessionClient {
     authFailure: boolean;
   }> {
     const toolSlug = input.toolSlug.trim();
-    const accountId = (input.connectedAccountId ?? this.connectedAccountId).trim();
+    const requested = input.connectedAccountId?.trim();
+    if (requested && requested !== this.connectedAccountId) {
+      throw new Error(
+        "executeDirectTool connectedAccountId must match the client pinned account",
+      );
+    }
+    const accountId = this.connectedAccountId;
     const response = await this.fetchImpl(
       `${this.baseUrl}/api/v3.1/tools/execute/${encodeURIComponent(toolSlug)}`,
       {

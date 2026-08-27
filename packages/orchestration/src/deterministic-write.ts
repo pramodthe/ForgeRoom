@@ -343,8 +343,10 @@ export async function dispatchApprovalGatedDeterministicWrite(
   }
 
   let observation: TrueForgeDirectToolObservation;
+  let providerInvoked = false;
   try {
     observation = await adapters.invokeWriteViaTrueForge();
+    providerInvoked = true;
     adapters.assertDirectWriteTool(observation.observedToolName);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -354,7 +356,7 @@ export async function dispatchApprovalGatedDeterministicWrite(
       kind: meta ? "meta_tool_rejected" : "tool_failed",
       events: [],
       reason: message,
-      providerCalls: 0,
+      providerCalls: providerInvoked ? 1 : 0,
       automaticRetry: false,
       proposalState: "allowed",
       resumeIntent,

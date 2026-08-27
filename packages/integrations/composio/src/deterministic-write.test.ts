@@ -96,6 +96,16 @@ describe("P0-309 write preflight", () => {
     });
     expect(missingApproval.ok).toBe(false);
     if (!missingApproval.ok) expect(missingApproval.reason).toBe("not_approval_required");
+
+    const missingHash = preflightExactWriteDispatch({
+      account: ACTIVE_ACCOUNT,
+      expectedConnectedAccountId: ACTIVE_ACCOUNT.id,
+      toolSlug: P0_COMPOSIO_WRITE_TOOL,
+      connectorToolNames: [...P0_COMPOSIO_ENABLED_TOOLS],
+      approvalRequiredTools: [...P0_COMPOSIO_APPROVAL_REQUIRED_TOOLS],
+    });
+    expect(missingHash.ok).toBe(false);
+    if (!missingHash.ok) expect(missingHash.reason).toBe("descriptor_hash_missing");
   });
 });
 

@@ -11,6 +11,7 @@ import {
 } from "@forgeroom/contracts";
 import {
   buildApprovalCard,
+  isOwnerRole,
   type ProposalDecisionSnapshot,
 } from "@forgeroom/domain";
 import {
@@ -118,7 +119,13 @@ export function createApprovalService(options: {
     },
 
     async decideApproval(session, proposalId, command) {
-      // Owner role is already enforced by AuthService session resolution.
+      // Defense in depth: AuthService already resolves owner-only sessions.
+      if (!isOwnerRole(session.user.role)) {
+        return {
+          ok: false,
+          error: { code: "forbidden", message: "Only the workspace owner may decide approvals." },
+        };
+      }
       const recorded = await recordApprovalDecision(options.sql, {
         proposalId,
         workspaceId: session.workspace_id,

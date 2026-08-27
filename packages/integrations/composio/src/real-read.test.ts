@@ -87,6 +87,19 @@ describe("P0-305 real read preflight", () => {
       expect(result.reason).toBe("meta_tool_rejected");
     }
   });
+
+  it("rejects missing observed descriptor hash fail-closed", () => {
+    const result = preflightExactReadDispatch({
+      account: ACTIVE_ACCOUNT,
+      expectedConnectedAccountId: ACTIVE_ACCOUNT.id,
+      toolSlug: P0_COMPOSIO_READ_TOOL,
+      connectorToolNames: [...P0_COMPOSIO_ENABLED_TOOLS],
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.reason).toBe("descriptor_hash_missing");
+    }
+  });
 });
 
 describe("P0-305 safe read summary and redaction", () => {
