@@ -161,3 +161,13 @@ export function assertControlledUiFixturesValid(fixtures = loadControlledUiFixtu
     parser.parse(fixture.props);
   }
 }
+
+export {
+  DEMO_FIXTURE_IDS,
+  assertProviderResetTargetAllowed,
+  loadDemoEnv,
+  loadDemoFixtureBundle,
+  resetDemoFixtures,
+  seedDemoFixtures,
+} from "./demo-seed";
+export type { DemoFixtureBundle, DemoSeedResult } from "./demo-seed";

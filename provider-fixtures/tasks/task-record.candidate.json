@@ -22,8 +22,10 @@
     "source": "channel_message_with_mentions_or_team"
   },
   "idempotentReset": {
-    "status": "candidate",
-    "command": null,
-    "note": "P0-105 owns the reset command once Composio synthetic IDs are verified"
+    "status": "verified",
+    "command": "pnpm fixtures:reset",
+    "dbOnly": "pnpm fixtures:reset -- --no-provider",
+    "providerOnly": "pnpm fixtures:reset -- --provider-only",
+    "note": "P0-105: DB upsert of stable demo IDs + guarded Composio label remove for pramodthe/Hi-Tuto#10 marker forgeroom-p0-probe"
   }
 }
