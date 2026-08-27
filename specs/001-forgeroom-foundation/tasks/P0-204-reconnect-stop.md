@@ -1,9 +1,10 @@
 ---
 id: P0-204
 title: Implement reconnect, stop and correction
-status: in_progress
+status: done
 owner: cursor-agent
 started: 2026-08-26
+completed: 2026-08-26
 depends_on: [P0-203]
 requirements: [RUN-004, RUN-007, RUN-009]
 specs: [../runtime.md#turn-creation-and-crash-reconciliation, ../runtime.md#stop-and-correction]

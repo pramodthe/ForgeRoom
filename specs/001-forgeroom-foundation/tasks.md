@@ -27,9 +27,9 @@ Each task file is authoritative for its status and evidence. Keep this index and
 | [x] | [P0-201](./tasks/P0-201-trueforge-sessions.md) | TrueForge adapter and sessions | done | P0-000, P0-103, P0-105 |
 | [x] | [P0-202](./tasks/P0-202-turn-queue.md) | Per-session serial turn queue | done | P0-103, P0-201 |
 | [x] | [P0-203](./tasks/P0-203-turn-events.md) | Turn creation and event normalization | done | P0-107, P0-202 |
-| [ ] | [P0-204](./tasks/P0-204-reconnect-stop.md) | Reconnect, stop and correction | in_progress | P0-203 |
+| [x] | [P0-204](./tasks/P0-204-reconnect-stop.md) | Reconnect, stop and correction | done | P0-203 |
 | [x] | [P0-205](./tasks/P0-205-router.md) | Direct mention/team router | done | P0-102, P0-106 |
-| [ ] | [P0-206](./tasks/P0-206-multi-agent-run.md) | Direct multi-agent Run engine | blocked | P0-202, P0-203, P0-205 |
+| [ ] | [P0-206](./tasks/P0-206-multi-agent-run.md) | Direct multi-agent Run engine | in_progress | P0-202, P0-203, P0-205 |
 | [ ] | [P0-208](./tasks/P0-208-session-rotation.md) | Capability/skill intersection and rotation | blocked | P0-202, P0-302, P0-314 |
 | [ ] | [P0-210](./tasks/P0-210-agui-compatibility-spike.md) | Freeze AG-UI and prove bridge | in_review | P0-000, P0-101 |
 | [ ] | [P0-211](./tasks/P0-211-trueforge-agui-adapter.md) | TrueForge-to-AG-UI adapter | blocked | P0-102, P0-203, P0-210 |

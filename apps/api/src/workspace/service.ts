@@ -30,11 +30,13 @@ import {
   isChannelAgentSessionAvailable,
   MAX_RECENT_DELTAS,
   nextDeliveryCursor,
+  planDirectRunSteps,
   resolveMessageRecipients,
   type TurnCreationStatus,
 } from "@forgeroom/orchestration";
 import type { TrueForgeClient } from "@forgeroom/trueforge";
 import {
+  createDirectMultiAgentRun,
   enqueueCorrectionForStep,
   markCancelCalled,
   requestRunStepStop,
@@ -306,6 +308,8 @@ export type WorkspaceService = {
       sequence: number;
       recipient_handles: string[];
       routing_mode: "direct" | "team";
+      run_id: string | null;
+      run_step_ids: string[];
     }>
   >;
   createPin(
@@ -1371,6 +1375,8 @@ export function createWorkspaceService(options?: {
         sequence: number;
         recipient_handles: string[];
         routing_mode: "direct" | "team";
+        run_id: string | null;
+        run_step_ids: string[];
       };
 
       const reloadPostedMessage = async (
@@ -1410,12 +1416,28 @@ export function createWorkspaceService(options?: {
             if (!payload?.routing_mode || !payload.recipient_handles) {
               return null;
             }
+            let runId: string | null = null;
+            let runStepIds: string[] = [];
+            if (sql) {
+              const runs = await sql<{ id: string }[]>`
+                SELECT id FROM runs WHERE source_message_id = ${messageId} LIMIT 1
+              `;
+              runId = runs[0]?.id ?? null;
+              if (runId) {
+                const steps = await sql<{ id: string }[]>`
+                  SELECT id FROM run_steps WHERE run_id = ${runId} ORDER BY id
+                `;
+                runStepIds = steps.map((step) => step.id);
+              }
+            }
             return {
               message_id: message.id,
               event_id: message.eventId,
               sequence: row.sequence,
               recipient_handles: payload.recipient_handles,
               routing_mode: payload.routing_mode,
+              run_id: runId,
+              run_step_ids: runStepIds,
             };
           }
           if (!page.hasMore || page.events.length === 0) {
@@ -1532,6 +1554,73 @@ export function createWorkspaceService(options?: {
             },
           });
           publish(appended);
+
+          let runId: string | null = null;
+          let runStepIds: string[] = [];
+          if (sql) {
+            const recipients = [];
+            for (const handle of routing.recipient_handles) {
+              const coworker = coworkers.find((row) => row.handle === handle);
+              if (!coworker) {
+                return {
+                  ok: false,
+                  error: {
+                    code: "validation_failed",
+                    message: "Resolved recipient is missing from the coworker roster.",
+                    details: { handle },
+                  },
+                };
+              }
+              const agentSession = sessions.find((row) => row.agentProfileId === coworker.id);
+              if (!agentSession) {
+                return {
+                  ok: false,
+                  error: {
+                    code: "recipient_unavailable",
+                    message: "Resolved recipient has no channel agent session.",
+                    details: { handle, coworker_id: coworker.id },
+                  },
+                };
+              }
+              recipients.push({
+                coworkerId: coworker.id,
+                handle: coworker.handle,
+                channelAgentSessionId: agentSession.id,
+                logicalThreadId: agentSession.logicalAguiThreadId,
+              });
+            }
+            const plan = planDirectRunSteps({
+              goal: command.body,
+              recipients,
+            });
+            if (!plan.ok) {
+              return {
+                ok: false,
+                error: {
+                  code: "validation_failed",
+                  message: "Could not plan a direct multi-agent run.",
+                  details: { reason: plan.reason },
+                },
+              };
+            }
+            const created = await createDirectMultiAgentRun(sql, {
+              channelId,
+              sourceMessageId: messageId,
+              requestedBy: session.user.id,
+              routingMode: routing.routing_mode,
+              goal: command.body,
+              now: createdAt,
+              steps: plan.steps.map((step) => ({
+                assignedAgentId: step.assignedCoworkerId,
+                channelAgentSessionId: step.channelAgentSessionId,
+                logicalThreadId: step.logicalThreadId,
+                objective: step.objective,
+              })),
+            });
+            runId = created.runId;
+            runStepIds = created.steps.map((step) => step.id);
+          }
+
           return {
             ok: true,
             value: {
@@ -1540,6 +1629,8 @@ export function createWorkspaceService(options?: {
               sequence: appended.sequence,
               recipient_handles: routing.recipient_handles,
               routing_mode: routing.routing_mode,
+              run_id: runId,
+              run_step_ids: runStepIds,
             },
           };
         } catch (error) {
