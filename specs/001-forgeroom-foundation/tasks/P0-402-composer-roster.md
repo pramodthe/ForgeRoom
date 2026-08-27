@@ -1,9 +1,10 @@
 ---
 id: P0-402
 title: Build channel composer and coworker roster
-status: in_review
+status: done
 owner: cursor-agent
 started: 2026-08-26
+completed: 2026-08-26
 depends_on: [P0-106, P0-107, P0-205, P0-401]
 requirements: [CH-001, CH-003, CH-009, CH-010, CH-011, AG-006]
 specs: [../ux.md#channel-header, ../ux.md#composer-and-recipient-resolution]
@@ -57,3 +58,4 @@ Run component and browser tests for all routing combinations and keyboard compos
   - Submit previewed `recipient_handles` / `routing_mode` via `buildComposerMessageCommand`.
   - Session-expiry guard: workspace layout redirects to login when session clears; API 401 clears session; auth service normalizes Postgres session datetimes for `/api/session`.
   - Archived channels disable membership controls and surface API/mutation errors; roster shows “No active assignment” when absent.
+- 2026-08-26 — Merged via PR #19 (`eb560d3`) after Qodo-clean head and green CI.
