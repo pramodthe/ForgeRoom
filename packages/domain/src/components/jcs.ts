@@ -2,6 +2,23 @@
  * RFC 8785-style JSON Canonicalization Scheme (JCS) for descriptor hashing.
  */
 
+function assertNoLoneSurrogates(value: string): void {
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+    if (code >= 0xd800 && code <= 0xdbff) {
+      const next = value.charCodeAt(index + 1);
+      if (!(next >= 0xdc00 && next <= 0xdfff)) {
+        throw new TypeError("lone UTF-16 surrogates are not JSON-serializable");
+      }
+      index += 1;
+      continue;
+    }
+    if (code >= 0xdc00 && code <= 0xdfff) {
+      throw new TypeError("lone UTF-16 surrogates are not JSON-serializable");
+    }
+  }
+}
+
 function serializeJsonValue(value: unknown): string {
   if (value === undefined) {
     throw new TypeError("undefined is not JSON-serializable");
@@ -19,6 +36,7 @@ function serializeJsonValue(value: unknown): string {
     return JSON.stringify(value);
   }
   if (typeof value === "string") {
+    assertNoLoneSurrogates(value);
     return JSON.stringify(value);
   }
   if (Array.isArray(value)) {
@@ -32,7 +50,10 @@ function serializeJsonValue(value: unknown): string {
     const record = value as Record<string, unknown>;
     const keys = Object.keys(record).sort();
     return `{${keys
-      .map((key) => `${JSON.stringify(key)}:${serializeJsonValue(record[key])}`)
+      .map((key) => {
+        assertNoLoneSurrogates(key);
+        return `${JSON.stringify(key)}:${serializeJsonValue(record[key])}`;
+      })
       .join(",")}}`;
   }
   throw new TypeError(`unsupported JSON value type: ${typeof value}`);

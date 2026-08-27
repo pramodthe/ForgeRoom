@@ -126,19 +126,21 @@ export function toPersistedAgUiEvent(input: unknown): P0PersistedAguiEvent | nul
         patch: event.patch,
       };
     } else if (Array.isArray(event.delta) && stateKind && revision !== undefined) {
-      const ops = event.delta.filter(
-        (operation) => isPatchOp(operation) && operation.path !== "/revision",
-      );
-      candidate = {
-        type,
-        stateKind,
-        revision,
-        patch: [
-          { op: "test", path: "/revision", value: revision },
-          ...ops,
-          { op: "replace", path: "/revision", value: revision + 1 },
-        ],
-      };
+      if (!event.delta.every(isPatchOp)) {
+        candidate = null;
+      } else {
+        const ops = event.delta.filter((operation) => operation.path !== "/revision");
+        candidate = {
+          type,
+          stateKind,
+          revision,
+          patch: [
+            { op: "test", path: "/revision", value: revision },
+            ...ops,
+            { op: "replace", path: "/revision", value: revision + 1 },
+          ],
+        };
+      }
     }
   }
 
