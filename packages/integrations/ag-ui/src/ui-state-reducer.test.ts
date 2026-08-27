@@ -1,9 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AgentChannelEnvelope, ChannelUIStateV1, ThreadUIStateV1 } from "@forgeroom/contracts";
-import {
-  initialUiPresentationState,
-  reduceUiPresentationState,
-} from "./ui-state-reducer";
+import { initialUiPresentationState, reduceUiPresentationState } from "./ui-state-reducer";
 
 const emptyCounters = {
   planning: 0,

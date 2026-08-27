@@ -38,10 +38,7 @@ function deepEqual(left: unknown, right: unknown): boolean {
     if (leftKeys.length !== rightKeys.length) return false;
     if (!leftKeys.every((key, index) => key === rightKeys[index])) return false;
     return leftKeys.every((key) =>
-      deepEqual(
-        (left as Record<string, unknown>)[key],
-        (right as Record<string, unknown>)[key],
-      ),
+      deepEqual((left as Record<string, unknown>)[key], (right as Record<string, unknown>)[key]),
     );
   }
   return false;
@@ -85,7 +82,10 @@ function resolveParent(root: unknown, segments: string[]): ParentRef | null {
   return { kind: "object", parent: current as Record<string, unknown>, key: last };
 }
 
-function readValue(root: unknown, segments: string[]): { ok: true; value: unknown } | { ok: false } {
+function readValue(
+  root: unknown,
+  segments: string[],
+): { ok: true; value: unknown } | { ok: false } {
   if (segments.length === 0) return { ok: true, value: root };
   const parent = resolveParent(root, segments);
   if (!parent) return { ok: false };
