@@ -6,6 +6,15 @@ import type {
   TrueForgeTurn,
   TrueForgeTurnEvent,
 } from "./types";
+import type {
+  RegisterHeaderAuthMcpServerInput,
+  TrueForgeConfiguredMcpServer,
+  TrueForgeMcpTool,
+} from "./mcp-connector";
+import {
+  listMcpServerTools as listMcpServerToolsImpl,
+  registerHeaderAuthMcpServer as registerHeaderAuthMcpServerImpl,
+} from "./mcp-connector";
 
 function trimTrailingSlash(url: string): string {
   return url.replace(/\/+$/, "");
@@ -26,14 +35,14 @@ export class TrueForgeClient {
   }
 
   async createSession(input: CreateSessionInput): Promise<TrueForgeSession> {
-    const payload = await this.request<unknown>("POST", "/api/v1/sessions", {
+    const payload = await this.requestJson<unknown>("POST", "/api/v1/sessions", {
       agent: { spec: input.spec },
     });
     return unwrapSession(payload);
   }
 
   async getSession(sessionId: string): Promise<TrueForgeSession> {
-    const payload = await this.request<unknown>(
+    const payload = await this.requestJson<unknown>(
       "GET",
       `/api/v1/sessions/${encodeURIComponent(sessionId)}`,
     );
@@ -41,7 +50,7 @@ export class TrueForgeClient {
   }
 
   async createTurn(sessionId: string, input: CreateTurnInput): Promise<TrueForgeTurn> {
-    const payload = await this.request<unknown>(
+    const payload = await this.requestJson<unknown>(
       "POST",
       `/api/v1/sessions/${encodeURIComponent(sessionId)}/turns`,
       {
@@ -66,12 +75,12 @@ export class TrueForgeClient {
     }
     const query = params.toString();
     const path = `/api/v1/sessions/${encodeURIComponent(sessionId)}/turns${query ? `?${query}` : ""}`;
-    const payload = await this.request<unknown>("GET", path);
+    const payload = await this.requestJson<unknown>("GET", path);
     return unwrapTurnList(payload);
   }
 
   async getTurn(sessionId: string, turnId: string): Promise<TrueForgeTurn> {
-    const payload = await this.request<unknown>(
+    const payload = await this.requestJson<unknown>(
       "GET",
       `/api/v1/sessions/${encodeURIComponent(sessionId)}/turns/${encodeURIComponent(turnId)}`,
     );
@@ -79,7 +88,7 @@ export class TrueForgeClient {
   }
 
   async listTurnEvents(sessionId: string, turnId: string): Promise<TrueForgeTurnEvent[]> {
-    const payload = await this.request<unknown>(
+    const payload = await this.requestJson<unknown>(
       "GET",
       `/api/v1/sessions/${encodeURIComponent(sessionId)}/turns/${encodeURIComponent(turnId)}/events`,
     );
@@ -90,7 +99,7 @@ export class TrueForgeClient {
     sessionId: string,
     body: Record<string, unknown> = {},
   ): Promise<{ cancelled: boolean; raw: unknown }> {
-    const payload = await this.request<unknown>(
+    const payload = await this.requestJson<unknown>(
       "POST",
       `/api/v1/sessions/${encodeURIComponent(sessionId)}/cancel`,
       body,
@@ -98,7 +107,19 @@ export class TrueForgeClient {
     return { cancelled: true, raw: payload };
   }
 
-  private async request<T>(method: string, path: string, body?: unknown): Promise<T> {
+  /** Register or replace a header-auth remote MCP connector (Composio hosted MCP). */
+  async registerHeaderAuthMcpServer(
+    input: RegisterHeaderAuthMcpServerInput,
+  ): Promise<TrueForgeConfiguredMcpServer> {
+    return registerHeaderAuthMcpServerImpl(this, input);
+  }
+
+  /** Query connector tools for startup manifest verification. */
+  async listMcpServerTools(name: string): Promise<TrueForgeMcpTool[]> {
+    return listMcpServerToolsImpl(this, name);
+  }
+
+  async requestJson<T>(method: string, path: string, body?: unknown): Promise<T> {
     const headers: Record<string, string> = {
       Accept: "application/json",
     };

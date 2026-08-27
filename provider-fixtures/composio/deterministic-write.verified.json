@@ -1,0 +1,70 @@
+{
+  "schemaVersion": 1,
+  "status": "verified",
+  "ownerTask": "P0-309",
+  "probeDate": "2026-08-27",
+  "decisionRefs": [
+    "ADR-003",
+    "ADR-004",
+    "OD-003",
+    "AP-001",
+    "AP-006",
+    "AP-008",
+    "CN-006",
+    "SEC-015"
+  ],
+  "note": "Redacted approval-gated deterministic write evidence. Secrets, full account IDs, and raw tool bodies absent.",
+  "approvalRequiredSet": {
+    "literalWriteTool": "GITHUB_ADD_LABELS_TO_AN_ISSUE",
+    "inTrueForgeRequireApprovalForTools": true,
+    "reconcileTool": "GITHUB_GET_AN_ISSUE"
+  },
+  "demoTarget": {
+    "display": "pramodthe/ForgeRoom#35",
+    "syntheticLabel": "forgeroom-p0-probe",
+    "writerIdentity": "pthebesfsu-a11y"
+  },
+  "denial": {
+    "providerCalls": 0,
+    "fixtureUnchanged": true,
+    "beforeLabelsContainedProbe": false,
+    "afterLabelsContainedProbe": false
+  },
+  "changedBindings": {
+    "requireNewProposal": true,
+    "fields": [
+      "argumentsHash",
+      "targetHash",
+      "observedDescriptorHash",
+      "accountId",
+      "sessionGeneration"
+    ]
+  },
+  "approval": {
+    "createsResumeIntent": true,
+    "resumeIntentCount": 1,
+    "kind": "pause_resume"
+  },
+  "timeout": {
+    "proposalState": "unknown",
+    "automaticRetry": false
+  },
+  "reconciliation": {
+    "finalState": "reconciled_succeeded",
+    "readTool": "GITHUB_GET_AN_ISSUE",
+    "expect": "label_present",
+    "afterLabelsContainedProbe": true
+  },
+  "receipt": {
+    "claim": "verified_provider_receipt",
+    "onlyWhenAdapterVerifies": true
+  },
+  "liveWrite": {
+    "status": "verified",
+    "toolName": "GITHUB_ADD_LABELS_TO_AN_ISSUE",
+    "accountSuffix": "nizY",
+    "note": "Live deny (no mutation) then approve+add-label+GET reconcile on #35; timeout classified unknown without auto-retry."
+  },
+  "rawResultBodyPresent": false,
+  "credentialsPresent": false
+}

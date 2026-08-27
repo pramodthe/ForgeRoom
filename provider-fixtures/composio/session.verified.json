@@ -1,0 +1,58 @@
+{
+  "schemaVersion": 1,
+  "status": "verified",
+  "ownerTask": "P0-301",
+  "probeDate": "2026-08-27",
+  "decisionRefs": ["ADR-003", "OD-002", "OD-003", "OD-004"],
+  "session": {
+    "kind": "hosted_mcp_direct_tools",
+    "api": "POST /api/v3.1/tool_router/session",
+    "stableUserIdEnvVar": "COMPOSIO_USER_ID",
+    "stableUserIdExample": "forgeroom_workspace_1",
+    "toolkitSlugs": ["github"],
+    "connectedAccounts": {
+      "github": {
+        "envVar": "COMPOSIO_CONNECTED_ACCOUNT_ID",
+        "redactedSuffix": "nizY",
+        "pinShape": "single_id_array"
+      }
+    },
+    "directTools": [
+      "GITHUB_GET_AN_ISSUE",
+      "GITHUB_ADD_LABELS_TO_AN_ISSUE",
+      "GITHUB_REMOVE_A_LABEL_FROM_AN_ISSUE"
+    ],
+    "disabled": {
+      "manageConnections": true,
+      "workbenchSandbox": true,
+      "multiAccount": true,
+      "searchMetaTools": true,
+      "multiExecute": true
+    },
+    "forbiddenSurfacesAbsent": [
+      "COMPOSIO_SEARCH_TOOLS",
+      "COMPOSIO_MULTI_EXECUTE_TOOL",
+      "COMPOSIO_REMOTE_WORKBENCH",
+      "COMPOSIO_REMOTE_BASH_TOOL",
+      "COMPOSIO_MANAGE_CONNECTIONS",
+      "COMPOSIO_WAIT_FOR_CONNECTIONS"
+    ],
+    "mcpSecrets": {
+      "storage": "server_secret_store_only",
+      "neverInGitOrDbJson": true,
+      "headers": ["x-api-key"],
+      "note": "MCP URL + headers stay in process/secret store; TrueForge header-auth connector registration is P0-302 (`composio_github`)."
+    }
+  },
+  "liveProbe": {
+    "status": "verified",
+    "sessionIdSuffix": "CvH3k",
+    "observedTools": [
+      "GITHUB_ADD_LABELS_TO_AN_ISSUE",
+      "GITHUB_GET_AN_ISSUE",
+      "GITHUB_REMOVE_A_LABEL_FROM_AN_ISSUE"
+    ],
+    "mcpUrlHost": "backend.composio.dev",
+    "note": "Created 2026-08-27 via ComposioSessionClient contract; tool list exact; forbidden meta surfaces absent."
+  }
+}

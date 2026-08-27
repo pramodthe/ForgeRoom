@@ -10,8 +10,15 @@
     "./event-normalize": "./src/event-normalize.ts",
     "./turn-creation": "./src/turn-creation.ts",
     "./create-or-reconcile-turn": "./src/create-or-reconcile-turn.ts",
+    "./create-or-reconcile-response-turn": "./src/create-or-reconcile-response-turn.ts",
+    "./pause-resume": "./src/pause-resume.ts",
     "./stop-correction": "./src/stop-correction.ts",
-    "./multi-agent-run": "./src/multi-agent-run.ts"
+    "./multi-agent-run": "./src/multi-agent-run.ts",
+    "./pause-group": "./src/pause-group.ts",
+    "./real-read": "./src/real-read.ts",
+    "./deterministic-write": "./src/deterministic-write.ts",
+    "./capability-intersection": "./src/capability-intersection.ts",
+    "./session-rotation": "./src/session-rotation.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit",

@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 1,
+  "status": "verified",
+  "ownerTask": "P0-303",
+  "verification": "unit",
+  "probeDate": "2026-08-27",
+  "note": "Curated ToolPolicyDefinitions for every P0 enabled Composio direct tool. Secrets absent.",
+  "unknownWrites": "blocked",
+  "demoTarget": {
+    "owner": "pramodthe",
+    "repo": "ForgeRoom",
+    "issueNumber": 35,
+    "syntheticLabel": "forgeroom-p0-probe"
+  },
+  "policies": [
+    {
+      "toolName": "GITHUB_GET_AN_ISSUE",
+      "riskClass": "read",
+      "idempotency": "verified",
+      "observedDescriptorHash": "c5b2dac56410d0576d400324aee0cd1d53a5ebc167f1a6b6f3066822c827ba1e",
+      "reconcile": false,
+      "receipt": "verified_or_labeled_safe_result"
+    },
+    {
+      "toolName": "GITHUB_ADD_LABELS_TO_AN_ISSUE",
+      "riskClass": "write",
+      "idempotency": "verified",
+      "observedDescriptorHash": "ff40ac2f1e6015f6aa280e2056790551ba651b6a755651c130af181846a02855",
+      "reconcile": {
+        "toolName": "GITHUB_GET_AN_ISSUE",
+        "expect": "label_present"
+      },
+      "receipt": "verified_provider_receipt_when_successful_boolean"
+    },
+    {
+      "toolName": "GITHUB_REMOVE_A_LABEL_FROM_AN_ISSUE",
+      "riskClass": "write",
+      "idempotency": "verified",
+      "observedDescriptorHash": "b6c618fc6702ea82bffe53605ed5ef93c5cf41ff7a02fe24d7c9e034a59d6bbb",
+      "reconcile": {
+        "toolName": "GITHUB_GET_AN_ISSUE",
+        "expect": "label_absent"
+      },
+      "receipt": "verified_provider_receipt_when_successful_boolean"
+    }
+  ],
+  "packagePath": "packages/integrations/composio/src/tool-policies"
+}

@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Status | P0-000 live probes partial — Composio/Daytona/OpenAI+TrueForge presets verified; Save-as-skill Run + TrueForge→artifact + demo storage still open |
+| Status | P0-000 done — Composio/Daytona/OpenAI+TrueForge presets and Save-as-skill Run binding verified; TrueForge→artifact adapter + demo durable storage remain follow-ups for their owner tasks |
 | Duration | Three minutes maximum |
 | Product framing | General AI coworker channel; scenario is only a fixture |
 | Fixture root | `provider-fixtures/` |
@@ -11,19 +11,19 @@
 
 P0-000 replaces provider/demo TBDs with frozen choices or explicitly labeled candidates. P0-210 replaces the exact pure AG-UI package rows after compatibility evidence and records optional CopilotKit as disabled unless parity-proven.
 
-Verification labels: `frozen` (must honor), `candidate` (preferred pending probe/selection), `blocked-on-secrets` (needs live credentials), `verified` (probe evidence attached — Composio, Daytona, local artifact storage, OpenAI/TrueForge presets as of 2026-08-26).
+Verification labels: `frozen` (must honor), `candidate` (preferred pending probe/selection), `blocked-on-secrets` (needs live credentials), `verified` (probe evidence attached — Composio, Daytona, local artifact storage, OpenAI/TrueForge presets, Save-as-skill Run binding as of 2026-08-27).
 
 | Decision | Locked value | Status |
 | --- | --- | --- |
 | Product name | ForgeRoom | frozen |
-| Demo task | Reconcile the synthetic demo record and publish a sandbox summary | candidate |
+| Demo task | Reconcile the synthetic demo record and publish a sandbox summary | verified |
 | Seeded coworker name/role/model | Operator / demo operator coworker / `openai/gpt-5-4-mini` (TrueForge agent `forgeroom-operator`) | verified |
 | Conversationally created coworker prompt/expected role/model | Prompt frozen: `Create a Research coworker that can read GitHub and web data but cannot modify anything.`; expected handle `research`; model `openai/gpt-5-4-mini`; read-only exactDiff in fixture (UI binding P0-213) | prompt frozen; preview verified-candidate |
 | Exact `@ag-ui/*` package versions | Candidate baseline `@ag-ui/core@0.0.57` + `@ag-ui/client@0.0.57`; P0-210 selects after fixtures | candidate |
 | Optional CopilotKit runtime/React versions | Disabled by default; no canary; no forced overrides; enable `/api/copilotkit` only after coherent-graph parity | frozen policy |
 | Controlled component demo | DataTable + bar chart + TaskCard + ArtifactCard + ChoiceForm/filter fixtures under `provider-fixtures/controlled-ui/` | candidate |
-| Task fixture | One TaskRecord title/transition in `provider-fixtures/tasks/task-record.candidate.json` | candidate |
-| Save-as-skill fixture | Instruction-only private SkillVersion from one successful Run; attachment rotates session; invocation begins in 0.2 | candidate |
+| Task fixture | One TaskRecord title/transition in `provider-fixtures/tasks/task-record.candidate.json` (`task_demo_reconcile`) | verified |
+| Save-as-skill fixture | Instruction-only private SkillVersion from one successful Run; TrueForge turn verified 2026-08-27 (suffixes `30yd5y`/`194qgy`); attachment rotates session; invocation begins in 0.2 | verified |
 | Composio application 1 | Verified `github` on pinned account (suffix `nizY`) | verified |
 | Composio application 2 | none (default) unless primary cannot cover read+write+reconcile | candidate |
 | Read tool slug | `GITHUB_GET_AN_ISSUE` (hash in `composio/descriptors/manifest.json`) | verified |
@@ -31,7 +31,7 @@ Verification labels: `frozen` (must honor), `candidate` (preferred pending probe
 | Reconciliation read tool slug | `GITHUB_GET_AN_ISSUE` (same as read) | verified |
 | Pinned connected-account IDs | Secret env only; redacted suffix `nizY` in `composio/accounts.verified.json` | verified |
 | Observed descriptor hashes | `provider-fixtures/composio/descriptors/manifest.json` | verified |
-| Synthetic provider fixture | `pramodthe/Hi-Tuto#10`, label `forgeroom-p0-probe`; reset via remove-label tool | verified |
+| Synthetic provider fixture | `pramodthe/ForgeRoom#35`, label `forgeroom-p0-probe`; reset via remove-label tool | verified target; live write/reconcile/reset verified (`pthebesfsu-a11y` write collaborator) |
 | Fixture reset command | Provider + DB: `pnpm fixtures:reset` (stable IDs in `demo-seed.verified.json`; provider remove-label guarded) | verified |
 | Artifact storage | Local `ARTIFACT_STORAGE_DIR` retain verified; demo durable adapter candidate | verified local; demo candidate |
 | Deployment topology | Local preflight verified 2026-08-26; demo host candidate | partial verified |

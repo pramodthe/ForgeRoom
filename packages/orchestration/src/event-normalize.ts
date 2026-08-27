@@ -12,7 +12,7 @@ export type TurnDoneOutcome =
   | {
       kind: "required_actions";
       agentTurnState: "required_actions";
-      runStepState: "awaiting_approval" | "awaiting_input";
+      runStepState: "awaiting_approval" | "awaiting_input" | "blocked_connection";
       requiredActionCount: number;
     }
   | {
@@ -149,16 +149,26 @@ export function evaluateTurnDoneOutcome(payload: Record<string, unknown>): TurnD
     (Array.isArray(state.requiredActions) ? state.requiredActions : null) ??
     [];
   if (required.length > 0) {
-    const hasApproval = required.some(
-      (item) =>
-        item &&
-        typeof item === "object" &&
-        String((item as { type?: unknown }).type ?? "").includes("approval"),
+    const types = required.map((item) =>
+      item && typeof item === "object"
+        ? String((item as { type?: unknown }).type ?? "").toLowerCase()
+        : "",
     );
+    const hasConnection = types.some(
+      (type) =>
+        type.includes("connection") ||
+        type.includes("auth_required") ||
+        type.includes("mcp.auth"),
+    );
+    const hasApproval = types.some((type) => type.includes("approval"));
     return {
       kind: "required_actions",
       agentTurnState: "required_actions",
-      runStepState: hasApproval ? "awaiting_approval" : "awaiting_input",
+      runStepState: hasConnection
+        ? "blocked_connection"
+        : hasApproval
+          ? "awaiting_approval"
+          : "awaiting_input",
       requiredActionCount: required.length,
     };
   }

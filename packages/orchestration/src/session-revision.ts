@@ -24,7 +24,14 @@ export type SessionRevisionSnapshotInput = {
     enabledTools: string[];
     approvalRequiredTools: string[];
   }>;
+  /** Controlled-component tool names offered after grant intersection. */
+  componentToolNames?: string[];
   skillNames?: string[];
+  /**
+   * Monotonic SessionRevision ordinal. Defaults to coworker.configRevision.
+   * Rotation must supply max(existing)+1 when coworker config_revision is unchanged.
+   */
+  sourceConfigRevision?: number;
   createdBy: string;
 };
 
@@ -75,6 +82,7 @@ export function compileSessionRevision(
       enabled_tools: connector.enabledTools,
       approval_required_tools: connector.approvalRequiredTools,
     })),
+    component_tool_names: input.componentToolNames ?? [],
     skill_names: input.skillNames ?? [],
     compiled_flags: {
       dynamic_sub_agents: false,
@@ -88,7 +96,7 @@ export function compileSessionRevision(
   return {
     id: opaqueId("sr"),
     agentProfileId: input.coworker.id,
-    sourceConfigRevision: input.coworker.configRevision,
+    sourceConfigRevision: input.sourceConfigRevision ?? input.coworker.configRevision,
     effectiveConfigRedacted,
     effectiveSpecHash: hashAgentSpec(agentSpec),
     approvalPolicyHash: hashApprovalPolicy(agentSpec),

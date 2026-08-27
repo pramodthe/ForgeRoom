@@ -1,7 +1,7 @@
 ---
 id: P0-109
 title: Implement the application-owned TaskRecord vertical slice
-status: blocked
+status: ready
 owner: unassigned
 depends_on: [P0-103, P0-104, P0-107, P0-203, P0-208]
 requirements: [TR-001, TR-002, TR-003, REC-001, REC-002, REC-003, REC-004]

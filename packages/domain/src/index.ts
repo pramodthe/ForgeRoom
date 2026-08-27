@@ -78,3 +78,10 @@ export {
   listServerOnlyDefinitions,
   P0_CONTROLLED_REGISTRY,
 } from "./components/registry";
+export {
+  buildApprovalCard,
+  evaluateApprovalDecisionGate,
+  hashActingIdentity,
+  type ProposalDecisionGateResult,
+  type ProposalDecisionSnapshot,
+} from "./approvals/decision";

@@ -8,7 +8,7 @@ Every checkbox requires automated or redacted manual evidence linked from its ta
 - [ ] Secure session, logout revocation, rate limiting, Origin and CSRF tests pass.
 - [ ] TrueForge is not publicly exposed in no-login mode.
 - [ ] Browser bundles and network responses contain no service credentials.
-- [ ] Connect Link state is bound to authenticated workspace session.
+- [x] Connect Link state is bound to authenticated workspace session.
 
 ## Authorization and isolation
 
@@ -23,14 +23,14 @@ Every checkbox requires automated or redacted manual evidence linked from its ta
 - [ ] Exact pinned connected-account IDs are configured for every toolkit.
 - [ ] Meta-execute, workbench, remote bash, dynamic write search and fallback accounts are absent.
 - [ ] Descriptor drift fails closed.
-- [ ] Every mutation is literal in the TrueForge approval-required set.
+- [x] Every mutation is literal in the TrueForge approval-required set.
 - [ ] Approval preview comes from reviewed adapter and redacted canonical arguments.
-- [ ] One-byte argument change, descriptor change, generation change or expiry stales the proposal.
+- [x] One-byte argument change, descriptor change, generation change or expiry stales the proposal.
 - [ ] Unauthenticated, forged-Origin, replayed and concurrent conflicting decisions are rejected correctly.
-- [ ] Denied proposal makes zero provider mutation call.
+- [x] Denied proposal makes zero provider mutation call.
 - [ ] Mixed approvals and questions from one turn produce one PauseResume.
 - [ ] Lost resume response is reconciled and never blindly retried.
-- [ ] Ambiguous write becomes unknown and receives no automatic retry.
+- [x] Ambiguous write becomes unknown and receives no automatic retry.
 
 ## Session and cancellation
 

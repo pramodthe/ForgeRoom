@@ -1,7 +1,7 @@
 ---
 id: P0-310
 title: Implement durable artifact storage adapter
-status: blocked
+status: ready
 owner: unassigned
 depends_on: [P0-000, P0-103]
 requirements: [SB-003, SB-004]

@@ -31,8 +31,8 @@ Optional when probing optional CopilotKit later (P0-210 only): none required for
 
 - [x] List Composio toolkits/accounts; choose ≤2 apps; pin account; record redacted suffix (`nizY`, github ACTIVE).
 - [x] Export read / deterministic-write / reconciliation-read direct-tool descriptors; check in hashes under `composio/descriptors/manifest.json`.
-- [x] Run synthetic write then reconciliation read on fixture data; confirm expected state (label `forgeroom-p0-probe` on `pramodthe/Hi-Tuto#10`).
-- [x] Provider fixture reset twice — label removal idempotent (2nd remove returns expected provider error; label absent after both).
+- [x] Run synthetic write then reconciliation read on fixture data; confirm expected state (label `forgeroom-p0-probe`). **Frozen target:** `pramodthe/ForgeRoom#35` (Hi-Tuto temporary probe discarded). **2026-08-27 (later):** `pthebesfsu-a11y` is an active ForgeRoom collaborator with **write** (invite not pending). Composio `GITHUB_ADD_LABELS_TO_AN_ISSUE` / remove / GET on `#35` all succeeded (earlier same-day 403 was pre-acceptance; OAuth scopes already included `repo`).
+- [x] Provider fixture reset twice — label removal idempotent (2nd remove returns expected provider error; label absent after both). **Re-confirmed on `#35` 2026-08-27** (Composio remove succeeded; 2nd remove → GitHub 404 "Label does not exist").
 - [x] Seed Operator coworker with a reliable model preset; record preset id — **`openai/gpt-5-4-mini`** via local TrueForge agent `forgeroom-operator` (smoke turn `done`, output `p0-openai-ok`).
 - [x] Resolve Research draft prompt to exact permission preview/denials (no writes) — model preset **`openai/gpt-5-4-mini`**; grants `GITHUB_GET_AN_ISSUE` only; deny write/destructive/new-account/native-subagents (exactDiff in fixture; UI binding still P0-213).
 - [x] Produce one Daytona sample file; download via Daytona SDK — TrueForge→artifact-storage retain path still pending (harness+model now ready).
@@ -40,6 +40,7 @@ Optional when probing optional CopilotKit later (P0-210 only): none required for
 - [x] Confirm local deployment topology preflight (DB, auth env, Composio, Daytona, storage, TrueForge, OpenAI) — **pass** 2026-08-26.
 - [ ] Record verified run-limit watchdog behavior or adjust candidates with evidence — **blocked: TrueForge hard enforcement (P0-204)**.
 - [x] Confirm local Postgres schema for demo fixture reset — **verified 2026-08-26**: migrations up to date; `workspaces` table present.
+- [x] Save-as-skill successful Run binding — **verified 2026-08-27**: TrueForge `forgeroom-operator` instruction-only turn `done` (session suffix `30yd5y`, turn suffix `194qgy`, output sha256 `550cc8bd…82530c9`); Task/Save-as-skill fixtures promoted to verified.
 
 ## Explicit non-goals for the human probe
 

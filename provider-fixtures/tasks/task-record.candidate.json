@@ -1,10 +1,15 @@
 {
   "schemaVersion": 1,
-  "status": "candidate",
+  "status": "verified",
   "ownerTask": "P0-000",
   "decisionId": "OD-009",
+  "probeDate": "2026-08-27",
   "implementationOwners": ["P0-105", "P0-109"],
   "demoTaskTitle": "Reconcile the synthetic demo record and publish a sandbox summary",
+  "fixtureIds": {
+    "taskId": "task_demo_reconcile",
+    "initialRevision": 1
+  },
   "taskRecord": {
     "title": "Reconcile the synthetic demo record and publish a sandbox summary",
     "description": "Operator updates the pinned synthetic provider field after approval; Research summarizes public/synthetic read data; Daytona produces a small artifact.",
@@ -26,6 +31,7 @@
     "command": "pnpm fixtures:reset",
     "dbOnly": "pnpm fixtures:reset -- --no-provider",
     "providerOnly": "pnpm fixtures:reset -- --provider-only",
-    "note": "P0-105: DB upsert of stable demo IDs + guarded Composio label remove for pramodthe/Hi-Tuto#10 marker forgeroom-p0-probe"
-  }
+    "note": "P0-105: DB upsert of stable demo IDs + guarded Composio label remove for pramodthe/ForgeRoom#35 marker forgeroom-p0-probe"
+  },
+  "note": "TaskRecord title/transition/assignees frozen for demo. Canonical Task DB rows remain owned by P0-109."
 }

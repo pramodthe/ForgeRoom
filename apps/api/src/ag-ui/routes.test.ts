@@ -90,12 +90,12 @@ describe("AG-UI routes", () => {
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toMatchObject({
       threadId: `thread_${channelId}_${coworker.id}`,
-      resume: { enabled: false },
+      resume: { enabled: true, via: "pause_group_service" },
       packages: { "@ag-ui/core": "0.0.57" },
     });
   });
 
-  it("rejects AG-UI runs without CSRF and rejects resume payloads", async () => {
+  it("rejects AG-UI runs without CSRF and rejects forged resume payloads", async () => {
     const { app, env, workspace } = await createAgUiTestApp();
     const login = await app.request("/api/auth/login", {
       method: "POST",
@@ -167,7 +167,7 @@ describe("AG-UI routes", () => {
           tools: [],
           context: [],
           state: {},
-          resume: [{ interruptId: "int_1", payload: {} }],
+          resume: [{ interruptId: "forged_interrupt", status: "resolved" }],
         }),
       },
     );
