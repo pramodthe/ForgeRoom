@@ -32,7 +32,7 @@ Verification labels: `frozen` (must honor), `candidate` (preferred pending probe
 | Pinned connected-account IDs | Secret env only; redacted suffix `nizY` in `composio/accounts.verified.json` | verified |
 | Observed descriptor hashes | `provider-fixtures/composio/descriptors/manifest.json` | verified |
 | Synthetic provider fixture | `pramodthe/Hi-Tuto#10`, label `forgeroom-p0-probe`; reset via remove-label tool | verified |
-| Fixture reset command | Provider: `GITHUB_REMOVE_A_LABEL_FROM_AN_ISSUE`; DB reset owned by P0-105 (schema migrated locally; seed/reset implementation pending) | verified provider / DB schema ready |
+| Fixture reset command | Provider + DB: `pnpm fixtures:reset` (stable IDs in `demo-seed.verified.json`; provider remove-label guarded) | verified |
 | Artifact storage | Local `ARTIFACT_STORAGE_DIR` retain verified; demo durable adapter candidate | verified local; demo candidate |
 | Deployment topology | Local preflight verified 2026-08-26; demo host candidate | partial verified |
 | Run wall-time limit | 180 seconds | candidate |

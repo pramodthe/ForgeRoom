@@ -9,13 +9,18 @@
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
-    "build": "tsc -p tsconfig.json --noEmit"
+    "build": "tsc -p tsconfig.json --noEmit",
+    "seed": "tsx src/demo-cli.ts seed",
+    "reset": "tsx src/demo-cli.ts reset"
   },
   "dependencies": {
-    "@forgeroom/contracts": "workspace:*"
+    "@forgeroom/contracts": "workspace:*",
+    "@forgeroom/db": "workspace:*",
+    "postgres": "^3.4.7"
   },
   "devDependencies": {
     "@types/node": "catalog:",
+    "tsx": "^4.20.5",
     "typescript": "catalog:",
     "vitest": "catalog:"
   }

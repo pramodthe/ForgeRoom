@@ -2,11 +2,11 @@
 
 | Field | Current value |
 | --- | --- |
-| Overall | M1 Foundation done; P0-402 merged; P0-210 in_review; P0-000 OpenAI+TrueForge presets verified (remaining: Save-as-skill Run, artifact path, demo storage) |
+| Overall | M1 Foundation done; P0-402 merged; P0-210 in_review; P0-000 OpenAI+TrueForge presets verified; P0-105 seed/reset implemented |
 | Current phase | Phase 1 — Foundation |
-| Active task | P0-000 (partial); next implementation: P0-105 demo fixtures |
-| Next task | Start P0-105 idempotent seed/reset; finish remaining P0-000 blockers in parallel when ready |
-| P0 blockers | Save-as-skill Run binding, TrueForge→artifact path, demo durable storage, run-limit hard enforcement — Composio/Daytona/OpenAI+TrueForge presets verified 2026-08-26; **DB migrations applied locally** |
+| Active task | P0-105 (in_progress → PR); P0-000 remaining blockers open |
+| Next task | Open P0-105 PR; then P0-403 activity cards or TrueForge runtime (P0-201) |
+| P0 blockers | Save-as-skill Run binding, TrueForge→artifact path, demo durable storage, run-limit hard enforcement |
 | Last updated | 2026-08-26 |
 
 ## Milestones

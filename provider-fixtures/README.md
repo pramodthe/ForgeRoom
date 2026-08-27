@@ -43,6 +43,6 @@ provider-fixtures/
 ## Ownership
 
 - P0-000 freezes structure, feature profile, AG-UI candidates/policy, and safe synthetic fixtures.
-- P0-105 seeds application DB rows from these fixtures.
+- P0-105 seeds application DB rows (`pnpm fixtures:seed` / `pnpm fixtures:reset`) — see `demo-seed.verified.json`.
 - P0-210 selects the exact `@ag-ui/*` lockfile graph.
 - P0-301+ / live probes fill Composio/Daytona/TrueForge verified fields.

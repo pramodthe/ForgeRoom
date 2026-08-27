@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "status": "verified",
+  "ownerTask": "P0-105",
+  "probeDate": "2026-08-26",
+  "commands": {
+    "seed": "pnpm fixtures:seed",
+    "reset": "pnpm fixtures:reset",
+    "resetDbOnly": "pnpm fixtures:reset -- --no-provider",
+    "providerOnly": "pnpm fixtures:reset -- --provider-only"
+  },
+  "stableIds": {
+    "ownerUserId": "user_owner",
+    "workspaceId": "workspace_1",
+    "channelId": "ch_demo_general",
+    "coworkerId": "cw_demo_operator",
+    "coworkerHandle": "operator",
+    "coworkerVersionId": "av_demo_operator_v1"
+  },
+  "fixtureRoles": {
+    "seeded": "Operator",
+    "conversationalDraftOnly": "Research"
+  },
+  "note": "Fixture roles are configuration data. Research coworker is not DB-seeded — P0-213 creates it through the production draft path. Reset clears pins/tasks where safe and soft-removes extra participants; append-only channel_events and message/run rows referenced by them are retained."
+}
