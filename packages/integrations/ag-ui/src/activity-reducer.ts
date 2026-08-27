@@ -7,8 +7,19 @@ import {
 } from "@forgeroom/contracts";
 import { applyJsonPatch, type JsonPatchOp } from "./json-patch";
 
+export type ActivityLaneOwner = {
+  actorKind: AgentChannelEnvelope["actorKind"];
+  coworkerId?: string;
+  logicalThreadId?: string;
+};
+
+export type ActivityEntry = {
+  content: ForgeRoomActivityContent;
+  owner: ActivityLaneOwner;
+};
+
 export type ActivityPresentationState = {
-  activities: Record<string, ForgeRoomActivityContent>;
+  activities: Record<string, ActivityEntry>;
   needActivitySnapshots: Record<string, true>;
 };
 
@@ -40,6 +51,22 @@ function clearNeedSnapshot(
   const needActivitySnapshots = { ...state.needActivitySnapshots };
   delete needActivitySnapshots[messageId];
   return { ...state, needActivitySnapshots };
+}
+
+function ownerFromEnvelope(envelope: AgentChannelEnvelope): ActivityLaneOwner {
+  return {
+    actorKind: envelope.actorKind,
+    ...(envelope.coworkerId ? { coworkerId: envelope.coworkerId } : {}),
+    ...(envelope.logicalThreadId ? { logicalThreadId: envelope.logicalThreadId } : {}),
+  };
+}
+
+function sameOwner(left: ActivityLaneOwner, right: ActivityLaneOwner): boolean {
+  return (
+    left.actorKind === right.actorKind &&
+    left.coworkerId === right.coworkerId &&
+    left.logicalThreadId === right.logicalThreadId
+  );
 }
 
 function identityFieldsMatch(
@@ -77,7 +104,7 @@ function identityFieldsMatch(
   }
 }
 
-function envelopeOwnsActivity(
+function envelopeOwnsContent(
   envelope: AgentChannelEnvelope,
   content: ForgeRoomActivityContent,
 ): boolean {
@@ -88,18 +115,18 @@ function envelopeOwnsActivity(
       envelope.logicalThreadId === content.logicalThreadId
     );
   }
-  // Channel/system activities may be emitted by system; coworker-scoped types still require the
-  // coworker lane when the envelope carries coworker identity.
-  if (envelope.actorKind === "coworker") {
-    return Boolean(envelope.coworkerId && envelope.logicalThreadId);
+  if (envelope.actorKind === "system") {
+    return !envelope.coworkerId && !envelope.logicalThreadId;
   }
-  return envelope.actorKind === "system";
+  return (
+    envelope.actorKind === "coworker" && Boolean(envelope.coworkerId && envelope.logicalThreadId)
+  );
 }
 
 /**
  * Pure activity presentation reducer.
  * ACTIVITY_SNAPSHOT replaces by messageId; ACTIVITY_DELTA requires an exact activityRevision base.
- * Divergence latches needActivitySnapshots until an authoritative non-stale snapshot arrives.
+ * Each activity is owned by the emitting lane; divergence latches needActivitySnapshots.
  */
 export function reduceActivityPresentationState(
   state: ActivityPresentationState,
@@ -118,17 +145,18 @@ export function reduceActivityPresentationState(
       return markNeedSnapshot(state, messageId);
     }
     const content = contentParsed.data;
-    if (!envelopeOwnsActivity(envelope, content)) {
+    if (!envelopeOwnsContent(envelope, content)) {
       return markNeedSnapshot(state, messageId);
     }
 
+    const owner = ownerFromEnvelope(envelope);
     const current = state.activities[messageId];
     if (current) {
-      if (!identityFieldsMatch(current, content)) {
+      if (!sameOwner(current.owner, owner) || !identityFieldsMatch(current.content, content)) {
         return markNeedSnapshot(state, messageId);
       }
       // Stale/pre-resync snapshots must not roll revision backward.
-      if (content.activityRevision < current.activityRevision) {
+      if (content.activityRevision < current.content.activityRevision) {
         return markNeedSnapshot(state, messageId);
       }
     }
@@ -138,7 +166,7 @@ export function reduceActivityPresentationState(
         ...state,
         activities: {
           ...state.activities,
-          [messageId]: content,
+          [messageId]: { content, owner },
         },
       },
       messageId,
@@ -158,10 +186,11 @@ export function reduceActivityPresentationState(
     }
 
     const current = state.activities[messageId];
-    if (!current || current.activityType !== parsed.data.activityType) {
+    if (!current || current.content.activityType !== parsed.data.activityType) {
       return markNeedSnapshot(state, messageId);
     }
-    if (!envelopeOwnsActivity(envelope, current)) {
+    const owner = ownerFromEnvelope(envelope);
+    if (!sameOwner(current.owner, owner) || !envelopeOwnsContent(envelope, current.content)) {
       return markNeedSnapshot(state, messageId);
     }
 
@@ -170,14 +199,14 @@ export function reduceActivityPresentationState(
       !baseRevision ||
       baseRevision.op !== "test" ||
       baseRevision.path !== "/activityRevision" ||
-      baseRevision.value !== current.activityRevision
+      baseRevision.value !== current.content.activityRevision
     ) {
       return markNeedSnapshot(state, messageId);
     }
 
-    const nextDocument = applyJsonPatch(current, parsed.data.patch as JsonPatchOp[]);
+    const nextDocument = applyJsonPatch(current.content, parsed.data.patch as JsonPatchOp[]);
     const nextParsed = forgeRoomActivityContentSchema.safeParse(nextDocument);
-    if (!nextParsed.success || !identityFieldsMatch(current, nextParsed.data)) {
+    if (!nextParsed.success || !identityFieldsMatch(current.content, nextParsed.data)) {
       return markNeedSnapshot(state, messageId);
     }
 
@@ -186,7 +215,7 @@ export function reduceActivityPresentationState(
         ...state,
         activities: {
           ...state.activities,
-          [messageId]: nextParsed.data,
+          [messageId]: { content: nextParsed.data, owner: current.owner },
         },
       },
       messageId,

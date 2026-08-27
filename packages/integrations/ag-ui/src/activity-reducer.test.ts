@@ -50,7 +50,7 @@ describe("reduceActivityPresentationState", () => {
         content: coworkerWork(0),
       }),
     );
-    expect(state.activities.act_1?.activityRevision).toBe(0);
+    expect(state.activities.act_1?.content.activityRevision).toBe(0);
 
     state = reduceActivityPresentationState(
       state,
@@ -65,7 +65,7 @@ describe("reduceActivityPresentationState", () => {
         ],
       }),
     );
-    expect(state.activities.act_1).toMatchObject({
+    expect(state.activities.act_1?.content).toMatchObject({
       activityRevision: 1,
       phase: "interrupted",
     });
@@ -97,7 +97,7 @@ describe("reduceActivityPresentationState", () => {
         ],
       }),
     );
-    expect(state.activities.act_1).toMatchObject({ phase: "running" });
+    expect(state.activities.act_1?.content).toMatchObject({ phase: "running" });
     expect(state.needActivitySnapshots.act_1).toBe(true);
 
     state = reduceActivityPresentationState(
@@ -113,7 +113,7 @@ describe("reduceActivityPresentationState", () => {
         ],
       }),
     );
-    expect(state.activities.act_1).toMatchObject({ phase: "running" });
+    expect(state.activities.act_1?.content).toMatchObject({ phase: "running" });
     expect(state.needActivitySnapshots.act_1).toBe(true);
 
     state = reduceActivityPresentationState(
@@ -126,7 +126,10 @@ describe("reduceActivityPresentationState", () => {
         content: coworkerWork(4, "finished"),
       }),
     );
-    expect(state.activities.act_1).toMatchObject({ activityRevision: 4, phase: "finished" });
+    expect(state.activities.act_1?.content).toMatchObject({
+      activityRevision: 4,
+      phase: "finished",
+    });
     expect(state.needActivitySnapshots.act_1).toBeUndefined();
   });
 
@@ -155,7 +158,7 @@ describe("reduceActivityPresentationState", () => {
         ],
       }),
     );
-    expect(state.activities.act_1?.activityType).toBe("forgeroom.coworker_work.v1");
+    expect(state.activities.act_1?.content.activityType).toBe("forgeroom.coworker_work.v1");
     expect(state.needActivitySnapshots.act_1).toBe(true);
   });
 
@@ -191,7 +194,7 @@ describe("reduceActivityPresentationState", () => {
       logicalThreadId: "thread_other",
     };
     state = reduceActivityPresentationState(state, otherLane);
-    expect(state.activities.act_1).toMatchObject({
+    expect(state.activities.act_1?.content).toMatchObject({
       coworkerId: "cw_1",
       activityRevision: 2,
       phase: "running",
@@ -212,7 +215,7 @@ describe("reduceActivityPresentationState", () => {
         content: coworkerWork(1, "finished"),
       }),
     );
-    expect(state.activities.act_1?.activityRevision).toBe(2);
+    expect(state.activities.act_1?.content.activityRevision).toBe(2);
     expect(state.needActivitySnapshots.act_1).toBe(true);
   });
 
@@ -232,5 +235,44 @@ describe("reduceActivityPresentationState", () => {
     );
     expect(state.activities.act_missing).toBeUndefined();
     expect(state.needActivitySnapshots.act_missing).toBe(true);
+  });
+
+  it("keeps non-coworker_work activities on their emitting lane", () => {
+    const taskContent = {
+      schemaVersion: 1 as const,
+      activityRevision: 0,
+      activityType: "forgeroom.task_record.v1" as const,
+      taskId: "task_1",
+      revision: 1,
+      status: "todo" as const,
+      title: "Triage",
+    };
+    let state = reduceActivityPresentationState(initialActivityPresentationState(), {
+      schemaVersion: 1,
+      channelId: "ch_1",
+      channelSequence: 1,
+      actorKind: "system",
+      aguiEvent: {
+        type: "ACTIVITY_SNAPSHOT",
+        messageId: "act_task",
+        activityType: "forgeroom.task_record.v1",
+        replace: true,
+        content: taskContent,
+      },
+    });
+    expect(state.activities.act_task?.owner.actorKind).toBe("system");
+
+    state = reduceActivityPresentationState(
+      state,
+      coworkerEnvelope(2, {
+        type: "ACTIVITY_SNAPSHOT",
+        messageId: "act_task",
+        activityType: "forgeroom.task_record.v1",
+        replace: true,
+        content: { ...taskContent, activityRevision: 3, title: "Hijacked" },
+      }),
+    );
+    expect(state.activities.act_task?.content.title).toBe("Triage");
+    expect(state.needActivitySnapshots.act_task).toBe(true);
   });
 });
