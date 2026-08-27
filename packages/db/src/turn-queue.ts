@@ -95,9 +95,7 @@ function resolveClaimGenerationBinding(input: {
   inputType: TurnQueueInputType;
   boundGenerationId: string | null;
   currentGenerationId: string | null;
-}):
-  | { ok: true; boundGenerationId: string }
-  | Extract<ClaimTurnQueueItemResult, { ok: false }> {
+}): { ok: true; boundGenerationId: string } | Extract<ClaimTurnQueueItemResult, { ok: false }> {
   if (!input.currentGenerationId) {
     return { ok: false, reason: "missing_generation" };
   }
@@ -144,7 +142,9 @@ export async function enqueueTurnQueueItem(
     `;
     const fifoSequence = (locked[0]?.fifo_sequence ?? -1) + 1;
     const bound =
-      input.inputType === "normal" ? (input.boundSessionGenerationId ?? null) : input.boundSessionGenerationId!;
+      input.inputType === "normal"
+        ? (input.boundSessionGenerationId ?? null)
+        : input.boundSessionGenerationId!;
     await tx`
       INSERT INTO turn_queue_items (
         id, channel_agent_session_id, run_step_id, bound_session_generation_id, input_type,
@@ -387,9 +387,7 @@ export async function reclaimExpiredTurnQueueLease(
     if (item.state !== "claimed") {
       return { ok: true, reclaimed: false, reason: "not_claimed" };
     }
-    const expiresAt = item.lease_expires_at
-      ? new Date(item.lease_expires_at).toISOString()
-      : null;
+    const expiresAt = item.lease_expires_at ? new Date(item.lease_expires_at).toISOString() : null;
     if (expiresAt && expiresAt > now) {
       return { ok: true, reclaimed: false, reason: "lease_active" };
     }

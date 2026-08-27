@@ -1,9 +1,5 @@
 import { internalWorkerCommandSchema, type InternalWorkerCommand } from "@forgeroom/contracts";
-import {
-  claimTurnQueueItem,
-  createSql,
-  type ClaimTurnQueueItemResult,
-} from "@forgeroom/db";
+import { claimTurnQueueItem, createSql, type ClaimTurnQueueItemResult } from "@forgeroom/db";
 import { startWorker } from "@forgeroom/orchestration";
 
 export function parseWorkerCommand(input: unknown): InternalWorkerCommand {

@@ -30,19 +30,27 @@ describe("turn queue priorities", () => {
 
 describe("claim eligibility", () => {
   it("blocks rotating, disabled, and busy sessions", () => {
-    expect(evaluateClaimEligibility({ sessionState: "rotating", hasRemoteActiveTurn: false })).toEqual({
+    expect(
+      evaluateClaimEligibility({ sessionState: "rotating", hasRemoteActiveTurn: false }),
+    ).toEqual({
       ok: false,
       reason: "session_rotating",
     });
-    expect(evaluateClaimEligibility({ sessionState: "disabled", hasRemoteActiveTurn: false })).toEqual({
+    expect(
+      evaluateClaimEligibility({ sessionState: "disabled", hasRemoteActiveTurn: false }),
+    ).toEqual({
       ok: false,
       reason: "session_disabled",
     });
-    expect(evaluateClaimEligibility({ sessionState: "active", hasRemoteActiveTurn: true })).toEqual({
-      ok: false,
-      reason: "session_busy",
-    });
-    expect(evaluateClaimEligibility({ sessionState: "active", hasRemoteActiveTurn: false })).toEqual({
+    expect(evaluateClaimEligibility({ sessionState: "active", hasRemoteActiveTurn: true })).toEqual(
+      {
+        ok: false,
+        reason: "session_busy",
+      },
+    );
+    expect(
+      evaluateClaimEligibility({ sessionState: "active", hasRemoteActiveTurn: false }),
+    ).toEqual({
       ok: true,
     });
   });

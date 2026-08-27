@@ -22,8 +22,7 @@ export function priorityForInputType(inputType: TurnQueueInputType): number {
 export type ChannelAgentSessionClaimState = "active" | "rotating" | "disabled";
 
 export type ClaimEligibility =
-  | { ok: true }
-  | { ok: false; reason: "session_rotating" | "session_disabled" | "session_busy" };
+  { ok: true } | { ok: false; reason: "session_rotating" | "session_disabled" | "session_busy" };
 
 /** Pure eligibility before a claim transaction. */
 export function evaluateClaimEligibility(input: {
@@ -50,7 +49,9 @@ export function resolveClaimGenerationBinding(input: {
   inputType: TurnQueueInputType;
   boundGenerationId: string | null;
   currentGenerationId: string | null;
-}): { ok: true; boundGenerationId: string } | { ok: false; reason: "missing_generation" | "stale_generation" } {
+}):
+  | { ok: true; boundGenerationId: string }
+  | { ok: false; reason: "missing_generation" | "stale_generation" } {
   if (!input.currentGenerationId) {
     return { ok: false, reason: "missing_generation" };
   }
