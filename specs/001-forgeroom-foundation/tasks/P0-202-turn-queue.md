@@ -1,9 +1,10 @@
 ---
 id: P0-202
 title: Implement per-session serial turn queue
-status: in_progress
+status: done
 owner: cursor-agent
 started: 2026-08-26
+completed: 2026-08-26
 depends_on: [P0-103, P0-201]
 requirements: [RUN-002, RUN-003]
 specs: [../runtime.md#serial-turn-queue, ../data-model.md#sessions-runs-and-queue]

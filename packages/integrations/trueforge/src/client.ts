@@ -1,4 +1,11 @@
-import type { CreateSessionInput, TrueForgeClientOptions, TrueForgeSession } from "./types";
+import type {
+  CreateSessionInput,
+  CreateTurnInput,
+  TrueForgeClientOptions,
+  TrueForgeSession,
+  TrueForgeTurn,
+  TrueForgeTurnEvent,
+} from "./types";
 
 function trimTrailingSlash(url: string): string {
   return url.replace(/\/+$/, "");
@@ -31,6 +38,52 @@ export class TrueForgeClient {
       `/api/v1/sessions/${encodeURIComponent(sessionId)}`,
     );
     return unwrapSession(payload);
+  }
+
+  async createTurn(sessionId: string, input: CreateTurnInput): Promise<TrueForgeTurn> {
+    const payload = await this.request<unknown>(
+      "POST",
+      `/api/v1/sessions/${encodeURIComponent(sessionId)}/turns`,
+      {
+        input: input.input,
+        previous_turn_id: input.previousTurnId,
+        stream: input.stream ?? false,
+      },
+    );
+    return unwrapTurn(payload);
+  }
+
+  async listTurns(
+    sessionId: string,
+    options: { limit?: number; pageToken?: string } = {},
+  ): Promise<{ turns: TrueForgeTurn[]; nextPageToken: string | null }> {
+    const params = new URLSearchParams();
+    if (options.limit !== undefined) {
+      params.set("limit", String(options.limit));
+    }
+    if (options.pageToken) {
+      params.set("page_token", options.pageToken);
+    }
+    const query = params.toString();
+    const path = `/api/v1/sessions/${encodeURIComponent(sessionId)}/turns${query ? `?${query}` : ""}`;
+    const payload = await this.request<unknown>("GET", path);
+    return unwrapTurnList(payload);
+  }
+
+  async getTurn(sessionId: string, turnId: string): Promise<TrueForgeTurn> {
+    const payload = await this.request<unknown>(
+      "GET",
+      `/api/v1/sessions/${encodeURIComponent(sessionId)}/turns/${encodeURIComponent(turnId)}`,
+    );
+    return unwrapTurn(payload);
+  }
+
+  async listTurnEvents(sessionId: string, turnId: string): Promise<TrueForgeTurnEvent[]> {
+    const payload = await this.request<unknown>(
+      "GET",
+      `/api/v1/sessions/${encodeURIComponent(sessionId)}/turns/${encodeURIComponent(turnId)}/events`,
+    );
+    return unwrapTurnEvents(payload);
   }
 
   private async request<T>(method: string, path: string, body?: unknown): Promise<T> {
@@ -90,6 +143,51 @@ function unwrapSession(payload: unknown): TrueForgeSession {
     created_at: String(row.created_at ?? ""),
     updated_at: String(row.updated_at ?? ""),
   };
+}
+
+function unwrapTurn(payload: unknown): TrueForgeTurn {
+  const data =
+    payload && typeof payload === "object" && "data" in payload
+      ? (payload as { data: unknown }).data
+      : payload;
+  if (!data || typeof data !== "object" || !("id" in data) || typeof data.id !== "string") {
+    throw new Error("TrueForge turn response missing id");
+  }
+  const row = data as Record<string, unknown>;
+  return {
+    id: row.id as string,
+    session_id: String(row.session_id ?? ""),
+    previous_turn_id: (row.previous_turn_id as string | null | undefined) ?? null,
+    input: Array.isArray(row.input) ? (row.input as TrueForgeTurn["input"]) : [],
+    state: (row.state as TrueForgeTurn["state"]) ?? { status: "unknown" },
+    created_at: String(row.created_at ?? ""),
+  };
+}
+
+function unwrapTurnList(payload: unknown): {
+  turns: TrueForgeTurn[];
+  nextPageToken: string | null;
+} {
+  const root = payload && typeof payload === "object" ? (payload as Record<string, unknown>) : {};
+  const data = Array.isArray(root.data) ? root.data : [];
+  const pagination =
+    root.pagination && typeof root.pagination === "object"
+      ? (root.pagination as Record<string, unknown>)
+      : {};
+  return {
+    turns: data.map((row) => unwrapTurn(row)),
+    nextPageToken:
+      typeof pagination.next_page_token === "string" ? pagination.next_page_token : null,
+  };
+}
+
+function unwrapTurnEvents(payload: unknown): TrueForgeTurnEvent[] {
+  const root = payload && typeof payload === "object" ? (payload as Record<string, unknown>) : {};
+  const data = Array.isArray(root.data) ? root.data : Array.isArray(payload) ? payload : [];
+  return data.filter(
+    (row): row is TrueForgeTurnEvent =>
+      !!row && typeof row === "object" && typeof (row as { type?: unknown }).type === "string",
+  );
 }
 
 export function loadTrueForgeClientFromEnv(

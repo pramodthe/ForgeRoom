@@ -31,7 +31,8 @@ describe("standalone worker process", () => {
         })
       ).command.name,
     ).toBe("claim_queue_item");
-    expect(executed).toEqual(["cmd_1"]);
+    // Without a SQL client, claim is unavailable and the executor must not run.
+    expect(executed).toEqual([]);
 
     await expect(
       handle.dispatchCommand({
@@ -60,7 +61,7 @@ describe("standalone worker process", () => {
         },
       }),
     ).rejects.toThrow();
-    expect(executed).toEqual(["cmd_1"]);
+    expect(executed).toEqual([]);
   });
 
   it("claims a queued item through the worker boundary without holding a network call", async () => {
