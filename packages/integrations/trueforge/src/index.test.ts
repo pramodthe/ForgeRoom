@@ -14,6 +14,7 @@ describe("TrueForge boundary", () => {
       nativeSubagents: "disabled",
       iframe_v1: "disabled",
       credentials: "server-side-only",
+      mcpRegistration: "header-auth",
     });
   });
 });

@@ -36,6 +36,38 @@ function readTextDelta(raw: Record<string, unknown>): string | null {
   );
 }
 
+/** Stable interrupt refs from TrueForge required_actions (provider action ids). */
+export function extractRequiredActionInterruptRefs(
+  raw: Record<string, unknown>,
+): Array<{ id: string; reason?: string }> {
+  const state =
+    raw.state && typeof raw.state === "object" && !Array.isArray(raw.state)
+      ? (raw.state as Record<string, unknown>)
+      : raw;
+  const required =
+    (Array.isArray(state.required_actions) ? state.required_actions : null) ??
+    (Array.isArray(state.requiredActions) ? state.requiredActions : null) ??
+    [];
+  const refs: Array<{ id: string; reason?: string }> = [];
+  for (const item of required) {
+    if (!item || typeof item !== "object") continue;
+    const record = item as Record<string, unknown>;
+    const id =
+      readString(record.id) ??
+      readString(record.provider_action_id) ??
+      readString(record.providerActionId);
+    if (!id) continue;
+    const type = (readString(record.type) ?? "").toLowerCase();
+    const reason = type.includes("approval")
+      ? "approval_required"
+      : type.includes("auth") || type.includes("connection")
+        ? "connection_required"
+        : "input_required";
+    refs.push({ id, reason });
+  }
+  return refs;
+}
+
 export function shouldDiscardTrueForgeEventType(type: string): boolean {
   return (
     type === "RAW" ||
@@ -229,14 +261,20 @@ export class TrueForgeAGUIAdapter {
     const events = this.endAssistantText();
     const outcome = evaluateTurnDoneOutcome(raw);
     if (outcome.kind === "required_actions") {
-      events.push(
-        this.validate({
-          type: EventType.RUN_FINISHED,
-          threadId: this.context.logicalThreadId,
-          runId: this.context.aguiRunId,
-          outcome: {
-            type: "interrupt",
-            interrupts: [
+      const requiredActions = extractRequiredActionInterruptRefs(raw);
+      const interrupts =
+        requiredActions.length > 0
+          ? requiredActions.map((action) => ({
+              id: action.id,
+              reason:
+                action.reason ??
+                (outcome.runStepState === "awaiting_approval"
+                  ? "approval_required"
+                  : "input_required"),
+              message: "Additional human action is required before this turn can continue.",
+              metadata: this.metadata,
+            }))
+          : [
               {
                 id: opaqueMessageId("int_req"),
                 reason:
@@ -246,7 +284,15 @@ export class TrueForgeAGUIAdapter {
                 message: "Additional human action is required before this turn can continue.",
                 metadata: this.metadata,
               },
-            ],
+            ];
+      events.push(
+        this.validate({
+          type: EventType.RUN_FINISHED,
+          threadId: this.context.logicalThreadId,
+          runId: this.context.aguiRunId,
+          outcome: {
+            type: "interrupt",
+            interrupts,
           },
           metadata: this.metadata,
         }),

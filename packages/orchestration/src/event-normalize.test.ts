@@ -93,6 +93,20 @@ describe("event normalization", () => {
     expect(
       evaluateTurnDoneOutcome({
         type: "turn.done",
+        state: {
+          required_actions: [{ type: "mcp.auth_required", id: "ra_conn" }],
+        },
+      }),
+    ).toEqual({
+      kind: "required_actions",
+      agentTurnState: "required_actions",
+      runStepState: "blocked_connection",
+      requiredActionCount: 1,
+    });
+
+    expect(
+      evaluateTurnDoneOutcome({
+        type: "turn.done",
         requiredActions: [],
       }),
     ).toEqual({

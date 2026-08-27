@@ -8,6 +8,10 @@ import { createWorkspaceService, type WorkspaceService } from "./workspace/servi
 import { mountWorkspaceRoutes } from "./workspace/routes";
 import { createComponentService, type ComponentService } from "./components/service";
 import { mountComponentRoutes } from "./components/routes";
+import { createApprovalService, type ApprovalService } from "./approvals/service";
+import { mountApprovalRoutes } from "./approvals/routes";
+import { createConnectionService, type ConnectionService } from "./connections/service";
+import { mountConnectionRoutes } from "./connections/routes";
 import type { createSql } from "@forgeroom/db";
 import type { TrueForgeClient } from "@forgeroom/trueforge";
 
@@ -16,6 +20,8 @@ export function createApiApp(options?: {
   auth?: AuthService;
   workspace?: WorkspaceService;
   components?: ComponentService;
+  approvals?: ApprovalService;
+  connections?: ConnectionService;
   trueforgeClient?: TrueForgeClient;
   sql?: ReturnType<typeof createSql>;
 }) {
@@ -28,6 +34,17 @@ export function createApiApp(options?: {
     (workspace
       ? createComponentService({
           workspace,
+          ...(options?.sql ? { sql: options.sql } : {}),
+        })
+      : undefined);
+  const approvals =
+    options?.approvals ??
+    (env && options?.sql ? createApprovalService({ env, sql: options.sql }) : undefined);
+  const connections =
+    options?.connections ??
+    (env
+      ? createConnectionService({
+          env,
           ...(options?.sql ? { sql: options.sql } : {}),
         })
       : undefined);
@@ -64,6 +81,12 @@ export function createApiApp(options?: {
     mountWorkspaceRoutes(app, { env, auth, workspace });
     if (components) {
       mountComponentRoutes(app, { env, auth, components });
+    }
+    if (approvals) {
+      mountApprovalRoutes(app, { env, auth, approvals });
+    }
+    if (connections) {
+      mountConnectionRoutes(app, { env, auth, connections });
     }
     mountAgUiRoutes(app, {
       env,

@@ -7,7 +7,11 @@ export type AgUiCoworkerCapabilities = {
   threadId: string;
   channelId: string;
   coworkerId: string;
-  resume: { enabled: false; reason: "owned_by_P0-308" };
+  resume: {
+    enabled: true;
+    via: "pause_group_service";
+    reason: "delegates_to_P0-308_cas_idempotency_service";
+  };
   reasoning: { supported: false };
   nativeSubagents: { supported: false };
   openGeneratedUi: { supported: false };
@@ -30,7 +34,11 @@ export function buildAgUiCoworkerCapabilities(input: {
     threadId: input.logicalThreadId,
     channelId: input.channelId,
     coworkerId: input.coworkerId,
-    resume: { enabled: false, reason: "owned_by_P0-308" },
+    resume: {
+      enabled: true,
+      via: "pause_group_service",
+      reason: "delegates_to_P0-308_cas_idempotency_service",
+    },
     reasoning: { supported: false },
     nativeSubagents: { supported: false },
     openGeneratedUi: { supported: false },

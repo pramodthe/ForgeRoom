@@ -1,0 +1,73 @@
+{
+  "schemaVersion": 1,
+  "task": "P0-208",
+  "verifiedAt": "2026-08-27",
+  "note": "Redacted session-rotation evidence. No credentials or full TrueForge session payloads.",
+  "capabilityIntersection": {
+    "layers": [
+      "workspace_policy",
+      "channel_grant",
+      "coworker_grant",
+      "connector_allowlist",
+      "pinned_account_active",
+      "agent_spec_enable_tools"
+    ],
+    "emptyGrantYieldsZeroTools": true,
+    "accountRevokeYieldsZeroTools": true
+  },
+  "rotationScenarios": [
+    {
+      "reason": "grant_add",
+      "restriction": false,
+      "cancelActiveTurn": false,
+      "staleActions": false
+    },
+    {
+      "reason": "grant_remove",
+      "restriction": true,
+      "cancelActiveTurn": true,
+      "staleActions": true,
+      "claimsBlockedWhileRotating": true
+    },
+    {
+      "reason": "account_revoke",
+      "restriction": true,
+      "mcpInFlight": {
+        "denyByClaim": false,
+        "outcome": "unknown",
+        "honest": true,
+        "needsAttention": true
+      }
+    },
+    {
+      "reason": "policy_tighten",
+      "restriction": true,
+      "staleProposals": true,
+      "stalePauseGroups": true
+    }
+  ],
+  "generationSwap": {
+    "insertsImmutableSessionRevision": true,
+    "insertsGenerationHistoryRow": true,
+    "swapsCurrentGenerationIdAtomically": true,
+    "retainsOldTrueforgeSessionId": true,
+    "retainsOldEffectiveSpecHash": true,
+    "oldGenerationAcceptsNewWork": false,
+    "normalQueueItemsRebound": true,
+    "responseIntentsNeverMigrate": true
+  },
+  "redactedHashes": {
+    "sampleEffectiveSpecHashPrefix": "sha256:cdcd…",
+    "sampleApprovalPolicyHashPrefix": "sha256:efef…",
+    "oldTrueforgeSessionId": "tf_sess_1",
+    "newTrueforgeSessionIdPattern": "tf_sess_*"
+  },
+  "skillAttach": {
+    "cannotExpandToolsOrAccounts": true,
+    "rotatesAffectedSessionsOnly": true
+  },
+  "componentTools": {
+    "grantIntersectionRequired": true,
+    "callTimeRecheckFailsStaleDescriptor": true
+  }
+}

@@ -1,7 +1,7 @@
 ---
 id: P0-311
 title: Implement Daytona sandbox event path
-status: blocked
+status: ready
 owner: unassigned
 depends_on: [P0-201, P0-203]
 requirements: [SB-001, SB-002]

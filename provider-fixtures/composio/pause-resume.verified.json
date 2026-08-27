@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "status": "verified",
+  "ownerTask": "P0-308",
+  "verification": "unit+integration",
+  "probeDate": "2026-08-27",
+  "note": "Redacted atomic PauseResume sample. Secrets and raw credentials absent. Ciphertext shown only as version marker.",
+  "pauseResume": {
+    "cas": "ready→resuming",
+    "uniquePerPauseGroup": true,
+    "responsePayloadCiphertext": "enc:v1:…",
+    "persistedBeforeNetwork": true,
+    "states": ["intended", "claimed", "creating", "uncertain", "completed", "reconciled", "failed"]
+  },
+  "responseOnlyTurn": {
+    "inputTypes": ["user.tool_approval", "user.tool_response"],
+    "forbids": ["user.message"],
+    "previousTurnId": "paused_trueforge_turn_id",
+    "reconcile": "history_by_predecessor_and_input_hash_never_blind_retry"
+  },
+  "agUiResume": {
+    "enabled": true,
+    "via": "pause_group_service",
+    "rejects": ["forged_interrupt_ids", "decision_bearing_payloads", "partial_resume", "incomplete_group"]
+  },
+  "ciphertextExpiry": {
+    "recoveryWindow": "24h_after_completed_or_reconciled",
+    "retains": ["response_payload_hash", "response_redacted_json"]
+  }
+}

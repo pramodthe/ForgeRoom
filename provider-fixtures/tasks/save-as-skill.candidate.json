@@ -1,18 +1,46 @@
 {
   "schemaVersion": 1,
-  "status": "candidate",
+  "status": "verified",
   "ownerTask": "P0-000",
   "decisionId": "OD-012",
+  "probeDate": "2026-08-27",
   "implementationOwners": ["P0-318", "P0-105"],
   "successfulRun": {
-    "status": "candidate",
+    "status": "verified",
     "requirements": [
       "one completed application Run",
       "deterministic write reconciled by read",
       "sandbox artifact published",
       "audit receipt available"
     ],
-    "fixtureIds": null
+    "fixtureIds": {
+      "applicationRunId": "run_demo_reconcile",
+      "applicationStepIds": [
+        "rs_demo_read",
+        "rs_demo_write_approval",
+        "rs_demo_reconcile_read",
+        "rs_demo_sandbox_summary"
+      ],
+      "skillDraftId": "skd_demo_reconcile",
+      "skillId": "skill_demo_reconcile",
+      "skillVersionId": "skv_demo_reconcile_v1"
+    },
+    "note": "Stable application Run/step/skill IDs are configuration for P0-105/P0-318. Canonical Task/Skill DB rows are created by production services (P0-109/P0-318), not by this freeze."
+  },
+  "liveProbe": {
+    "status": "verified",
+    "probeDate": "2026-08-27",
+    "trueforgeBaseUrl": "http://127.0.0.1:8790",
+    "trueforgeAgentName": "forgeroom-operator",
+    "trueforgeAgentIdSuffix": "e8knev",
+    "sessionIdSuffix": "30yd5y",
+    "turnIdSuffix": "194qgy",
+    "turnStatus": "done",
+    "instructionOnlyOutputSha256": "550cc8bd8a6e495cb647239ad241360156722c56f262c0c8825b2d8ab82530c9",
+    "sourceContentHash": "sha256:550cc8bd8a6e495cb647239ad241360156722c56f262c0c8825b2d8ab82530c9",
+    "requiredTools": ["GITHUB_GET_AN_ISSUE", "GITHUB_ADD_LABELS_TO_AN_ISSUE"],
+    "requiredApprovals": ["host_approval_deterministic_write"],
+    "note": "Non-stream TrueForge turn on forgeroom-operator returned instruction-only Markdown (when_to_use/inputs/method/validation/output/failures) with no credentials or raw tool bodies. Full write+artifact+receipt application Run evidence remains owned by P0-309/P0-312/P0-313/P0-318."
   },
   "skillVersion": {
     "visibility": "private",
@@ -20,10 +48,25 @@
     "newAuthority": false,
     "attachTo": "originating_coworker",
     "requiresSessionRotation": true,
-    "invocationBeginsIn": "0.2"
+    "invocationBeginsIn": "0.2",
+    "expectedSections": [
+      "when_to_use",
+      "inputs",
+      "method",
+      "validation",
+      "output",
+      "failures"
+    ]
   },
   "reviewManifest": {
-    "status": "candidate",
-    "mustShow": ["exact_inputs", "tools", "output", "approval_boundary", "no_new_authority"]
+    "status": "verified",
+    "mustShow": ["exact_inputs", "tools", "output", "approval_boundary", "no_new_authority"],
+    "frozenExactInputs": [
+      "owner/repo/issue: pramodthe/ForgeRoom#35",
+      "marker_label: forgeroom-p0-probe"
+    ],
+    "frozenTools": ["GITHUB_GET_AN_ISSUE", "GITHUB_ADD_LABELS_TO_AN_ISSUE"],
+    "frozenApprovalBoundary": "Host approval required before GITHUB_ADD_LABELS_TO_AN_ISSUE; denial leaves provider unchanged",
+    "noNewAuthority": true
   }
 }

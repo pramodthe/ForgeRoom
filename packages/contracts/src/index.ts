@@ -197,11 +197,22 @@ export {
   connectionStatusSchema,
   connectionTestCommandSchema,
   connectionReconnectCommandSchema,
+  connectionToolDescriptorSchema,
+  connectionStatusViewSchema,
+  connectionListItemSchema,
+  connectionTestResultSchema,
+  connectionReconnectResultSchema,
+  connectionReconnectStatusSchema,
 } from "./connections";
 export type {
   ConnectionStatus,
   ConnectionTestCommand,
   ConnectionReconnectCommand,
+  ConnectionStatusView,
+  ConnectionListItem,
+  ConnectionTestResult,
+  ConnectionReconnectResult,
+  ConnectionReconnectStatus,
 } from "./connections";
 
 export {
@@ -209,7 +220,10 @@ export {
   pauseGroupStateSchema,
   actionProposalSchema,
   actionProposalStateSchema,
+  approvalDecisionKindSchema,
   approvalDecisionCommandSchema,
+  approvalCardSchema,
+  approvalDecisionResultSchema,
   requiredActionTypeSchema,
   requiredActionStateSchema,
   requiredActionSchema,
@@ -230,7 +244,10 @@ export type {
   ActingIdentity,
   ActionProposal,
   ActionProposalState,
+  ApprovalDecisionKind,
   ApprovalDecisionCommand,
+  ApprovalCard,
+  ApprovalDecisionResult,
   Question,
   QuestionAnswerCommand,
 } from "./pause";

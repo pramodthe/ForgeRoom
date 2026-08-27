@@ -49,6 +49,7 @@ export function mountAgUiRoutes(
     workspace: options.workspace,
     ...(options.trueforgeClient ? { trueforgeClient: options.trueforgeClient } : {}),
     ...(options.sql ? { sql: options.sql } : {}),
+    pausePayloadEncryptionSecret: options.env.pausePayloadEncryptionSecret,
   });
 
   app.get("/api/ag-ui/channels/:channelId/coworkers/:coworkerId/capabilities", async (c) => {

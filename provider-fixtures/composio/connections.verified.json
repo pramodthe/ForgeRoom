@@ -1,0 +1,54 @@
+{
+  "schemaVersion": 1,
+  "status": "verified",
+  "ownerTask": "P0-304",
+  "probeDate": "2026-08-27",
+  "decisionRefs": ["ADR-003", "CN-001", "CN-005", "CN-006", "TL-008", "TL-011"],
+  "connection": {
+    "id": "connection_composio_github",
+    "provider": "composio",
+    "toolkit": "github",
+    "trueforgeConnector": "composio_github",
+    "ownerClass": "workspace_service",
+    "accountSuffix": "nizY",
+    "status": "active",
+    "blocksDispatch": false,
+    "runStepState": null,
+    "scopesSample": ["codespace", "gist", "notifications", "project", "repo", "user", "workflow"],
+    "tools": [
+      "GITHUB_GET_AN_ISSUE",
+      "GITHUB_ADD_LABELS_TO_AN_ISSUE",
+      "GITHUB_REMOVE_A_LABEL_FROM_AN_ISSUE"
+    ],
+    "descriptorHashPrefix": "sha256:",
+    "catalogBrowseAllowed": false,
+    "accountSelectionAllowed": false,
+    "capabilityExpansionAllowed": false
+  },
+  "test": {
+    "tool": "GITHUB_GET_AN_ISSUE",
+    "mode": "read_only",
+    "ok": true
+  },
+  "reconnect": {
+    "endpoint": "POST /api/v3.1/connected_accounts/link",
+    "workspaceBound": true,
+    "provisionalAccountAdoptedAsPin": false,
+    "note": "Connect Link may allocate a provisional connected_account_id; ForgeRoom keeps the pinned account and rejects fallback selection."
+  },
+  "expiry": {
+    "mapsTo": "blocked_connection",
+    "fallbackAccountSelected": false
+  },
+  "closedEndpoints": [
+    "/api/connections/catalog",
+    "/api/connections/accounts"
+  ],
+  "forbiddenInGit": [
+    "connectedAccountId",
+    "COMPOSIO_API_KEY",
+    "COMPOSIO_AUTH_CONFIG_ID",
+    "link_token",
+    "access_token"
+  ]
+}

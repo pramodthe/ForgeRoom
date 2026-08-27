@@ -237,6 +237,23 @@ describe("approval and question bindings", () => {
         expected_session_generation: proposal.session_generation_id,
       }).success,
     ).toBe(false);
+    expect(
+      approvalDecisionCommandSchema.safeParse({
+        decision: "request_changes",
+        expected_arguments_hash: HASH,
+        expected_descriptor_hash: HASH,
+        expected_session_generation: 3,
+      }).success,
+    ).toBe(false);
+    expect(
+      approvalDecisionCommandSchema.parse({
+        decision: "request_changes",
+        expected_arguments_hash: HASH,
+        expected_descriptor_hash: HASH,
+        expected_session_generation: 3,
+        reason: "Please use a safer label",
+      }).decision,
+    ).toBe("request_changes");
   });
 
   it("rejects missing authority bindings and invalid execution metadata", () => {

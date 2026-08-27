@@ -1,7 +1,7 @@
 ---
 id: P0-213
 title: Implement conversational CoworkerDrafts and confirmed provisioning
-status: blocked
+status: ready
 owner: unassigned
 depends_on: [P0-106, P0-208]
 requirements: [AG-010, AG-011, AG-012, CW-001, CW-002, CW-003, CW-004, CW-005, CW-006]

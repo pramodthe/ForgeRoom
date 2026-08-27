@@ -56,6 +56,9 @@ importers:
       '@forgeroom/ag-ui':
         specifier: workspace:*
         version: link:../../packages/integrations/ag-ui
+      '@forgeroom/composio':
+        specifier: workspace:*
+        version: link:../../packages/integrations/composio
       '@forgeroom/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts

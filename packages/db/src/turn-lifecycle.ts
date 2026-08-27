@@ -16,7 +16,7 @@ export type TurnDoneOutcomeInput =
   | {
       kind: "required_actions";
       agentTurnState: "required_actions";
-      runStepState: "awaiting_approval" | "awaiting_input";
+      runStepState: "awaiting_approval" | "awaiting_input" | "blocked_connection";
       requiredActionCount: number;
     }
   | {

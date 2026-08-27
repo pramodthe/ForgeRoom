@@ -1,9 +1,10 @@
 ---
 id: P0-105
 title: Build idempotent demo fixtures
-status: in_progress
+status: done
 owner: cursor-agent
 started: 2026-08-26
+completed: 2026-08-27
 depends_on: [P0-000, P0-103, P0-104]
 requirements: [AG-001, AG-010, TR-001, SK-001]
 specs: [../demo.md#demo-fixture-requirements]
@@ -56,6 +57,6 @@ Requirements: AG-001, AG-010, TR-001, SK-001
 Changed: packages/test-fixtures/**, scripts/demo-fixtures.mjs, package.json, provider-fixtures/demo-seed.verified.json, task-record reset command, demo.md
 Verified: pnpm --filter @forgeroom/test-fixtures test; pnpm fixtures:seed; fixtures:reset --no-provider; provider-only reset
 Evidence: provider-fixtures/demo-seed.verified.json
-Open risks: none for seed/reset; P0-000 still has Save-as-skill Run / artifact path open
-Next: PR + Qodo; then continue product tasks (e.g. P0-403 or TrueForge runtime)
+Open risks: none for seed/reset; P0-000 Save-as-skill Run binding completed 2026-08-27
+Next: none — task done (merged via PR #22); continue product tasks
 ~~~
