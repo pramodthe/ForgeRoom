@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./session": "./src/session.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit",
@@ -12,7 +13,8 @@
     "build": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@forgeroom/contracts": "workspace:*"
+    "@forgeroom/contracts": "workspace:*",
+    "@forgeroom/trueforge": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "catalog:",

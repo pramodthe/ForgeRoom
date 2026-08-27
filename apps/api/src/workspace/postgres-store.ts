@@ -603,6 +603,56 @@ export function createPostgresWorkspaceStore(sql: SqlClient): WorkspaceCatalogSt
           },
         });
     },
+    async persistProvisionedSession(input) {
+      await sql.begin(async (tx) => {
+        await tx`
+          INSERT INTO session_revisions (
+            id, agent_profile_id, source_config_revision, effective_config_redacted_json,
+            effective_spec_hash, approval_policy_hash, created_by, created_at
+          ) VALUES (
+            ${input.revision.id}, ${input.revision.agentProfileId}, ${input.revision.sourceConfigRevision},
+            ${JSON.stringify(input.revision.effectiveConfigRedactedJson)}::jsonb,
+            ${input.revision.effectiveSpecHash}, ${input.revision.approvalPolicyHash},
+            ${input.revision.createdBy}, ${input.revision.createdAt}
+          )
+          ON CONFLICT (id) DO NOTHING
+        `;
+        await tx`
+          INSERT INTO channel_agent_sessions (
+            id, workspace_id, channel_id, agent_profile_id, logical_agui_thread_id,
+            current_generation_id, last_delivered_channel_sequence, state, created_at, updated_at
+          ) VALUES (
+            ${input.logicalSession.id}, ${input.logicalSession.workspaceId}, ${input.logicalSession.channelId},
+            ${input.logicalSession.agentProfileId}, ${input.logicalSession.logicalAguiThreadId},
+            NULL, ${input.logicalSession.lastDeliveredChannelSequence}, ${input.logicalSession.state},
+            ${input.logicalSession.createdAt}, ${input.logicalSession.updatedAt}
+          )
+          ON CONFLICT (channel_id, agent_profile_id) DO UPDATE SET
+            state = EXCLUDED.state,
+            logical_agui_thread_id = EXCLUDED.logical_agui_thread_id,
+            updated_at = EXCLUDED.updated_at
+        `;
+        await tx`
+          INSERT INTO channel_agent_session_generations (
+            id, channel_agent_session_id, generation, agent_version_id, session_revision_id,
+            trueforge_session_id, effective_spec_hash, approval_policy_hash, active_turn_id,
+            state, created_at, retired_at
+          ) VALUES (
+            ${input.generation.id}, ${input.generation.channelAgentSessionId}, ${input.generation.generation},
+            ${input.generation.agentVersionId}, ${input.generation.sessionRevisionId},
+            ${input.generation.trueforgeSessionId}, ${input.generation.effectiveSpecHash},
+            ${input.generation.approvalPolicyHash}, ${input.generation.activeTurnId},
+            ${input.generation.state}, ${input.generation.createdAt}, ${input.generation.retiredAt}
+          )
+        `;
+        await tx`
+          UPDATE channel_agent_sessions
+          SET current_generation_id = ${input.generation.id},
+              updated_at = ${input.logicalSession.updatedAt}
+          WHERE id = ${input.logicalSession.id}
+        `;
+      });
+    },
     async insertCoworker(coworker, version) {
       await db.insert(agentProfiles).values({
         id: coworker.id,

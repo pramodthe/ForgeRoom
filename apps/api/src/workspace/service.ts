@@ -33,11 +33,13 @@ import {
   resolveMessageRecipients,
   type TurnCreationStatus,
 } from "@forgeroom/orchestration";
+import type { TrueForgeClient } from "@forgeroom/trueforge";
 import { randomOpaqueId } from "../auth/crypto";
 import { customAguiEvent, messageCreatedAguiEvent, pinAguiEvent } from "./event-builders";
 import { ChannelEventPersistenceError } from "./event-guard";
 import { createChannelEventHub, type ChannelEventHub } from "./event-hub";
 import { DEFAULT_EVENT_PAGE_SIZE, envelopeFromStoredEvent } from "./event-read";
+import { ensureCoworkerChannelSession } from "./session-provision";
 import {
   createMemoryWorkspaceStore,
   emptyEditableConfig,
@@ -406,10 +408,13 @@ export function createWorkspaceService(options?: {
   store?: WorkspaceCatalogStore;
   now?: () => Date;
   eventHub?: ChannelEventHub;
+  /** When set, adding a coworker to a channel provisions a TrueForge session generation. */
+  trueforgeClient?: TrueForgeClient;
 }): WorkspaceService {
   const store = options?.store ?? createMemoryWorkspaceStore();
   const now = options?.now ?? (() => new Date());
   const eventHub = options?.eventHub ?? createChannelEventHub();
+  const trueforgeClient = options?.trueforgeClient;
 
   function publish(result: { envelope: AgentChannelEnvelope }): void {
     eventHub.publish(result.envelope);
@@ -1112,6 +1117,16 @@ export function createWorkspaceService(options?: {
         run: async (): Promise<
           WorkspaceServiceResult<{ channel: Channel; participant_id: string }>
         > => {
+          if (trueforgeClient) {
+            await ensureCoworkerChannelSession({
+              store,
+              workspaceId: loaded.value.workspaceId,
+              channelId,
+              coworker,
+              createdBy: session.user.id,
+              client: trueforgeClient,
+            });
+          }
           const joinedAt = now().toISOString();
           const existing = await store.getParticipant(channelId, "coworker", input.participant_id);
           const written = await store.upsertParticipantMembership({

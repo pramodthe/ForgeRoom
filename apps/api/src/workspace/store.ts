@@ -19,6 +19,8 @@ export type CoworkerEditableConfig = {
   tool_grants: string[];
   skill_version_ids: string[];
   component_version_ids: string[];
+  /** When true, compiled TrueForge AgentSpec enables sandbox. */
+  sandbox?: boolean;
 };
 
 export type ChannelRecord = {
@@ -341,8 +343,36 @@ export type WorkspaceCatalogStore = {
   listCoworkers(workspaceId: string): Promise<CoworkerRecord[]>;
   /** Current channel/coworker session rows used for routing availability (may be empty pre-P0-201). */
   listChannelAgentSessions(channelId: string): Promise<ChannelAgentSessionRecord[]>;
-  /** Test/seed helper; production writers arrive with P0-201 session creation. */
+  /** Upsert stable logical session row; production writers also call persistProvisionedSession. */
   upsertChannelAgentSession(session: ChannelAgentSessionUpsertInput): Promise<void>;
+  /** Persist SessionRevision + immutable generation and point the logical session at it. */
+  persistProvisionedSession(input: {
+    logicalSession: ChannelAgentSessionRecord;
+    revision: {
+      id: string;
+      agentProfileId: string;
+      sourceConfigRevision: number;
+      effectiveConfigRedactedJson: Record<string, unknown>;
+      effectiveSpecHash: string;
+      approvalPolicyHash: string;
+      createdBy: string;
+      createdAt: string;
+    };
+    generation: {
+      id: string;
+      channelAgentSessionId: string;
+      generation: number;
+      agentVersionId: string | null;
+      sessionRevisionId: string;
+      trueforgeSessionId: string;
+      effectiveSpecHash: string;
+      approvalPolicyHash: string;
+      activeTurnId: string | null;
+      state: string;
+      createdAt: string;
+      retiredAt: string | null;
+    };
+  }): Promise<void>;
   insertCoworker(coworker: CoworkerRecord, version: AgentVersionRecord): Promise<void>;
   updateCoworker(coworker: CoworkerRecord, version?: AgentVersionRecord): Promise<void>;
   /**
@@ -532,6 +562,36 @@ export function createMemoryWorkspaceStore(): WorkspaceCatalogStore {
   const pins = new Map<string, PinRecord>();
   const artifacts = new Map<string, SafeArtifactRecord>();
   const agentSessions = new Map<string, ChannelAgentSessionRecord>();
+  const sessionRevisions = new Map<
+    string,
+    {
+      id: string;
+      agentProfileId: string;
+      sourceConfigRevision: number;
+      effectiveConfigRedactedJson: Record<string, unknown>;
+      effectiveSpecHash: string;
+      approvalPolicyHash: string;
+      createdBy: string;
+      createdAt: string;
+    }
+  >();
+  const sessionGenerations = new Map<
+    string,
+    {
+      id: string;
+      channelAgentSessionId: string;
+      generation: number;
+      agentVersionId: string | null;
+      sessionRevisionId: string;
+      trueforgeSessionId: string;
+      effectiveSpecHash: string;
+      approvalPolicyHash: string;
+      activeTurnId: string | null;
+      state: string;
+      createdAt: string;
+      retiredAt: string | null;
+    }
+  >();
   /** Serialize per-channel appends so concurrent callers preserve unique monotonic sequences. */
   const channelLocks = new Map<string, Promise<void>>();
 
@@ -930,6 +990,11 @@ export function createMemoryWorkspaceStore(): WorkspaceCatalogStore {
         createdAt: session.createdAt ?? now,
         updatedAt: session.updatedAt ?? now,
       });
+    },
+    async persistProvisionedSession(input) {
+      sessionRevisions.set(input.revision.id, structuredClone(input.revision));
+      sessionGenerations.set(input.generation.id, structuredClone(input.generation));
+      agentSessions.set(input.logicalSession.id, structuredClone(input.logicalSession));
     },
     async setSessionDeliveryCursor(sessionId, nextSequence, updatedAt) {
       const existing = agentSessions.get(sessionId);
