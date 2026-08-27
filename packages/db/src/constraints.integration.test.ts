@@ -35,6 +35,8 @@ describe("P0 foundation migration", () => {
       `;
       expect(forbidden.filter((row) => EXCLUDED_COLUMN.test(row.column_name))).toEqual([]);
 
+      const registryRolled = await rollbackLast(sql);
+      expect(registryRolled).toBe("0004_component_registry_constraints.sql");
       const boundaryRolled = await rollbackLast(sql);
       expect(boundaryRolled).toBe("0003_runs_source_message_unique.sql");
       const workspaceBoundaryRolled = await rollbackLast(sql);
@@ -65,11 +67,13 @@ describe("P0 foundation migration", () => {
           "0001_p0_foundation.sql",
           "0002_session_workspace_boundary.sql",
           "0003_runs_source_message_unique.sql",
+          "0004_component_registry_constraints.sql",
         ]);
         expect(await appliedMigrations(first)).toEqual([
           "0001_p0_foundation.sql",
           "0002_session_workspace_boundary.sql",
           "0003_runs_source_message_unique.sql",
+          "0004_component_registry_constraints.sql",
         ]);
 
         const rollbackResults = await Promise.all([
@@ -77,9 +81,11 @@ describe("P0 foundation migration", () => {
           rollbackLast(second),
           rollbackLast(first),
           rollbackLast(second),
+          rollbackLast(first),
         ]);
         expect(rollbackResults).toEqual(
           expect.arrayContaining([
+            "0004_component_registry_constraints.sql",
             "0003_runs_source_message_unique.sql",
             "0002_session_workspace_boundary.sql",
             "0001_p0_foundation.sql",
@@ -95,11 +101,13 @@ describe("P0 foundation migration", () => {
   it("backfills workspace ownership for existing stable sessions", async () => {
     await withMigratedDatabase(async (sql) => {
       await seedRuntime(sql);
+      expect(await rollbackLast(sql)).toBe("0004_component_registry_constraints.sql");
       expect(await rollbackLast(sql)).toBe("0003_runs_source_message_unique.sql");
       expect(await rollbackLast(sql)).toBe("0002_session_workspace_boundary.sql");
       expect(await migrate(sql)).toEqual([
         "0002_session_workspace_boundary.sql",
         "0003_runs_source_message_unique.sql",
+        "0004_component_registry_constraints.sql",
       ]);
 
       const [session] = await sql<{ workspace_id: string }[]>`
@@ -114,6 +122,7 @@ describe("P0 foundation migration", () => {
   it("identifies cross-workspace legacy sessions before enforcing the boundary", async () => {
     await withMigratedDatabase(async (sql) => {
       await seedRuntime(sql);
+      expect(await rollbackLast(sql)).toBe("0004_component_registry_constraints.sql");
       expect(await rollbackLast(sql)).toBe("0003_runs_source_message_unique.sql");
       expect(await rollbackLast(sql)).toBe("0002_session_workspace_boundary.sql");
       await sql`
@@ -141,6 +150,7 @@ describe("P0 foundation migration", () => {
       expect(await migrate(sql)).toEqual([
         "0002_session_workspace_boundary.sql",
         "0003_runs_source_message_unique.sql",
+        "0004_component_registry_constraints.sql",
       ]);
     });
   }, 60_000);

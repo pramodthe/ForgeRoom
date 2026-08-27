@@ -63,3 +63,22 @@ export type {
   CreateDirectMultiAgentRunResult,
   CreateDirectMultiAgentRunStepInput,
 } from "./multi-agent-run";
+export {
+  publishWorkspaceRegistry,
+  setComponentGrant,
+  hasActiveComponentGrant,
+  listPublishedComponentVersions,
+  appendComponentAuditEvent,
+  applyComponentGrantChange,
+} from "./component-registry";
+export type {
+  SqlClient as ComponentRegistrySqlClient,
+  ComponentRegistryDefinition,
+  PublishedComponentVersion,
+  SetComponentGrantInput,
+  SetComponentGrantResult,
+  HasActiveComponentGrantInput,
+  AppendComponentAuditEventInput,
+  ApplyComponentGrantChangeInput,
+  ApplyComponentGrantChangeResult,
+} from "./component-registry";

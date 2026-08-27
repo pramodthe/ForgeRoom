@@ -40,4 +40,4 @@ Run concurrency, cursor-by-cursor reconnect, patch divergence and full-versus-co
 
 - Persist allowlisted RUN_*/TEXT_MESSAGE_* projections into `channel_events` + `agui_event_records` before channel broadcast; populate `agui_run_id` and text `message_or_activity_id`.
 - Web: pure timeline reducer, SSE reconnect with `afterSequence`, optimistic human send, composer→existing Run via `forgeroomV1`.
-- Still open for full P0-212: JCS hashing, source refs, ChannelUIState/ThreadUIState runtime, activity revisioning, compaction equivalence.
+- First slice merged via PR #29 (`52fe71b`). Still open for full P0-212: JCS hashing, source refs, ChannelUIState/ThreadUIState runtime, activity revisioning, compaction equivalence.

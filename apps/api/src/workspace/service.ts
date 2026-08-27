@@ -40,6 +40,8 @@ import type { TrueForgeClient } from "@forgeroom/trueforge";
 import {
   createDirectMultiAgentRun,
   enqueueCorrectionForStep,
+  hasActiveComponentGrant,
+  listPublishedComponentVersions,
   markCancelCalled,
   requestRunStepStop,
   createSql,
@@ -2612,6 +2614,52 @@ export function createWorkspaceService(options?: {
             details: { handle: command.handle },
           },
         };
+      }
+
+      if (!sql && command.component_version_ids.length > 0) {
+        return {
+          ok: false,
+          error: {
+            code: "validation_failed",
+            message: "Component grants require SQL-backed persistence.",
+          },
+        };
+      }
+
+      if (sql && command.component_version_ids.length > 0) {
+        const published = await listPublishedComponentVersions(sql, loaded.value.workspaceId);
+        const byId = new Map(published.map((row) => [row.id, row]));
+        for (const versionId of command.component_version_ids) {
+          const version = byId.get(versionId);
+          if (!version || version.exposure !== "agent_tool") {
+            return {
+              ok: false,
+              error: {
+                code: "validation_failed",
+                message: "component_version_ids must reference published agent_tool versions.",
+                details: { component_version_id: versionId },
+              },
+            };
+          }
+          const granted = await hasActiveComponentGrant(sql, {
+            componentVersionId: versionId,
+            workspaceId: loaded.value.workspaceId,
+            agentProfileId: coworkerId,
+          });
+          if (!granted) {
+            return {
+              ok: false,
+              error: {
+                code: "validation_failed",
+                message: "component_version_ids require an active coworker or workspace grant.",
+                details: {
+                  reason: "component_not_granted",
+                  component_version_id: versionId,
+                },
+              },
+            };
+          }
+        }
       }
 
       const grantPlan = await buildTaskGrants({
