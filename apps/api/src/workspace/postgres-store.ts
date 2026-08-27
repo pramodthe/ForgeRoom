@@ -15,7 +15,12 @@ import {
 import { and, eq, isNull } from "drizzle-orm";
 import { randomOpaqueId } from "../auth/crypto";
 import { clampEventLimit } from "./event-read";
-import { hashAguiEvent, materializeChannelEvent } from "./event-persist";
+import {
+  hashAguiEvent,
+  materializeChannelEvent,
+  resolveAguiEventRecordMessageOrActivityId,
+  resolveAguiRunIdFromPersistedEvent,
+} from "./event-persist";
 import type {
   AppendChannelEventResult,
   ChannelAgentSessionRecord,
@@ -213,6 +218,28 @@ function mapAgentSession(row: typeof channelAgentSessions.$inferSelect): Channel
   };
 }
 
+async function resolveAguiRunId(
+  tx: SqlClient,
+  insert: ChannelEventInsert,
+  envelope: AppendChannelEventResult["envelope"],
+): Promise<string | null> {
+  if (insert.draft.aguiRunId) {
+    return insert.draft.aguiRunId;
+  }
+  const fromEvent = resolveAguiRunIdFromPersistedEvent(envelope.aguiEvent);
+  if (fromEvent) {
+    return fromEvent;
+  }
+  const agentTurnId = envelope.agentTurnId ?? insert.draft.agentTurnId;
+  if (!agentTurnId) {
+    return null;
+  }
+  const rows = await tx<{ agui_run_id: string }[]>`
+    SELECT agui_run_id FROM agent_turns WHERE id = ${agentTurnId} LIMIT 1
+  `;
+  return rows[0]?.agui_run_id ?? null;
+}
+
 async function insertDurableEventSql(
   tx: SqlClient,
   channelId: string,
@@ -220,6 +247,11 @@ async function insertDurableEventSql(
   insert: ChannelEventInsert,
 ): Promise<{ envelope: AppendChannelEventResult["envelope"]; event: ChannelEventRecord }> {
   const { envelope, event } = materializeChannelEvent(channelId, sequence, insert);
+  const aguiRunId = await resolveAguiRunId(tx, insert, envelope);
+  const messageOrActivityId = resolveAguiEventRecordMessageOrActivityId(
+    envelope.aguiEvent,
+    envelope.sourceMessageId,
+  );
   await tx.unsafe(
     `INSERT INTO channel_events (
       id, channel_id, sequence, type, actor_type, actor_id, run_id,
@@ -258,9 +290,9 @@ async function insertDurableEventSql(
       event.id,
       envelope.agentTurnId ?? null,
       envelope.logicalThreadId ?? null,
-      null,
+      aguiRunId,
       envelope.aguiEvent.type,
-      envelope.sourceMessageId ?? null,
+      messageOrActivityId,
       "full_event",
       JSON.stringify(envelope.aguiEvent),
       "p0_persisted_agui",
@@ -1052,6 +1084,40 @@ export function createPostgresWorkspaceStore(sql: SqlClient): WorkspaceCatalogSt
     async getMessageByEventId(eventId) {
       const rows = await db.select().from(messages).where(eq(messages.eventId, eventId)).limit(1);
       return rows[0] ? mapMessage(rows[0]) : null;
+    },
+    async listMessages(channelId, limit = 200) {
+      const boundedLimit = Math.min(Math.max(limit, 1), 200);
+      const rows = await sql<
+        {
+          id: string;
+          channel_id: string;
+          event_id: string;
+          author_type: string;
+          author_id: string;
+          body: string;
+          parent_message_id: string | null;
+          created_at: string | Date;
+          channel_sequence: number;
+        }[]
+      >`
+        SELECT m.*, ce.sequence AS channel_sequence
+        FROM messages m
+        JOIN channel_events ce ON ce.id = m.event_id
+        WHERE m.channel_id = ${channelId}
+        ORDER BY ce.sequence DESC
+        LIMIT ${boundedLimit}
+      `;
+      return rows.reverse().map((row) => ({
+        id: row.id,
+        channelId: row.channel_id,
+        eventId: row.event_id,
+        authorType: row.author_type as MessageRecord["authorType"],
+        authorId: row.author_id,
+        body: row.body,
+        parentMessageId: row.parent_message_id,
+        createdAt: asIso(row.created_at),
+        channelSequence: row.channel_sequence,
+      }));
     },
     async getPin(id) {
       const rows = await db.select().from(channelPins).where(eq(channelPins.id, id)).limit(1);

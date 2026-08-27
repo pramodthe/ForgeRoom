@@ -1,10 +1,12 @@
 import {
   buildAgUiCoworkerCapabilities,
+  extractExistingRunBinding,
   extractLatestUserMessageContent,
   formatAgUiSseEvent,
   parseUpstreamRunAgentInput,
   pollTrueForgeTurnEvents,
   TrueForgeAGUIAdapter,
+  toPersistedAgUiEvent,
 } from "@forgeroom/ag-ui";
 import type { SessionResponse } from "@forgeroom/contracts";
 import { ingestNormalizedTrueForgeEvent, type createSql } from "@forgeroom/db";
@@ -175,6 +177,89 @@ export function createAgUiRunService(options: {
         };
       }
 
+      const existingBinding = extractExistingRunBinding(input);
+      if (existingBinding) {
+        const rows = await sql<
+          {
+            application_run_id: string;
+            source_message_id: string;
+            channel_id: string;
+            message_body: string;
+            run_step_id: string;
+            assigned_agent_id: string;
+            logical_agui_thread_id: string;
+          }[]
+        >`
+          SELECT
+            r.id AS application_run_id,
+            r.source_message_id,
+            m.channel_id,
+            m.body AS message_body,
+            rs.id AS run_step_id,
+            rs.assigned_agent_id,
+            cas.logical_agui_thread_id
+          FROM runs r
+          JOIN messages m ON m.id = r.source_message_id
+          JOIN run_steps rs ON rs.run_id = r.id
+          JOIN turn_queue_items tqi ON tqi.run_step_id = rs.id
+          JOIN channel_agent_sessions cas ON cas.id = tqi.channel_agent_session_id
+          WHERE r.id = ${existingBinding.applicationRunId}
+            AND r.source_message_id = ${existingBinding.sourceMessageId}
+            AND rs.id = ${existingBinding.runStepId}
+          LIMIT 1
+        `;
+        const existing = rows[0];
+        if (
+          !existing ||
+          existing.channel_id !== channelId ||
+          existing.assigned_agent_id !== coworkerId ||
+          existing.logical_agui_thread_id !== input.threadId ||
+          existing.message_body !== content
+        ) {
+          return {
+            ok: false,
+            error: {
+              code: "validation_failed",
+              message: "Existing ForgeRoom run binding does not match this channel turn.",
+            },
+          };
+        }
+
+        const bound = await bindDurableTrueForgeTurn({
+          sql,
+          trueforgeClient,
+          runStepId: existing.run_step_id,
+          content,
+          clientAguiRunId: input.runId,
+        });
+        if (!bound.ok) {
+          return {
+            ok: false,
+            error: {
+              code: "provider_unavailable",
+              message: "Could not bind a durable TrueForge turn for the existing AG-UI run.",
+              details: { reason: bound.reason },
+            },
+          };
+        }
+
+        return {
+          ok: true,
+          value: {
+            threadId: resolved.value.logicalThreadId,
+            aguiRunId: input.runId,
+            applicationRunId: existing.application_run_id,
+            runStepId: existing.run_step_id,
+            agentTurnId: bound.value.agentTurnId,
+            messageId: existing.source_message_id,
+            channelId,
+            coworkerId,
+            trueforgeSessionId: bound.value.trueforgeSessionId,
+            trueforgeTurnId: bound.value.trueforgeTurnId,
+          },
+        };
+      }
+
       const posted = await workspace.postMessage(session, channelId, {
         body: `@${resolved.value.coworker.handle} ${content}`,
         recipient_handles: [],
@@ -260,6 +345,7 @@ export function createAgUiRunService(options: {
 
       let observedTerminal = false;
       let deliveryAuthorized = true;
+      let durableMirrorHealthy = true;
       const canDeliver = async () => {
         if (!deliveryAuthorized) {
           return false;
@@ -275,6 +361,24 @@ export function createAgUiRunService(options: {
         return deliveryAuthorized;
       };
       const writeEvent = async (event: Record<string, unknown>) => {
+        const durableEvent = toPersistedAgUiEvent(event);
+        if (durableEvent) {
+          const mirrored = await workspace.appendCoworkerAgUiEvent({
+            channelId: bootstrap.channelId,
+            coworkerId: bootstrap.coworkerId,
+            logicalThreadId: bootstrap.threadId,
+            applicationRunId: bootstrap.applicationRunId,
+            runStepId: bootstrap.runStepId,
+            agentTurnId: bootstrap.agentTurnId,
+            aguiRunId: bootstrap.aguiRunId,
+            sourceMessageId: bootstrap.messageId,
+            event: durableEvent,
+          });
+          if (!mirrored.ok) {
+            durableMirrorHealthy = false;
+            throw new Error("Durable AG-UI channel mirror failed");
+          }
+        }
         if (await canDeliver()) {
           await write(formatAgUiSseEvent(event));
         }
@@ -285,7 +389,11 @@ export function createAgUiRunService(options: {
         }
         observedTerminal = true;
         for (const event of adapter.buildRunError(message)) {
-          await writeEvent(event);
+          if (durableMirrorHealthy) {
+            await writeEvent(event);
+          } else if (await canDeliver()) {
+            await write(formatAgUiSseEvent(event));
+          }
         }
       };
 

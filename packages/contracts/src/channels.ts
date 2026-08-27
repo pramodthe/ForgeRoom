@@ -82,6 +82,28 @@ export const channelMessageCommandSchema = z
   })
   .strict();
 
+export const channelTimelineMessageSchema = z
+  .object({
+    schemaVersion: schemaVersion1,
+    id: opaqueIdSchema,
+    channel_id: opaqueIdSchema,
+    channel_sequence: z.number().int().nonnegative(),
+    author_type: z.enum(["human", "coworker", "system"]),
+    author_id: opaqueIdSchema,
+    body: z.string(),
+    parent_message_id: opaqueIdSchema.nullable(),
+    created_at: isoDateTimeSchema,
+  })
+  .strict();
+
+export const channelTimelineMessagesResponseSchema = z
+  .object({
+    schemaVersion: schemaVersion1,
+    channel_id: opaqueIdSchema,
+    messages: z.array(channelTimelineMessageSchema).max(200),
+  })
+  .strict();
+
 export const channelPinSchema = z
   .object({
     id: opaqueIdSchema,
@@ -133,6 +155,8 @@ export const channelPinRemoveCommandSchema = z
 
 export type Channel = z.infer<typeof channelSchema>;
 export type ChannelMessageCommand = z.infer<typeof channelMessageCommandSchema>;
+export type ChannelTimelineMessage = z.infer<typeof channelTimelineMessageSchema>;
+export type ChannelTimelineMessagesResponse = z.infer<typeof channelTimelineMessagesResponseSchema>;
 export type ChannelCreateCommand = z.infer<typeof channelCreateCommandSchema>;
 export type ChannelUpdateCommand = z.infer<typeof channelUpdateCommandSchema>;
 export type ChannelArchiveCommand = z.infer<typeof channelArchiveCommandSchema>;

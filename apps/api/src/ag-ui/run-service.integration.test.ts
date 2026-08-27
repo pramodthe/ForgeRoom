@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
+import type { SessionResponse } from "@forgeroom/contracts";
 import { seedRuntime, withMigratedDatabase } from "@forgeroom/db/test-harness";
 import type { TrueForgeClient } from "@forgeroom/trueforge";
-import type { WorkspaceService } from "../workspace/service";
+import { createPostgresWorkspaceStore } from "../workspace/postgres-store";
+import { createWorkspaceService } from "../workspace/service";
 import { bindDurableTrueForgeTurn } from "./bind-durable-turn";
 import { createAgUiRunService, type AgUiRunBootstrap } from "./run-service";
 
@@ -25,6 +27,70 @@ function parseChunks(chunks: string[]): Array<Record<string, unknown>> {
 }
 
 describe("durable AG-UI streaming", () => {
+  it("binds a composer-created RunStep without duplicating the message or Run", async () => {
+    await withMigratedDatabase(async (sql) => {
+      await seedRuntime(sql);
+      await sql`
+        INSERT INTO channel_participants (
+          channel_id, participant_type, participant_id, role, joined_at
+        )
+        VALUES ('ch_1', 'coworker', 'cw_1', 'member', ${new Date().toISOString()})
+      `;
+      await sql`
+        UPDATE agent_turns SET trueforge_turn_id = 'tf_turn_1' WHERE id = 'turn_1'
+      `;
+      const workspace = createWorkspaceService({
+        store: createPostgresWorkspaceStore(sql),
+        sql,
+      });
+      const service = createAgUiRunService({
+        workspace,
+        trueforgeClient: {} as TrueForgeClient,
+        sql,
+      });
+      const session: SessionResponse = {
+        request_id: "request_1",
+        user: {
+          id: "user_1",
+          email: "owner@example.test",
+          display_name: "Owner",
+          role: "owner",
+        },
+        workspace_id: "ws_1",
+        csrf_token: "csrf_1",
+        expires_at: "2030-01-01T00:00:00.000Z",
+      };
+
+      const prepared = await service.prepareRun(session, "ch_1", "cw_1", {
+        threadId: "thread_1",
+        runId: "agui_run_1",
+        messages: [{ id: "msg_1", role: "user", content: "Please inspect" }],
+        tools: [],
+        context: [],
+        state: {},
+        forwardedProps: {
+          forgeroomV1: {
+            schemaVersion: 1,
+            sourceMessageId: "msg_1",
+            applicationRunId: "run_1",
+            runStepId: "step_1",
+          },
+        },
+      });
+
+      expect(prepared).toMatchObject({
+        ok: true,
+        value: { messageId: "msg_1", applicationRunId: "run_1", runStepId: "step_1" },
+      });
+      const counts = await sql<{ messages: number; runs: number }[]>`
+        SELECT
+          (SELECT count(*)::int FROM messages) AS messages,
+          (SELECT count(*)::int FROM runs) AS runs
+      `;
+      expect(counts[0]).toEqual({ messages: 1, runs: 1 });
+    });
+  }, 60_000);
+
   it("streams incrementally and settles the canonical durable lifecycle", async () => {
     await withMigratedDatabase(async (sql) => {
       await seedRuntime(sql);
@@ -63,7 +129,7 @@ describe("durable AG-UI streaming", () => {
         },
       } as unknown as TrueForgeClient;
       const service = createAgUiRunService({
-        workspace: {} as WorkspaceService,
+        workspace: createWorkspaceService({ store: createPostgresWorkspaceStore(sql) }),
         trueforgeClient,
         sql,
       });
@@ -92,6 +158,51 @@ describe("durable AG-UI streaming", () => {
       expect(steps[0]?.state).toBe("completed");
       expect(queue[0]?.state).toBe("completed");
       expect(runs[0]?.lifecycle).toBe("completed");
+
+      const channelEvents = await sql<
+        {
+          type: string;
+          actor_type: string;
+          actor_id: string;
+          agui_event_type: string | null;
+        }[]
+      >`
+        SELECT type, actor_type, actor_id, agui_event_type
+        FROM channel_events
+        WHERE channel_id = 'ch_1'
+          AND sequence > 0
+        ORDER BY sequence ASC
+      `;
+      expect(channelEvents.length).toBeGreaterThan(0);
+      expect(channelEvents.every((row) => row.actor_type === "coworker" && row.actor_id === "cw_1")).toBe(
+        true,
+      );
+      expect(channelEvents.map((row) => row.agui_event_type)).toEqual(
+        expect.arrayContaining(["RUN_STARTED", "TEXT_MESSAGE_CONTENT", "RUN_FINISHED"]),
+      );
+
+      const aguiRecords = await sql<
+        {
+          event_type: string;
+          agui_run_id: string | null;
+          message_or_activity_id: string | null;
+        }[]
+      >`
+        SELECT aer.event_type, aer.agui_run_id, aer.message_or_activity_id
+        FROM agui_event_records aer
+        JOIN channel_events ce ON ce.id = aer.channel_event_id
+        WHERE ce.channel_id = 'ch_1'
+          AND ce.sequence > 0
+        ORDER BY ce.sequence ASC
+      `;
+      expect(aguiRecords.length).toBe(channelEvents.length);
+      expect(aguiRecords.every((row) => row.agui_run_id === "agui_run_1")).toBe(true);
+      expect(aguiRecords.filter((row) => row.event_type.startsWith("RUN_")).every(
+        (row) => row.message_or_activity_id === "msg_1",
+      )).toBe(true);
+      expect(aguiRecords.filter((row) => row.event_type.startsWith("TEXT_MESSAGE_")).every(
+        (row) => row.message_or_activity_id !== "msg_1" && row.message_or_activity_id !== null,
+      )).toBe(true);
     });
   }, 60_000);
 
@@ -106,7 +217,7 @@ describe("durable AG-UI streaming", () => {
         },
       } as unknown as TrueForgeClient;
       const service = createAgUiRunService({
-        workspace: {} as WorkspaceService,
+        workspace: createWorkspaceService({ store: createPostgresWorkspaceStore(sql) }),
         trueforgeClient,
         sql,
       });
@@ -145,7 +256,7 @@ describe("durable AG-UI streaming", () => {
         },
       } as unknown as TrueForgeClient;
       const service = createAgUiRunService({
-        workspace: {} as WorkspaceService,
+        workspace: createWorkspaceService({ store: createPostgresWorkspaceStore(sql) }),
         trueforgeClient,
         sql,
       });

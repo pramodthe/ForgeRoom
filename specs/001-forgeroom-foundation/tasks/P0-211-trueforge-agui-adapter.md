@@ -1,9 +1,10 @@
 ---
 id: P0-211
 title: Implement the TrueForge-to-AG-UI adapter and standard run endpoint
-status: in_progress
+status: done
 owner: cursor-agent
 started: 2026-08-26
+completed: 2026-08-27
 depends_on: [P0-102, P0-203, P0-210]
 requirements: [PLAT-005, AGUI-001, AGUI-003, AGUI-004, AGUI-005, AGUI-007, AGUI-008]
 specs: [../contracts/ag-ui.md, ../runtime.md#trueforge-to-ag-ui-adapter]
@@ -45,5 +46,7 @@ Run golden mapping, illegal-order, redaction, interrupt and official-client conf
 - Provider/list failures emit one schema-validated redacted `RUN_ERROR`; provider terminal errors settle AgentTurn, queue item, RunStep and parent Run.
 - Live delivery revalidates the authenticated session and channel/coworker access, and latches closed after revocation.
 - AG-UI run idempotency rejects content collisions and repairs a persisted message's missing Run instead of creating a duplicate message.
+- The official browser client may bind a composer-created `sourceMessageId`/Run/RunStep through a strict server-verified `forgeroomV1` reference; this launches the existing work item instead of creating a duplicate human message or Run.
+- Safe lifecycle and assistant-text projections persist before channel broadcast and the channel shell renders their replay with coworker attribution. This is an incremental prerequisite slice only: P0-212 still owns full activity/state revisioning, source refs, compaction and replay equivalence, while P0-408 owns the complete rich renderer integration.
 - Normalized persistence retains provider IDs only in typed correlation columns and drops arbitrary provider/tool bodies.
-- Remaining: durable channel mirror (P0-212), full tool/state/interrupt mapping (P0-314/P0-306).
+- Remaining: full tool/state/activity mapping (P0-314/P0-212), canonical approval resume (P0-306/P0-308), and the complete P0-212/P0-408 replay/render acceptance suites.

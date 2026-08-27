@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { extractLatestUserMessageContent, parseUpstreamAgUiEvent } from "./upstream";
+import {
+  extractExistingRunBinding,
+  extractLatestUserMessageContent,
+  parseUpstreamAgUiEvent,
+} from "./upstream";
 
 describe("parseUpstreamAgUiEvent", () => {
   it("validates official AG-UI events and rejects RAW", () => {
@@ -31,5 +35,33 @@ describe("parseUpstreamAgUiEvent", () => {
         state: {},
       }),
     ).toBe("Latest ask");
+  });
+
+  it("accepts only the strict ForgeRoom existing-run binding", () => {
+    const input = {
+      threadId: "thread_1",
+      runId: "run_1",
+      messages: [{ id: "message_1", role: "user" as const, content: "Do the work" }],
+      tools: [],
+      context: [],
+      state: {},
+      forwardedProps: {
+        forgeroomV1: {
+          schemaVersion: 1,
+          sourceMessageId: "message_1",
+          applicationRunId: "application_run_1",
+          runStepId: "step_1",
+        },
+      },
+    };
+    expect(extractExistingRunBinding(input)).toEqual(input.forwardedProps.forgeroomV1);
+    expect(
+      extractExistingRunBinding({
+        ...input,
+        forwardedProps: {
+          forgeroomV1: { ...input.forwardedProps.forgeroomV1, trusted: true },
+        },
+      }),
+    ).toBeNull();
   });
 });

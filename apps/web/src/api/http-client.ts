@@ -14,6 +14,10 @@ export class ApiError extends Error {
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "";
 
+export function apiUrl(path: string): string {
+  return `${API_BASE}${path}`;
+}
+
 type ApiFetchOptions = RequestInit & {
   csrfToken?: string;
 };
@@ -42,7 +46,7 @@ export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): 
     headers.set("content-type", "application/json");
   }
 
-  const response = await fetch(`${API_BASE}${path}`, {
+  const response = await fetch(apiUrl(path), {
     ...options,
     headers,
     credentials: "include",

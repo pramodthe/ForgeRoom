@@ -43,6 +43,8 @@ export {
   channelParticipantAddCommandSchema,
   channelParticipantRemoveCommandSchema,
   channelMessageCommandSchema,
+  channelTimelineMessageSchema,
+  channelTimelineMessagesResponseSchema,
   channelPinSchema,
   channelPinCreateCommandSchema,
   channelPinRemoveCommandSchema,
@@ -54,6 +56,8 @@ export type {
   ChannelUpdateCommand,
   ChannelArchiveCommand,
   ChannelMessageCommand,
+  ChannelTimelineMessage,
+  ChannelTimelineMessagesResponse,
   ChannelParticipantAddCommand,
   ChannelParticipantRemoveCommand,
   ChannelPin,
@@ -311,6 +315,12 @@ export {
   stateSnapshotEventSchema,
   stateDeltaEventSchema,
   customApplicationEventSchema,
+  persistedRunStartedEventSchema,
+  persistedRunFinishedEventSchema,
+  persistedRunErrorEventSchema,
+  persistedTextMessageStartEventSchema,
+  persistedTextMessageContentEventSchema,
+  persistedTextMessageEndEventSchema,
 } from "./events";
 export type { AgentChannelEnvelope, P0PersistedAguiEvent } from "./events";
 

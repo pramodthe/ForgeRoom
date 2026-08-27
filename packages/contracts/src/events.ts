@@ -1074,7 +1074,80 @@ export const customApplicationEventSchema = z
     }
   });
 
+export const persistedRunStartedEventSchema = z
+  .object({
+    type: z.literal("RUN_STARTED"),
+    threadId: opaqueIdSchema,
+    runId: opaqueIdSchema,
+  })
+  .strict();
+
+const persistedInterruptSchema = z
+  .object({
+    id: opaqueIdSchema,
+    reason: z.string().min(1).max(128),
+    message: z.string().min(1).max(1_000).optional(),
+  })
+  .strict();
+
+export const persistedRunFinishedEventSchema = z
+  .object({
+    type: z.literal("RUN_FINISHED"),
+    threadId: opaqueIdSchema,
+    runId: opaqueIdSchema,
+    outcome: z.discriminatedUnion("type", [
+      z.object({ type: z.literal("success") }).strict(),
+      z
+        .object({
+          type: z.literal("interrupt"),
+          interrupts: z.array(persistedInterruptSchema).min(1).max(20),
+        })
+        .strict(),
+    ]),
+  })
+  .strict();
+
+export const persistedRunErrorEventSchema = z
+  .object({
+    type: z.literal("RUN_ERROR"),
+    threadId: opaqueIdSchema,
+    runId: opaqueIdSchema,
+    message: z.string().min(1).max(1_000),
+    code: z.string().min(1).max(128).optional(),
+  })
+  .strict();
+
+export const persistedTextMessageStartEventSchema = z
+  .object({
+    type: z.literal("TEXT_MESSAGE_START"),
+    messageId: opaqueIdSchema,
+    role: z.literal("assistant"),
+    name: z.string().min(1).max(128).optional(),
+  })
+  .strict();
+
+export const persistedTextMessageContentEventSchema = z
+  .object({
+    type: z.literal("TEXT_MESSAGE_CONTENT"),
+    messageId: opaqueIdSchema,
+    delta: z.string().min(1).max(64_000),
+  })
+  .strict();
+
+export const persistedTextMessageEndEventSchema = z
+  .object({
+    type: z.literal("TEXT_MESSAGE_END"),
+    messageId: opaqueIdSchema,
+  })
+  .strict();
+
 export const p0PersistedAguiEventSchema = z.union([
+  persistedRunStartedEventSchema,
+  persistedRunFinishedEventSchema,
+  persistedRunErrorEventSchema,
+  persistedTextMessageStartEventSchema,
+  persistedTextMessageContentEventSchema,
+  persistedTextMessageEndEventSchema,
   activitySnapshotEventSchema,
   activityDeltaEventSchema,
   stateSnapshotEventSchema,

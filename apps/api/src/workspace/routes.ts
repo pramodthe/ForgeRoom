@@ -282,6 +282,22 @@ export function mountWorkspaceRoutes(
     return okJson(c, result.value, 201);
   });
 
+  app.get("/api/channels/:channelId/messages", async (c) => {
+    const authed = await requireSession(c, env, auth);
+    if (authed instanceof Response) {
+      return authed;
+    }
+    const channelId = requireParam(c, "channelId");
+    if (channelId instanceof Response) {
+      return channelId;
+    }
+    const result = await workspace.listMessages(authed.session, channelId);
+    if (!result.ok) {
+      return fail(c, result.error);
+    }
+    return okJson(c, result.value, 200);
+  });
+
   app.post("/api/channels/:channelId/pins", async (c) => {
     const authed = await requireMutationSession(c, env, auth);
     if (authed instanceof Response) {
