@@ -88,6 +88,7 @@ Session response exposes safe user identity, workspace membership, CSRF token an
 POST   /api/workspaces/:workspaceId/channels
 GET    /api/workspaces/:workspaceId/channels
 GET    /api/channels/:channelId
+GET    /api/channels/:channelId/roster
 PATCH  /api/channels/:channelId
 POST   /api/channels/:channelId/archive
 

@@ -2,11 +2,11 @@
 
 | Field | Current value |
 | --- | --- |
-| Overall | M1 Foundation + P0-401 shell done; P0-210 AG-UI spike merged (in_review); P0-000 partial live probes in progress |
+| Overall | M1 Foundation done; P0-402 composer/roster in review; P0-210 AG-UI spike merged (in_review); P0-000 partial live probes |
 | Current phase | Phase 1 — Foundation |
-| Active task | P0-000 (in_progress); P0-210 (in_review, live proofs deferred to P0-211) |
-| Next task | Finish P0-000 TrueForge probes (add keys to .env); start P0-105 demo fixtures or P0-402 composer when ready |
-| P0 blockers | TrueForge model presets, Research permission preview, Save-as-skill Run binding, TrueForge→artifact path, DB fixture reset (migrations), demo durable storage — Composio/Daytona SDK/local adapter verified 2026-08-26 |
+| Active task | P0-402 (in_review); P0-000 (in_progress); P0-210 (in_review, live proofs deferred to P0-211) |
+| Next task | Merge PR for P0-402; finish P0-000 TrueForge probes (add keys to `.env`); start P0-105 demo fixtures |
+| P0 blockers | TrueForge model presets, Research permission preview, Save-as-skill Run binding, TrueForge→artifact path, demo durable storage — Composio/Daytona SDK/local adapter verified 2026-08-26; **DB migrations applied locally** |
 | Last updated | 2026-08-26 |
 
 ## Milestones
@@ -28,7 +28,7 @@ Still open until TrueForge probes / P0-210 (see `decisions/OPEN.md` and `provide
 - Research draft exact permission preview/denials (TrueForge harness).
 - Save-as-skill successful Run binding (TrueForge).
 - Demo durable artifact storage adapter and checked-in deployment diagram.
-- DB fixture reset (P0-105 after P0-103 migrations applied locally).
+- DB fixture reset schema ready locally (P0-105 seed/reset can proceed; TrueForge probes still open).
 
 Verified 2026-08-26 live probes:
 

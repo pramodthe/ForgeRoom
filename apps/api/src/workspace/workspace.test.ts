@@ -369,6 +369,156 @@ describe("channel and coworker API", () => {
     expect(betaGrants[0]?.allowedOperationsJson).toEqual(["create"]);
   });
 
+  it("lists channel roster with availability and effective tools", async () => {
+    const { app, env, workspace, workspaceStore } = await createTestApp();
+    const { session, cookie } = await login(app, env);
+    const channelRes = await app.request(`/api/workspaces/${env.workspaceId}/channels`, {
+      method: "POST",
+      headers: mutationHeaders(env, cookie, session.csrf_token),
+      body: JSON.stringify({
+        schemaVersion: 1,
+        name: "Roster",
+        mission_brief: "Roster",
+        idempotency_key: "idem_roster",
+      }),
+    });
+    const channel = channelSchema.parse(withoutRequestId(await channelRes.json()));
+    const alpha = await workspace.seedCoworker({
+      workspaceId: env.workspaceId,
+      createdBy: env.ownerUserId,
+      handle: "alpha",
+      name: "Alpha",
+      title: "Operator",
+    });
+    await workspace.updateCoworker(session, alpha.id, {
+      name: "Alpha",
+      handle: "alpha",
+      title: "Operator",
+      standing_instructions: "Operate",
+      model_preset: "default",
+      native_subagents_enabled: false,
+      channel_ids: [channel.id],
+      budget: { max_turn_tokens: 1000, max_tool_calls: 5 },
+      task_record_grants: [{ channel_id: channel.id, operations: ["create"] }],
+      tool_grants: ["PROVIDER_READ_TOOL"],
+      skill_version_ids: [],
+      component_version_ids: [],
+    });
+    await app.request(`/api/channels/${channel.id}/participants`, {
+      method: "POST",
+      headers: mutationHeaders(env, cookie, session.csrf_token),
+      body: JSON.stringify({
+        schemaVersion: 1,
+        participant_type: "coworker",
+        participant_id: alpha.id,
+        role: "member",
+        idempotency_key: "idem_roster_add",
+      }),
+    });
+
+    const rosterRes = await app.request(`/api/channels/${channel.id}/roster`, {
+      headers: { cookie: `${env.sessionCookieName}=${cookie}` },
+    });
+    expect(rosterRes.status).toBe(200);
+    const roster = withoutRequestId(await rosterRes.json()) as {
+      channel_id: string;
+      service_account_label: string;
+      coworkers: Array<{
+        handle: string;
+        availability: string;
+        effective_tools: string[];
+      }>;
+    };
+    expect(roster.channel_id).toBe(channel.id);
+    expect(roster.service_account_label).toBeTruthy();
+    expect(roster.coworkers).toHaveLength(1);
+    expect(roster.coworkers[0]?.handle).toBe("alpha");
+    expect(roster.coworkers[0]?.availability).toBe("available");
+    expect(
+      (roster.coworkers[0] as { assignment_summary?: string | null }).assignment_summary,
+    ).toBeNull();
+    expect(roster.coworkers[0]?.effective_tools).toEqual(["PROVIDER_READ_TOOL"]);
+
+    await workspaceStore.upsertChannelAgentSession({
+      id: "cas_alpha_rotating",
+      workspaceId: env.workspaceId,
+      channelId: channel.id,
+      agentProfileId: alpha.id,
+      state: "rotating",
+    });
+    const rotatingRosterRes = await app.request(`/api/channels/${channel.id}/roster`, {
+      headers: { cookie: `${env.sessionCookieName}=${cookie}` },
+    });
+    expect(rotatingRosterRes.status).toBe(200);
+    const rotatingRoster = withoutRequestId(await rotatingRosterRes.json()) as {
+      coworkers: Array<{ availability: string; assignment_summary: string | null }>;
+    };
+    expect(rotatingRoster.coworkers[0]?.availability).toBe("cancelling");
+    expect(rotatingRoster.coworkers[0]?.assignment_summary).toBe("Rotating session");
+  });
+
+  it("replays identical message posts under the same idempotency key", async () => {
+    const { app, env, workspace } = await createTestApp();
+    const { session, cookie } = await login(app, env);
+    const channelRes = await app.request(`/api/workspaces/${env.workspaceId}/channels`, {
+      method: "POST",
+      headers: mutationHeaders(env, cookie, session.csrf_token),
+      body: JSON.stringify({
+        schemaVersion: 1,
+        name: "Idem",
+        mission_brief: "Idem",
+        idempotency_key: "idem_msg_channel",
+      }),
+    });
+    const channel = channelSchema.parse(withoutRequestId(await channelRes.json()));
+    const coworker = await workspace.seedCoworker({
+      workspaceId: env.workspaceId,
+      createdBy: env.ownerUserId,
+      handle: "solo",
+      name: "Solo",
+      title: "Operator",
+    });
+    await app.request(`/api/channels/${channel.id}/participants`, {
+      method: "POST",
+      headers: mutationHeaders(env, cookie, session.csrf_token),
+      body: JSON.stringify({
+        schemaVersion: 1,
+        participant_type: "coworker",
+        participant_id: coworker.id,
+        role: "member",
+        idempotency_key: "idem_msg_add",
+      }),
+    });
+    const payload = {
+      body: "status please",
+      recipient_handles: [],
+      routing_mode: "direct",
+      parent_message_id: null,
+      idempotency_key: "idem_msg_send_1",
+    };
+    const first = await app.request(`/api/channels/${channel.id}/messages`, {
+      method: "POST",
+      headers: mutationHeaders(env, cookie, session.csrf_token),
+      body: JSON.stringify(payload),
+    });
+    expect(first.status).toBe(201);
+    const firstBody = withoutRequestId(await first.json()) as { message_id: string };
+    const archived = await app.request(`/api/channels/${channel.id}/archive`, {
+      method: "POST",
+      headers: mutationHeaders(env, cookie, session.csrf_token),
+      body: JSON.stringify({ schemaVersion: 1, idempotency_key: "idem_msg_archive" }),
+    });
+    expect(archived.status).toBe(200);
+    const second = await app.request(`/api/channels/${channel.id}/messages`, {
+      method: "POST",
+      headers: mutationHeaders(env, cookie, session.csrf_token),
+      body: JSON.stringify(payload),
+    });
+    expect(second.status).toBe(201);
+    const secondBody = withoutRequestId(await second.json()) as { message_id: string };
+    expect(secondBody.message_id).toBe(firstBody.message_id);
+  });
+
   it("blocks messages and participant edits on archived channels", async () => {
     const { app, env, workspace } = await createTestApp();
     const { session, cookie } = await login(app, env);

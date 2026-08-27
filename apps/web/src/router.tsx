@@ -6,7 +6,7 @@ import {
   redirect,
 } from "@tanstack/react-router";
 import { fetchSession } from "./auth-api";
-import { defaultChannelId } from "./api/workspace-api";
+import { resolveDefaultChannelId } from "./api/workspace-api";
 import { isSessionExpired, sessionWorkspaceMismatch } from "./auth/session";
 import { ChannelPage, ChannelsIndexRedirect } from "./pages/channel-page";
 import { ConnectionsPage } from "./pages/connections-page";
@@ -26,8 +26,16 @@ async function requireAuthenticatedWorkspace(workspaceId: string, pathname: stri
     });
   }
   if (sessionWorkspaceMismatch(session, workspaceId)) {
+    const channelId = await resolveDefaultChannelId(session.workspace_id);
+    if (!channelId) {
+      throw redirect({
+        to: "/w/$workspaceId/channels",
+        params: { workspaceId: session.workspace_id },
+        replace: true,
+      });
+    }
     throw redirect({
-      to: workspaceChannelPath(session.workspace_id, defaultChannelId()),
+      to: workspaceChannelPath(session.workspace_id, channelId),
       replace: true,
     });
   }

@@ -52,7 +52,7 @@ export function ChannelWorkroom({ workspaceId, channelId }: ChannelWorkroomProps
       />
       <div className="flex min-w-0 flex-1 justify-center">
         <div className="flex h-full w-full max-w-[820px] min-w-0 flex-col border-x border-zinc-200">
-          <ChannelTimelinePane channel={channel} />
+          <ChannelTimelinePane channel={channel} workspaceId={workspaceId} />
         </div>
       </div>
       <WorkPanelPane />

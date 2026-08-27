@@ -15,6 +15,11 @@ import { createSlidingWindowRateLimiter } from "./rate-limit";
 import { isOwnerRole, isRecentAuthentication } from "@forgeroom/domain";
 import type { SessionResponse } from "@forgeroom/contracts";
 
+function contractIsoDateTime(value: string | Date): string {
+  const iso = new Date(value).toISOString();
+  return `${iso.slice(0, -1)}+00:00`;
+}
+
 export function originAllowed(
   appOrigin: string,
   origin: string | undefined,
@@ -102,7 +107,7 @@ export function createAuthService(options: {
       },
       workspace_id: membership.workspaceId,
       csrf_token: deriveCsrfToken(parsed.secret),
-      expires_at: session.expiresAt,
+      expires_at: contractIsoDateTime(session.expiresAt),
     };
     return { response, session, secret: parsed.secret };
   }
@@ -175,7 +180,7 @@ export function createAuthService(options: {
           },
           workspace_id: membership.workspaceId,
           csrf_token: deriveCsrfToken(secret),
-          expires_at: expiresAt,
+          expires_at: contractIsoDateTime(expiresAt),
         },
       };
     },

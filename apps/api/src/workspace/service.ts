@@ -9,6 +9,7 @@ import type {
   ChannelPin,
   ChannelPinCreateCommand,
   ChannelPinRemoveCommand,
+  ChannelRosterResponse,
   ChannelUpdateCommand,
   CoworkerDisableCommand,
   CoworkerProfile,
@@ -18,6 +19,7 @@ import type {
 } from "@forgeroom/contracts";
 import {
   channelPinSchema,
+  channelRosterResponseSchema,
   channelSchema,
   coworkerProfileSchema,
   isReservedCoworkerHandle,
@@ -44,6 +46,7 @@ import {
   parsePinReceiptResultId,
   pinCreateTargetId,
   type AgentVersionRecord,
+  type ChannelAgentSessionState,
   type ChannelEventInsert,
   type ChannelRecord,
   type CoworkerEditableConfig,
@@ -175,6 +178,35 @@ function participantResultId(channelId: string, participantId: string): string {
   return `${channelId}:${participantId}`;
 }
 
+const P0_SERVICE_ACCOUNT_LABEL = "Workspace service account";
+
+function mapRosterAvailability(
+  coworker: CoworkerRecord,
+  sessionState: ChannelAgentSessionState | undefined,
+): ChannelRosterResponse["coworkers"][number]["availability"] {
+  if (coworker.status === "disabled") {
+    return "disabled";
+  }
+  if (sessionState === "rotating") {
+    return "cancelling";
+  }
+  if (sessionState === "disabled") {
+    return "disabled";
+  }
+  return "available";
+}
+
+/** P0 assignment line until Run/Task cards land — surface session rotation work. */
+function mapAssignmentSummary(sessionState: ChannelAgentSessionState | undefined): string | null {
+  if (sessionState === "rotating") {
+    return "Rotating session";
+  }
+  if (sessionState === "disabled") {
+    return "Session disabled";
+  }
+  return null;
+}
+
 function pinSourceMatchesCommand(
   row: PinRecord,
   sourceEventId: string | null,
@@ -225,6 +257,10 @@ export type WorkspaceService = {
     workspaceId: string,
   ): Promise<WorkspaceServiceResult<Channel[]>>;
   getChannel(session: SessionResponse, channelId: string): Promise<WorkspaceServiceResult<Channel>>;
+  listChannelRoster(
+    session: SessionResponse,
+    channelId: string,
+  ): Promise<WorkspaceServiceResult<ChannelRosterResponse>>;
   updateChannel(
     session: SessionResponse,
     channelId: string,
@@ -819,6 +855,54 @@ export function createWorkspaceService(options?: {
       return { ok: true, value: toChannel(loaded.value) };
     },
 
+    async listChannelRoster(session, channelId) {
+      const loaded = await loadOwnedChannel(session, channelId);
+      if (!loaded.ok) {
+        return loaded;
+      }
+      const participants = await store.listParticipants(channelId);
+      const activeCoworkerParticipants = participants.filter(
+        (row) => row.participantType === "coworker" && row.removedAt === null,
+      );
+      const coworkers = await store.listCoworkers(loaded.value.workspaceId);
+      const coworkerById = new Map(coworkers.map((row) => [row.id, row]));
+      const sessions = await store.listChannelAgentSessions(channelId);
+      const sessionStateByCoworker = new Map(
+        sessions.map((row) => [row.agentProfileId, row.state] as const),
+      );
+
+      const rosterCoworkers: ChannelRosterResponse["coworkers"] = [];
+      for (const participant of activeCoworkerParticipants) {
+        const profile = coworkerById.get(participant.participantId);
+        if (!profile) {
+          continue;
+        }
+        rosterCoworkers.push({
+          participant_id: participant.participantId,
+          coworker_id: profile.id,
+          handle: profile.handle,
+          name: profile.name,
+          title: profile.title,
+          role: "member",
+          availability: mapRosterAvailability(profile, sessionStateByCoworker.get(profile.id)),
+          assignment_summary: mapAssignmentSummary(sessionStateByCoworker.get(profile.id)),
+          effective_tools: [...profile.editableConfigJson.tool_grants],
+        });
+      }
+
+      rosterCoworkers.sort((a, b) => a.handle.localeCompare(b.handle));
+
+      return {
+        ok: true,
+        value: channelRosterResponseSchema.parse({
+          schemaVersion: 1,
+          channel_id: channelId,
+          service_account_label: P0_SERVICE_ACCOUNT_LABEL,
+          coworkers: rosterCoworkers,
+        }),
+      };
+    },
+
     async updateChannel(session, channelId, command) {
       const loaded = await loadOwnedChannel(session, channelId);
       if (!loaded.ok) {
@@ -1227,6 +1311,80 @@ export function createWorkspaceService(options?: {
       if (!loaded.ok) {
         return loaded;
       }
+
+      type MessagePostResult = {
+        message_id: string;
+        event_id: string;
+        sequence: number;
+        recipient_handles: string[];
+        routing_mode: "direct" | "team";
+      };
+
+      const reloadPostedMessage = async (
+        messageId: string,
+      ): Promise<MessagePostResult | null | IdempotentReloadMismatch> => {
+        const message = await store.getMessage(messageId);
+        if (!message) {
+          return null;
+        }
+        if (message.channelId !== channelId) {
+          return idempotencyMismatch({
+            code: "conflict",
+            message: "Idempotency key was already used for a different channel message.",
+            details: {
+              reason: "idempotency_key_reuse",
+              expected_channel_id: channelId,
+              claimed_channel_id: message.channelId,
+              claimed_result_id: messageId,
+            },
+          });
+        }
+        let afterSequence = -1;
+        while (true) {
+          const page = await store.listEventsAfter(channelId, afterSequence, { limit: 512 });
+          for (const row of page.events) {
+            if (row.id !== message.eventId) {
+              continue;
+            }
+            const agui = row.aguiEventJson;
+            const payload =
+              agui && agui.type === "CUSTOM" && agui.name === "message.created"
+                ? (agui.payload as {
+                    routing_mode?: "direct" | "team";
+                    recipient_handles?: string[];
+                  })
+                : null;
+            if (!payload?.routing_mode || !payload.recipient_handles) {
+              return null;
+            }
+            return {
+              message_id: message.id,
+              event_id: message.eventId,
+              sequence: row.sequence,
+              recipient_handles: payload.recipient_handles,
+              routing_mode: payload.routing_mode,
+            };
+          }
+          if (!page.hasMore || page.events.length === 0) {
+            return null;
+          }
+          afterSequence = page.events[page.events.length - 1]!.sequence;
+        }
+      };
+
+      // Replay durable success before live archived/routing checks so retries stay stable.
+      if (command.idempotency_key) {
+        const replay = await reloadIdempotentResult(
+          loaded.value.workspaceId,
+          "channel.message",
+          command.idempotency_key,
+          reloadPostedMessage,
+        );
+        if (replay) {
+          return replay;
+        }
+      }
+
       if (loaded.value.status === "archived") {
         return {
           ok: false,
@@ -1284,72 +1442,91 @@ export function createWorkspaceService(options?: {
           },
         };
       }
-      const createdAt = now().toISOString();
-      const eventId = randomOpaqueId("evt");
-      const messageId = randomOpaqueId("msg");
-      try {
-        const appended = await store.appendMessage({
-          channelId,
-          event: {
-            id: eventId,
-            type: "message.created",
-            actorType: "human",
-            actorId: session.user.id,
-            runId: null,
-            createdAt,
-            draft: {
-              actorKind: "human",
-              sourceMessageId: messageId,
-              aguiEvent: messageCreatedAguiEvent({
-                routing_mode: routing.routing_mode,
-                recipient_handles: routing.recipient_handles,
-              }),
-            },
-          },
-          message: {
-            id: messageId,
+
+      const appendMessage = async (
+        messageId: string,
+        eventId: string,
+      ): Promise<WorkspaceServiceResult<MessagePostResult>> => {
+        const createdAt = now().toISOString();
+        try {
+          const appended = await store.appendMessage({
             channelId,
-            eventId,
-            authorType: "human",
-            authorId: session.user.id,
-            body: command.body,
-            parentMessageId: command.parent_message_id,
-            createdAt,
-          },
+            event: {
+              id: eventId,
+              type: "message.created",
+              actorType: "human",
+              actorId: session.user.id,
+              runId: null,
+              createdAt,
+              draft: {
+                actorKind: "human",
+                sourceMessageId: messageId,
+                aguiEvent: messageCreatedAguiEvent({
+                  routing_mode: routing.routing_mode,
+                  recipient_handles: routing.recipient_handles,
+                }),
+              },
+            },
+            message: {
+              id: messageId,
+              channelId,
+              eventId,
+              authorType: "human",
+              authorId: session.user.id,
+              body: command.body,
+              parentMessageId: command.parent_message_id,
+              createdAt,
+            },
+          });
+          publish(appended);
+          return {
+            ok: true,
+            value: {
+              message_id: messageId,
+              event_id: eventId,
+              sequence: appended.sequence,
+              recipient_handles: routing.recipient_handles,
+              routing_mode: routing.routing_mode,
+            },
+          };
+        } catch (error) {
+          if (error instanceof ChannelEventPersistenceError) {
+            return {
+              ok: false,
+              error: {
+                code: "validation_failed",
+                message: error.message,
+              },
+            };
+          }
+          if (error instanceof Error && error.message.includes("channel_archived")) {
+            return {
+              ok: false,
+              error: {
+                code: "conflict",
+                message: "Archived channels cannot accept new messages.",
+                details: { reason: "channel_archived" },
+              },
+            };
+          }
+          throw error;
+        }
+      };
+
+      if (command.idempotency_key) {
+        const messageId = randomOpaqueId("msg");
+        const eventId = randomOpaqueId("evt");
+        return withIdempotency({
+          workspaceId: loaded.value.workspaceId,
+          commandKind: "channel.message",
+          idempotencyKey: command.idempotency_key,
+          resultId: messageId,
+          reload: reloadPostedMessage,
+          run: async () => appendMessage(messageId, eventId),
         });
-        publish(appended);
-        return {
-          ok: true,
-          value: {
-            message_id: messageId,
-            event_id: eventId,
-            sequence: appended.sequence,
-            recipient_handles: routing.recipient_handles,
-            routing_mode: routing.routing_mode,
-          },
-        };
-      } catch (error) {
-        if (error instanceof ChannelEventPersistenceError) {
-          return {
-            ok: false,
-            error: {
-              code: "validation_failed",
-              message: error.message,
-            },
-          };
-        }
-        if (error instanceof Error && error.message.includes("channel_archived")) {
-          return {
-            ok: false,
-            error: {
-              code: "conflict",
-              message: "Archived channels cannot accept new messages.",
-              details: { reason: "channel_archived" },
-            },
-          };
-        }
-        throw error;
       }
+
+      return appendMessage(randomOpaqueId("msg"), randomOpaqueId("evt"));
     },
 
     async createPin(session, channelId, command) {

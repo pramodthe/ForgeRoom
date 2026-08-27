@@ -77,6 +77,8 @@ export const channelMessageCommandSchema = z
     recipient_handles: z.array(z.string().min(1)).default([]),
     routing_mode: routingModeSchema,
     parent_message_id: opaqueIdSchema.nullable(),
+    /** Present for live composer sends; optional so older callers remain valid. */
+    idempotency_key: idempotencyKeySchema.optional(),
   })
   .strict();
 

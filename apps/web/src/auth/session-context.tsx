@@ -1,6 +1,7 @@
 import type { SessionResponse } from "@forgeroom/contracts";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { createContext, useCallback, useContext, useEffect, useMemo, type ReactNode } from "react";
+import { setApiUnauthorizedHandler } from "../api/unauthorized";
 import { fetchSession, logout as logoutRequest } from "../auth-api";
 import { isSessionExpired, liveSession } from "./session";
 
@@ -24,6 +25,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   });
 
   const clearSession = useCallback(async () => {
+    await queryClient.cancelQueries({ queryKey: ["session"] });
     queryClient.setQueryData(["session"], null);
   }, [queryClient]);
 
@@ -52,6 +54,13 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       throw new Error("Logout failed. Please try again.");
     }
   }, [clearSession, sessionQuery.data]);
+
+  useEffect(() => {
+    setApiUnauthorizedHandler(() => {
+      void clearSession();
+    });
+    return () => setApiUnauthorizedHandler(null);
+  }, [clearSession]);
 
   useEffect(() => {
     const session = sessionQuery.data;
