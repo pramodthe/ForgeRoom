@@ -10,7 +10,8 @@
     "./event-normalize": "./src/event-normalize.ts",
     "./turn-creation": "./src/turn-creation.ts",
     "./create-or-reconcile-turn": "./src/create-or-reconcile-turn.ts",
-    "./stop-correction": "./src/stop-correction.ts"
+    "./stop-correction": "./src/stop-correction.ts",
+    "./multi-agent-run": "./src/multi-agent-run.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit",

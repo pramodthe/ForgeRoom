@@ -86,3 +86,16 @@ export type {
   RestartTurnMark,
   McpInFlightOutcome,
 } from "./stop-correction";
+export {
+  planDirectRunSteps,
+  activityBucketForStepState,
+  aggregateRunFromSteps,
+  buildCoworkerTurnInputRef,
+  humanTranscriptProjectionCount,
+} from "./multi-agent-run";
+export type {
+  DirectRunRecipient,
+  DirectRunStepPlan,
+  PlanDirectRunStepsResult,
+  CoworkerTurnInputRef,
+} from "./multi-agent-run";

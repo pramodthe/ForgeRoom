@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
 import type postgres from "postgres";
+import { applyRunLifecycleProjection } from "./multi-agent-run";
 
 export type SqlClient = postgres.Sql;
 
@@ -264,6 +265,22 @@ export async function ingestNormalizedTrueForgeEvent(
       await tx`
         UPDATE agent_turns SET state = 'streaming' WHERE id = ${input.agentTurnId}
       `;
+      await tx`
+        UPDATE run_steps
+        SET state = 'running', started_at = COALESCE(started_at, ${now})
+        WHERE id = ${turn.run_step_id}
+          AND state IN ('queued', 'acquiring_session', 'running')
+      `;
+    }
+
+    const runRows = await tx<{ run_id: string }[]>`
+      SELECT run_id FROM run_steps WHERE id = ${turn.run_step_id} LIMIT 1
+    `;
+    if (runRows[0] && (turnOutcome || (inserted && turn.state === "creating"))) {
+      await applyRunLifecycleProjection(tx as unknown as SqlClient, {
+        runId: runRows[0].run_id,
+        now,
+      });
     }
 
     return {

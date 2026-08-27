@@ -148,6 +148,7 @@ export async function executeIngestTrueForgeEvent(
   });
   const turnDoneOutcome =
     event.normalizedType === "turn.done" ? evaluateTurnDoneOutcome(event.payloadRedacted) : null;
+  // Parent Run lifecycle is refreshed inside the ingest transaction from the locked step.
   return ingestNormalizedTrueForgeEvent(sql, {
     agentTurnId: command.payload.agent_turn_id,
     expectedTurnStates: [command.payload.expected_turn_state, "streaming", "creating"],

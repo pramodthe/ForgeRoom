@@ -30,11 +30,13 @@ import {
   isChannelAgentSessionAvailable,
   MAX_RECENT_DELTAS,
   nextDeliveryCursor,
+  planDirectRunSteps,
   resolveMessageRecipients,
   type TurnCreationStatus,
 } from "@forgeroom/orchestration";
 import type { TrueForgeClient } from "@forgeroom/trueforge";
 import {
+  createDirectMultiAgentRun,
   enqueueCorrectionForStep,
   markCancelCalled,
   requestRunStepStop,
@@ -306,6 +308,8 @@ export type WorkspaceService = {
       sequence: number;
       recipient_handles: string[];
       routing_mode: "direct" | "team";
+      run_id: string | null;
+      run_step_ids: string[];
     }>
   >;
   createPin(
@@ -1371,6 +1375,8 @@ export function createWorkspaceService(options?: {
         sequence: number;
         recipient_handles: string[];
         routing_mode: "direct" | "team";
+        run_id: string | null;
+        run_step_ids: string[];
       };
 
       const reloadPostedMessage = async (
@@ -1410,12 +1416,30 @@ export function createWorkspaceService(options?: {
             if (!payload?.routing_mode || !payload.recipient_handles) {
               return null;
             }
+            let runId: string | null = null;
+            let runStepIds: string[] = [];
+            if (sql) {
+              const runs = await sql<{ id: string }[]>`
+                SELECT id FROM runs WHERE source_message_id = ${messageId} LIMIT 1
+              `;
+              runId = runs[0]?.id ?? null;
+              if (!runId) {
+                // Message without Run is incomplete when SQL-backed; force retry/repair.
+                return null;
+              }
+              const steps = await sql<{ id: string }[]>`
+                SELECT id FROM run_steps WHERE run_id = ${runId} ORDER BY id
+              `;
+              runStepIds = steps.map((step) => step.id);
+            }
             return {
               message_id: message.id,
               event_id: message.eventId,
               sequence: row.sequence,
               recipient_handles: payload.recipient_handles,
               routing_mode: payload.routing_mode,
+              run_id: runId,
+              run_step_ids: runStepIds,
             };
           }
           if (!page.hasMore || page.events.length === 0) {
@@ -1496,6 +1520,97 @@ export function createWorkspaceService(options?: {
         };
       }
 
+      let plannedSteps: Array<{
+        assignedAgentId: string;
+        channelAgentSessionId: string;
+        logicalThreadId: string;
+        objective: string;
+      }> | null = null;
+      if (sql) {
+        const recipients = [];
+        for (const handle of routing.recipient_handles) {
+          const coworker = coworkers.find((row) => row.handle === handle);
+          if (!coworker) {
+            return {
+              ok: false,
+              error: {
+                code: "validation_failed",
+                message: "Resolved recipient is missing from the coworker roster.",
+                details: { handle },
+              },
+            };
+          }
+          const agentSession = sessions.find((row) => row.agentProfileId === coworker.id);
+          if (!agentSession) {
+            return {
+              ok: false,
+              error: {
+                code: "recipient_unavailable",
+                message: "Resolved recipient has no channel agent session.",
+                details: { handle, coworker_id: coworker.id },
+              },
+            };
+          }
+          recipients.push({
+            coworkerId: coworker.id,
+            handle: coworker.handle,
+            channelAgentSessionId: agentSession.id,
+            logicalThreadId: agentSession.logicalAguiThreadId,
+          });
+        }
+        const plan = planDirectRunSteps({
+          goal: command.body,
+          recipients,
+        });
+        if (!plan.ok) {
+          return {
+            ok: false,
+            error: {
+              code: "validation_failed",
+              message: "Could not plan a direct multi-agent run.",
+              details: { reason: plan.reason },
+            },
+          };
+        }
+        plannedSteps = plan.steps.map((step) => ({
+          assignedAgentId: step.assignedCoworkerId,
+          channelAgentSessionId: step.channelAgentSessionId,
+          logicalThreadId: step.logicalThreadId,
+          objective: step.objective,
+        }));
+      }
+
+      const ensureRunForMessage = async (
+        messageId: string,
+        createdAt: string,
+      ): Promise<{ runId: string; runStepIds: string[] } | null> => {
+        if (!sql || !plannedSteps) {
+          return null;
+        }
+        const existing = await sql<{ id: string }[]>`
+          SELECT id FROM runs WHERE source_message_id = ${messageId} LIMIT 1
+        `;
+        if (existing[0]) {
+          const steps = await sql<{ id: string }[]>`
+            SELECT id FROM run_steps WHERE run_id = ${existing[0].id} ORDER BY id
+          `;
+          return { runId: existing[0].id, runStepIds: steps.map((step) => step.id) };
+        }
+        const created = await createDirectMultiAgentRun(sql, {
+          channelId,
+          sourceMessageId: messageId,
+          requestedBy: session.user.id,
+          routingMode: routing.routing_mode,
+          goal: command.body,
+          now: createdAt,
+          steps: plannedSteps,
+        });
+        return {
+          runId: created.runId,
+          runStepIds: created.steps.map((step) => step.id),
+        };
+      };
+
       const appendMessage = async (
         messageId: string,
         eventId: string,
@@ -1531,7 +1646,40 @@ export function createWorkspaceService(options?: {
               createdAt,
             },
           });
+
+          let runId: string | null = null;
+          let runStepIds: string[] = [];
+          if (sql && plannedSteps) {
+            try {
+              const ensured = await ensureRunForMessage(messageId, createdAt);
+              if (!ensured) {
+                return {
+                  ok: false,
+                  error: {
+                    code: "validation_failed",
+                    message: "Failed to create the direct multi-agent run for this message.",
+                  },
+                };
+              }
+              runId = ensured.runId;
+              runStepIds = ensured.runStepIds;
+            } catch (error) {
+              return {
+                ok: false,
+                error: {
+                  code: "validation_failed",
+                  message:
+                    error instanceof Error
+                      ? error.message
+                      : "Failed to create the direct multi-agent run for this message.",
+                },
+              };
+            }
+          }
+
+          // Publish only after durable message + (when SQL) run fan-out succeed.
           publish(appended);
+
           return {
             ok: true,
             value: {
@@ -1540,6 +1688,8 @@ export function createWorkspaceService(options?: {
               sequence: appended.sequence,
               recipient_handles: routing.recipient_handles,
               routing_mode: routing.routing_mode,
+              run_id: runId,
+              run_step_ids: runStepIds,
             },
           };
         } catch (error) {
