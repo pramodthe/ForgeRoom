@@ -1,13 +1,24 @@
 import { Link, useParams } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { LoadingState, RouteErrorState } from "@forgeroom/ui-components";
 import { useState } from "react";
-import { getCoworker, listCoworkers } from "../api/workspace-api";
+import {
+  createFixtureResearcher,
+  disableCoworker,
+  getCoworker,
+  listCoworkers,
+  updateCoworker,
+  type CoworkerDetail,
+} from "../api/workspace-api";
+import { newIdempotencyKey } from "../api/http-client";
+import { isFixtureMode } from "../api/mode";
+import { useSession } from "../auth/session-context";
 import { workspaceCoworkerDetailPath, workspaceCoworkersPath } from "../routes/paths";
 import { Avatar } from "../ui/avatar";
 
 export function CoworkersPage() {
   const { workspaceId } = useParams({ from: "/w/$workspaceId/coworkers" });
+  const queryClient = useQueryClient();
   const [builderOpen, setBuilderOpen] = useState(false);
   const coworkersQuery = useQuery({
     queryKey: ["coworkers", workspaceId],
@@ -29,15 +40,19 @@ export function CoworkersPage() {
           </div>
           <button
             type="button"
-            onClick={() => setBuilderOpen(true)}
-            className="rounded-xl bg-zinc-950 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-zinc-800"
+            onClick={() => isFixtureMode && setBuilderOpen(true)}
+            disabled={!isFixtureMode}
+            title={isFixtureMode ? undefined : "CoworkerDraft integration is not connected yet"}
+            className="rounded-xl bg-zinc-950 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-zinc-800 disabled:cursor-not-allowed disabled:bg-zinc-300"
           >
-            + New coworker
+            {isFixtureMode ? "+ New coworker" : "Builder integration pending"}
           </button>
         </div>
         <div className="mt-6 grid grid-cols-2 gap-4">
           {(coworkersQuery.data ?? []).map((coworker) => {
             const analyst = coworker.handle === "analyst";
+            const researcher = coworker.handle === "researcher";
+            const readOnlySpecialist = analyst || researcher;
             return (
               <Link
                 key={coworker.id}
@@ -45,12 +60,18 @@ export function CoworkersPage() {
                 className="group rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
               >
                 <div className="flex items-start gap-3">
-                  <Avatar name={coworker.name} tone={analyst ? "violet" : "blue"} />
+                  <Avatar name={coworker.name} tone={readOnlySpecialist ? "violet" : "blue"} />
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
                       <h2 className="font-semibold text-zinc-950">{coworker.name}</h2>
-                      <span className="h-2 w-2 rounded-full bg-emerald-500" />
-                      <span className="text-[10px] text-emerald-700">Available</span>
+                      <span
+                        className={`h-2 w-2 rounded-full ${coworker.status === "active" ? "bg-emerald-500" : "bg-zinc-400"}`}
+                      />
+                      <span
+                        className={`text-[10px] ${coworker.status === "active" ? "text-emerald-700" : "text-zinc-500"}`}
+                      >
+                        {coworker.status === "active" ? "Available" : "Disabled"}
+                      </span>
                     </div>
                     <p className="text-xs text-zinc-500">
                       @{coworker.handle} · {coworker.title}
@@ -61,10 +82,12 @@ export function CoworkersPage() {
                 <p className="mt-4 text-sm leading-6 text-zinc-600">
                   {analyst
                     ? "Finds patterns across support data and turns evidence into clear visual briefings."
-                    : "Turns decisions into governed tasks, artifacts, and approved external actions."}
+                    : researcher
+                      ? "Researches support and GitHub evidence with read-only tools and sourced briefings."
+                      : "Turns decisions into governed tasks, artifacts, and approved external actions."}
                 </p>
                 <div className="mt-4 flex flex-wrap gap-1.5">
-                  {(analyst
+                  {(readOnlySpecialist
                     ? ["GitHub read", "Support data", "Charts", "Tables"]
                     : ["Intercom", "Sandbox", "Tasks", "Artifacts"]
                   ).map((tool) => (
@@ -78,7 +101,11 @@ export function CoworkersPage() {
                 </div>
                 <div className="mt-4 flex items-center justify-between border-t border-zinc-100 pt-3 text-[11px] text-zinc-400">
                   <span>
-                    {analyst ? "2 channels · 1 private skill" : "2 channels · 2 private skills"}
+                    {researcher
+                      ? "1 channel · 1 private skill"
+                      : analyst
+                        ? "2 channels · 1 private skill"
+                        : "2 channels · 2 private skills"}
                   </span>
                   <span>Version {coworker.config_revision}</span>
                 </div>
@@ -94,25 +121,57 @@ export function CoworkersPage() {
           </p>
           <button
             type="button"
-            onClick={() => setBuilderOpen(true)}
-            className="mt-4 rounded-lg border border-zinc-300 bg-white px-3 py-2 text-xs font-medium text-zinc-700 shadow-sm"
+            onClick={() => isFixtureMode && setBuilderOpen(true)}
+            disabled={!isFixtureMode}
+            className="mt-4 rounded-lg border border-zinc-300 bg-white px-3 py-2 text-xs font-medium text-zinc-700 shadow-sm disabled:cursor-not-allowed disabled:text-zinc-400"
           >
-            Open coworker builder
+            {isFixtureMode ? "Open coworker builder" : "CoworkerDraft integration pending"}
           </button>
         </section>
       </div>
-      {builderOpen ? <CoworkerBuilder onClose={() => setBuilderOpen(false)} /> : null}
+      {builderOpen ? (
+        <CoworkerBuilder
+          workspaceId={workspaceId}
+          onClose={() => setBuilderOpen(false)}
+          onCreated={() => queryClient.invalidateQueries({ queryKey: ["coworkers", workspaceId] })}
+        />
+      ) : null}
     </main>
   );
 }
 
-function CoworkerBuilder({ onClose }: { onClose: () => void }) {
+function CoworkerBuilder({
+  workspaceId,
+  onClose,
+  onCreated,
+}: {
+  workspaceId: string;
+  onClose: () => void;
+  onCreated: () => Promise<unknown>;
+}) {
   const [stage, setStage] = useState<
     "prompt" | "gathering" | "review" | "confirming" | "creating" | "ready"
   >("prompt");
   const [prompt, setPrompt] = useState(
     "Create a customer research coworker that can read support data and GitHub, but cannot modify external systems.",
   );
+  const [creationError, setCreationError] = useState<string | null>(null);
+
+  async function createResearcher() {
+    setCreationError(null);
+    setStage("confirming");
+    await new Promise((resolve) => window.setTimeout(resolve, 350));
+    setStage("creating");
+    try {
+      await createFixtureResearcher(workspaceId);
+      await onCreated();
+      await new Promise((resolve) => window.setTimeout(resolve, 700));
+      setStage("ready");
+    } catch (error) {
+      setCreationError(error instanceof Error ? error.message : "Unable to create coworker.");
+      setStage("review");
+    }
+  }
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-950/45 p-6 backdrop-blur-sm"
@@ -180,14 +239,16 @@ function CoworkerBuilder({ onClose }: { onClose: () => void }) {
           {stage === "review" ? (
             <PermissionReview
               onBack={() => setStage("prompt")}
-              onCreate={() => {
-                setStage("confirming");
-                window.setTimeout(() => {
-                  setStage("creating");
-                  window.setTimeout(() => setStage("ready"), 700);
-                }, 350);
-              }}
+              onCreate={() => void createResearcher()}
             />
+          ) : null}
+          {creationError ? (
+            <p
+              className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800"
+              role="alert"
+            >
+              {creationError}
+            </p>
           ) : null}
           {stage === "confirming" ? (
             <BuilderProgress
@@ -266,7 +327,7 @@ function PermissionReview({ onBack, onCreate }: { onBack: () => void; onCreate: 
           items={[
             "Components: DataTable, BarOrLineChart",
             "Private skill: Support insight brief",
-            "TaskRecord: read/create; update own",
+            "TaskRecord: create; update fields/status",
             "Sandbox disabled · 20 calls · 12k tokens",
           ]}
         />
@@ -338,7 +399,6 @@ function ReviewGroup({
 
 export function CoworkerDetailPage() {
   const { workspaceId, coworkerId } = useParams({ from: "/w/$workspaceId/coworkers/$coworkerId" });
-  const [saved, setSaved] = useState(false);
   const coworkerQuery = useQuery({
     queryKey: ["coworker", workspaceId, coworkerId],
     queryFn: () => getCoworker(workspaceId, coworkerId),
@@ -352,7 +412,82 @@ export function CoworkerDetailPage() {
         action={<Link to={workspaceCoworkersPath(workspaceId)}>Back to coworkers</Link>}
       />
     );
+  return (
+    <CoworkerEditor key={coworker.config_revision} workspaceId={workspaceId} coworker={coworker} />
+  );
+}
+
+function CoworkerEditor({
+  workspaceId,
+  coworker,
+}: {
+  workspaceId: string;
+  coworker: CoworkerDetail;
+}) {
+  const queryClient = useQueryClient();
+  const { session } = useSession();
+  const [name, setName] = useState(coworker.name);
+  const [handle, setHandle] = useState(coworker.handle);
+  const [title, setTitle] = useState(coworker.title);
+  const [instructions, setInstructions] = useState(coworker.config.standing_instructions);
+  const [saved, setSaved] = useState(false);
+  const [disableConfirm, setDisableConfirm] = useState(false);
   const analyst = coworker.handle === "analyst";
+
+  const updateMutation = useMutation({
+    mutationFn: () => {
+      if (!session) throw new Error("Your session expired. Sign in again.");
+      return updateCoworker({
+        coworkerId: coworker.id,
+        csrfToken: session.csrf_token,
+        command: {
+          name,
+          handle,
+          title,
+          standing_instructions: instructions,
+          model_preset: coworker.config.model_preset,
+          native_subagents_enabled: false,
+          channel_ids: coworker.config.channel_ids,
+          budget: coworker.config.budget,
+          task_record_grants: coworker.config.task_record_grants,
+          tool_grants: coworker.config.tool_grants,
+          skill_version_ids: coworker.config.skill_version_ids,
+          component_version_ids: coworker.config.component_version_ids,
+        },
+      });
+    },
+    onSuccess: async (updated) => {
+      queryClient.setQueryData(["coworker", workspaceId, coworker.id], updated);
+      await queryClient.invalidateQueries({ queryKey: ["coworkers", workspaceId] });
+      setSaved(true);
+      window.setTimeout(() => setSaved(false), 2500);
+    },
+  });
+
+  const disableMutation = useMutation({
+    mutationFn: () => {
+      if (!session) throw new Error("Your session expired. Sign in again.");
+      return disableCoworker({
+        coworkerId: coworker.id,
+        csrfToken: session.csrf_token,
+        command: {
+          schemaVersion: 1,
+          expected_config_revision: coworker.config_revision,
+          reason: "Disabled by workspace owner",
+          idempotency_key: newIdempotencyKey("disable_coworker"),
+        },
+      });
+    },
+    onSuccess: async (disabled) => {
+      queryClient.setQueryData(["coworker", workspaceId, coworker.id], {
+        ...coworker,
+        ...disabled,
+      });
+      await queryClient.invalidateQueries({ queryKey: ["coworkers", workspaceId] });
+      setDisableConfirm(false);
+    },
+  });
+
   return (
     <main className="min-h-0 flex-1 overflow-y-auto bg-zinc-50/60">
       <div className="mx-auto max-w-5xl px-6 py-7">
@@ -368,26 +503,35 @@ export function CoworkerDetailPage() {
             <div>
               <h1 className="text-xl font-semibold text-zinc-950">{coworker.name}</h1>
               <p className="text-xs text-zinc-500">
-                @{coworker.handle} · <span className="text-emerald-700">Available</span>
+                @{coworker.handle} ·{" "}
+                <span
+                  className={coworker.status === "active" ? "text-emerald-700" : "text-zinc-500"}
+                >
+                  {coworker.status === "active" ? "Available" : "Disabled"}
+                </span>
               </p>
             </div>
           </div>
           <div className="flex gap-2">
             <button
               type="button"
+              onClick={() => setDisableConfirm(true)}
+              disabled={coworker.status === "disabled" || disableMutation.isPending}
               className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs font-medium text-zinc-600"
             >
-              Disable
+              {disableMutation.isPending
+                ? "Disabling…"
+                : coworker.status === "disabled"
+                  ? "Disabled"
+                  : "Disable"}
             </button>
             <button
               type="button"
-              onClick={() => {
-                setSaved(true);
-                window.setTimeout(() => setSaved(false), 2500);
-              }}
-              className="rounded-lg bg-zinc-950 px-3 py-2 text-xs font-semibold text-white"
+              onClick={() => updateMutation.mutate()}
+              disabled={coworker.status === "disabled" || updateMutation.isPending}
+              className="rounded-lg bg-zinc-950 px-3 py-2 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:bg-zinc-300"
             >
-              Save changes
+              {updateMutation.isPending ? "Saving…" : "Save changes"}
             </button>
           </div>
         </div>
@@ -399,21 +543,54 @@ export function CoworkerDetailPage() {
             Changes saved. Active channel sessions will rotate; pending proposals may become stale.
           </div>
         ) : null}
+        {disableConfirm ? (
+          <div
+            className="mt-4 flex items-center justify-between gap-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900"
+            role="alert"
+          >
+            <span>
+              Disable @{coworker.handle}? It will be removed from channels and cannot accept new
+              work.
+            </span>
+            <div className="flex shrink-0 gap-2">
+              <button
+                type="button"
+                onClick={() => setDisableConfirm(false)}
+                className="rounded-lg px-3 py-1.5 text-xs font-medium"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => disableMutation.mutate()}
+                className="rounded-lg bg-red-700 px-3 py-1.5 text-xs font-semibold text-white"
+              >
+                Confirm disable
+              </button>
+            </div>
+          </div>
+        ) : null}
+        {updateMutation.error || disableMutation.error ? (
+          <div
+            className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800"
+            role="alert"
+          >
+            {(updateMutation.error ?? disableMutation.error)?.message}
+          </div>
+        ) : null}
         <div className="mt-5 grid grid-cols-[1fr_280px] gap-4">
           <section className="space-y-4">
             <EditorSection title="Identity & instructions">
               <div className="grid grid-cols-2 gap-3">
-                <Field label="Name" value={coworker.name} />
-                <Field label="Handle" value={coworker.handle} />
+                <Field label="Name" value={name} onChange={setName} />
+                <Field label="Handle" value={handle} onChange={setHandle} />
+                <Field label="Role title" value={title} onChange={setTitle} />
               </div>
               <label className="mt-3 block text-xs text-zinc-500">
                 Standing instructions
                 <textarea
-                  defaultValue={
-                    analyst
-                      ? "Find evidence, cite sources, and summarize uncertainty. Never modify external systems."
-                      : "Turn approved decisions into explicit tasks and artifacts. Ask before any external write."
-                  }
+                  value={instructions}
+                  onChange={(event) => setInstructions(event.target.value)}
                   rows={4}
                   className="mt-1.5 w-full rounded-xl border border-zinc-200 p-3 text-sm leading-6 text-zinc-700"
                 />
@@ -488,12 +665,21 @@ function EditorSection({ title, children }: { title: string; children: React.Rea
     </section>
   );
 }
-function Field({ label, value }: { label: string; value: string }) {
+function Field({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
   return (
     <label className="text-xs text-zinc-500">
       {label}
       <input
-        defaultValue={value}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
         className="mt-1.5 w-full rounded-xl border border-zinc-200 px-3 py-2.5 text-sm text-zinc-800"
       />
     </label>

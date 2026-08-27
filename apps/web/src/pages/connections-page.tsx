@@ -1,8 +1,10 @@
 import { useParams } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { LoadingState, RouteErrorState } from "@forgeroom/ui-components";
+import type { ConnectionStatus } from "@forgeroom/contracts";
 import { useState } from "react";
 import { listConnections } from "../api/workspace-api";
+import { isFixtureMode } from "../api/mode";
 
 export function ConnectionsPage() {
   const { workspaceId } = useParams({ from: "/w/$workspaceId/connections" });
@@ -66,18 +68,35 @@ function ConnectionCard({
   connection: Awaited<ReturnType<typeof listConnections>>[number];
 }) {
   const [testing, setTesting] = useState(false);
-  const [verified, setVerified] = useState(connection.status === "active");
+  const [status, setStatus] = useState<ConnectionStatus>(connection.status);
+  const [reconnecting, setReconnecting] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
   const trueforge = connection.provider === "trueforge";
   const tools = trueforge
     ? ["sandbox.create", "sandbox.execute", "artifact.download"]
     : ["GITHUB_GET_ISSUES", "INTERCOM_UPDATE_MACRO", "SUPPORT_SEARCH"];
   function test() {
+    if (!isFixtureMode) return;
     setTesting(true);
+    setNotice(null);
     window.setTimeout(() => {
       setTesting(false);
-      setVerified(true);
+      setStatus("active");
+      setNotice("Prototype verification completed against the fixture adapter.");
     }, 700);
   }
+  function reconnect() {
+    if (!isFixtureMode) return;
+    setReconnecting(true);
+    setStatus("connecting");
+    setNotice(null);
+    window.setTimeout(() => {
+      setReconnecting(false);
+      setStatus("active");
+      setNotice("Prototype reconnect completed against the fixture adapter.");
+    }, 900);
+  }
+  const statusPresentation = CONNECTION_STATUS_PRESENTATION[status];
   return (
     <section className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
       <div className="flex items-start justify-between">
@@ -93,12 +112,10 @@ function ConnectionCard({
           </div>
         </div>
         <span
-          className={`inline-flex items-center gap-1 rounded-full px-2 py-1 text-[10px] font-medium ${verified ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}
+          className={`inline-flex items-center gap-1 rounded-full px-2 py-1 text-[10px] font-medium ${statusPresentation.badge}`}
         >
-          <span
-            className={`h-1.5 w-1.5 rounded-full ${verified ? "bg-emerald-500" : "bg-amber-500"}`}
-          />
-          {verified ? "Verified" : "Verify soon"}
+          <span className={`h-1.5 w-1.5 rounded-full ${statusPresentation.dot}`} />
+          {reconnecting ? "Reconnecting" : statusPresentation.label}
         </span>
       </div>
       <div className="mt-5">
@@ -127,17 +144,72 @@ function ConnectionCard({
         <button
           type="button"
           onClick={test}
-          className="flex-1 rounded-lg border border-zinc-200 px-3 py-2 text-xs font-medium text-zinc-700 hover:bg-zinc-50"
+          disabled={!isFixtureMode || testing || reconnecting}
+          title={isFixtureMode ? undefined : "Connection test API is not connected yet"}
+          className="flex-1 rounded-lg border border-zinc-200 px-3 py-2 text-xs font-medium text-zinc-700 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:bg-zinc-50 disabled:text-zinc-400"
         >
-          {testing ? "Testing…" : verified ? "Test connection" : "Verify connection"}
+          {!isFixtureMode
+            ? "Test integration pending"
+            : testing
+              ? "Testing fixture…"
+              : status === "active"
+                ? "Test connection"
+                : "Verify connection"}
         </button>
         <button
           type="button"
-          className="rounded-lg bg-zinc-950 px-3 py-2 text-xs font-semibold text-white"
+          onClick={reconnect}
+          disabled={!isFixtureMode || testing || reconnecting}
+          title={isFixtureMode ? undefined : "Reconnect API is not connected yet"}
+          className="rounded-lg bg-zinc-950 px-3 py-2 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:bg-zinc-300"
         >
-          Reconnect
+          {!isFixtureMode ? "Reconnect pending" : reconnecting ? "Reconnecting…" : "Reconnect"}
         </button>
       </div>
+      {notice ? (
+        <p
+          className="mt-3 rounded-lg bg-violet-50 px-3 py-2 text-[11px] text-violet-800"
+          role="status"
+        >
+          {notice}
+        </p>
+      ) : null}
     </section>
   );
 }
+
+const CONNECTION_STATUS_PRESENTATION: Record<
+  ConnectionStatus,
+  { label: string; badge: string; dot: string }
+> = {
+  unconfigured: {
+    label: "Not configured",
+    badge: "bg-zinc-100 text-zinc-600",
+    dot: "bg-zinc-400",
+  },
+  connecting: {
+    label: "Connecting",
+    badge: "bg-blue-50 text-blue-700",
+    dot: "bg-blue-500",
+  },
+  active: {
+    label: "Verified",
+    badge: "bg-emerald-50 text-emerald-700",
+    dot: "bg-emerald-500",
+  },
+  expired: {
+    label: "Expired",
+    badge: "bg-amber-50 text-amber-800",
+    dot: "bg-amber-500",
+  },
+  revoked: {
+    label: "Revoked",
+    badge: "bg-red-50 text-red-700",
+    dot: "bg-red-500",
+  },
+  drifted: {
+    label: "Drift detected",
+    badge: "bg-orange-50 text-orange-800",
+    dot: "bg-orange-500",
+  },
+};

@@ -4,8 +4,11 @@ import type {
   ChannelParticipantAddCommand,
   ChannelRosterCoworker,
   ChannelRosterResponse,
+  ChannelTimelineMessage,
   ChannelTimelineMessagesResponse,
+  CoworkerDisableCommand,
   CoworkerProfile,
+  CoworkerUpdateCommand,
   SkillDraft,
   SkillVersion,
   TaskRecordV1,
@@ -15,6 +18,7 @@ import {
   channelSchema,
   channelTimelineMessagesResponseSchema,
   coworkerProfileSchema,
+  coworkerUpdateCommandSchema,
 } from "@forgeroom/contracts";
 import type { ConnectionFixture } from "./mock-fixtures";
 import {
@@ -23,6 +27,7 @@ import {
   MOCK_CHANNEL_MESSAGES,
   MOCK_CONNECTIONS,
   MOCK_COWORKERS,
+  MOCK_SESSION,
   MOCK_SKILL_DRAFTS,
   MOCK_SKILL_VERSIONS,
   MOCK_TASKS,
@@ -32,6 +37,160 @@ import { isFixtureMode } from "./mode";
 import { apiFetch, ApiError, newIdempotencyKey, stripRequestId } from "./http-client";
 
 const useMockApi = isFixtureMode;
+
+export type CoworkerEditableConfig = Omit<
+  CoworkerUpdateCommand,
+  "name" | "handle" | "title" | "native_subagents_enabled"
+>;
+
+export type CoworkerDetail = CoworkerProfile & { config: CoworkerEditableConfig };
+
+const fixtureCoworkers = new Map<string, CoworkerDetail>();
+const fixtureTimelines = new Map<string, ChannelTimelineMessagesResponse>();
+const FIXTURE_COWORKER_STORAGE_PREFIX = "forgeroom:fixture:coworker:v1:";
+const FIXTURE_TIMELINE_STORAGE_PREFIX = "forgeroom:fixture:timeline:v1:";
+
+const FIXTURE_RESEARCHER_PROFILE = coworkerProfileSchema.parse({
+  schemaVersion: 1,
+  id: "cw_researcher_003",
+  workspace_id: MOCK_WORKSPACE_ID,
+  handle: "researcher",
+  name: "Researcher",
+  title: "Customer research specialist",
+  status: "active",
+  native_subagents_enabled: false,
+  current_version_id: "cwv_researcher_v1",
+  config_revision: 1,
+});
+
+function defaultFixtureConfig(coworker: CoworkerProfile): CoworkerEditableConfig {
+  const analyst = coworker.handle === "analyst";
+  return {
+    standing_instructions: analyst
+      ? "Find evidence, cite sources, and summarize uncertainty. Never modify external systems."
+      : "Turn approved decisions into explicit tasks and artifacts. Ask before any external write.",
+    model_preset: "default",
+    channel_ids: MOCK_CHANNELS.map((channel) => channel.id),
+    budget: { max_turn_tokens: 12_000, max_tool_calls: 20 },
+    task_record_grants: [],
+    tool_grants: analyst
+      ? ["GITHUB_GET_ISSUES", "SUPPORT_SEARCH", "DATATABLE_RENDER", "CHART_RENDER"]
+      : ["INTERCOM_UPDATE_MACRO", "SANDBOX_RUN", "TASK_WRITE", "ARTIFACT_PUBLISH"],
+    skill_version_ids: analyst ? ["skill_version_001"] : [],
+    component_version_ids: [],
+  };
+}
+
+function fixtureStorage(): Storage | null {
+  if (typeof window === "undefined") return null;
+  return window.localStorage;
+}
+
+function readStoredFixtureCoworker(coworkerId: string): CoworkerDetail | null {
+  const storage = fixtureStorage();
+  if (!storage) return null;
+  const storageKey = `${FIXTURE_COWORKER_STORAGE_PREFIX}${coworkerId}`;
+  try {
+    const raw = storage.getItem(storageKey);
+    if (!raw) return null;
+    const candidate = JSON.parse(raw) as Record<string, unknown>;
+    const { config: rawConfig, ...rawProfile } = candidate;
+    const profile = coworkerProfileSchema.parse(rawProfile);
+    const command = coworkerUpdateCommandSchema.parse({
+      name: profile.name,
+      handle: profile.handle,
+      title: profile.title,
+      native_subagents_enabled: profile.native_subagents_enabled,
+      ...(rawConfig as Record<string, unknown>),
+    });
+    const {
+      name: _name,
+      handle: _handle,
+      title: _title,
+      native_subagents_enabled: _native,
+      ...config
+    } = command;
+    return { ...profile, config };
+  } catch {
+    storage.removeItem(storageKey);
+    return null;
+  }
+}
+
+function persistFixtureCoworker(coworker: CoworkerDetail): void {
+  fixtureCoworkers.set(coworker.id, coworker);
+  fixtureStorage()?.setItem(
+    `${FIXTURE_COWORKER_STORAGE_PREFIX}${coworker.id}`,
+    JSON.stringify(coworker),
+  );
+}
+
+function storedFixtureResearcher(): CoworkerDetail | null {
+  const existing = fixtureCoworkers.get(FIXTURE_RESEARCHER_PROFILE.id);
+  if (existing) return existing;
+  const stored = readStoredFixtureCoworker(FIXTURE_RESEARCHER_PROFILE.id);
+  if (stored) fixtureCoworkers.set(stored.id, stored);
+  return stored;
+}
+
+function allFixtureCoworkers(): CoworkerDetail[] {
+  const coworkers = MOCK_COWORKERS.map((coworker) => fixtureCoworker(coworker));
+  const researcher = storedFixtureResearcher();
+  return researcher ? [...coworkers, researcher] : coworkers;
+}
+
+function findFixtureCoworker(coworkerId: string): CoworkerDetail | null {
+  return allFixtureCoworkers().find((coworker) => coworker.id === coworkerId) ?? null;
+}
+
+function fixtureTimeline(channelId: string): ChannelTimelineMessagesResponse {
+  const existing = fixtureTimelines.get(channelId);
+  if (existing) return existing;
+  const fallback =
+    MOCK_CHANNEL_MESSAGES.find((timeline) => timeline.channel_id === channelId) ??
+    channelTimelineMessagesResponseSchema.parse({
+      schemaVersion: 1,
+      channel_id: channelId,
+      messages: [],
+    });
+  const storage = fixtureStorage();
+  if (!storage) {
+    fixtureTimelines.set(channelId, fallback);
+    return fallback;
+  }
+  const storageKey = `${FIXTURE_TIMELINE_STORAGE_PREFIX}${channelId}`;
+  try {
+    const raw = storage.getItem(storageKey);
+    const timeline = raw ? channelTimelineMessagesResponseSchema.parse(JSON.parse(raw)) : fallback;
+    fixtureTimelines.set(channelId, timeline);
+    return timeline;
+  } catch {
+    storage.removeItem(storageKey);
+    fixtureTimelines.set(channelId, fallback);
+    return fallback;
+  }
+}
+
+function persistFixtureTimeline(timeline: ChannelTimelineMessagesResponse): void {
+  fixtureTimelines.set(timeline.channel_id, timeline);
+  fixtureStorage()?.setItem(
+    `${FIXTURE_TIMELINE_STORAGE_PREFIX}${timeline.channel_id}`,
+    JSON.stringify(timeline),
+  );
+}
+
+function fixtureCoworker(coworker: CoworkerProfile): CoworkerDetail {
+  const existing = fixtureCoworkers.get(coworker.id);
+  if (existing) return existing;
+  const stored = readStoredFixtureCoworker(coworker.id);
+  if (stored) {
+    fixtureCoworkers.set(stored.id, stored);
+    return stored;
+  }
+  const detail = { ...coworker, config: defaultFixtureConfig(coworker) };
+  fixtureCoworkers.set(coworker.id, detail);
+  return detail;
+}
 
 function assertWorkspace(workspaceId: string): void {
   if (workspaceId !== MOCK_WORKSPACE_ID) {
@@ -76,30 +235,30 @@ export async function listChannelRoster(
 ): Promise<ChannelRosterResponse> {
   if (useMockApi) {
     assertWorkspace(workspaceId);
-    const members = MOCK_COWORKERS.map((coworker) => {
-      const operatorWaiting = channelId === "ch_general_001" && coworker.handle === "operator";
-      return {
-        participant_id: coworker.id,
-        coworker_id: coworker.id,
-        handle: coworker.handle,
-        name: coworker.name,
-        title: coworker.title,
-        role: "member" as const,
-        availability:
-          coworker.status === "disabled"
-            ? ("disabled" as const)
-            : operatorWaiting
-              ? ("needs_you" as const)
-              : ("available" as const),
-        assignment_summary: operatorWaiting
-          ? "Waiting to publish billing macro"
-          : "Support review complete",
-        effective_tools:
-          coworker.handle === "analyst"
-            ? ["GITHUB_GET_ISSUES", "support.read", "DataTable", "BarOrLineChart"]
-            : ["INTERCOM_UPDATE_MACRO", "sandbox.run", "TaskCard", "ArtifactCard"],
-      };
-    });
+    const members = allFixtureCoworkers()
+      .filter(
+        (coworker) =>
+          coworker.status === "active" && coworker.config.channel_ids.includes(channelId),
+      )
+      .map((coworker) => {
+        const operatorWaiting = channelId === "ch_general_001" && coworker.handle === "operator";
+        return {
+          participant_id: coworker.id,
+          coworker_id: coworker.id,
+          handle: coworker.handle,
+          name: coworker.name,
+          title: coworker.title,
+          role: "member" as const,
+          availability: operatorWaiting ? ("needs_you" as const) : ("available" as const),
+          assignment_summary: operatorWaiting
+            ? "Waiting to publish billing macro"
+            : "Support review complete",
+          effective_tools:
+            coworker.handle === "analyst"
+              ? ["GITHUB_GET_ISSUES", "support.read", "DataTable", "BarOrLineChart"]
+              : ["INTERCOM_UPDATE_MACRO", "sandbox.run", "TaskCard", "ArtifactCard"],
+        };
+      });
     return channelRosterResponseSchema.parse({
       schemaVersion: 1,
       channel_id: channelId,
@@ -135,7 +294,7 @@ export async function getTask(workspaceId: string, taskId: string): Promise<Task
 export async function listCoworkers(workspaceId: string): Promise<CoworkerProfile[]> {
   if (useMockApi) {
     assertWorkspace(workspaceId);
-    return MOCK_COWORKERS;
+    return allFixtureCoworkers();
   }
   const body = await apiFetch<{ coworkers: unknown[]; request_id: string }>(
     `/api/workspaces/${encodeURIComponent(workspaceId)}/coworkers`,
@@ -146,10 +305,10 @@ export async function listCoworkers(workspaceId: string): Promise<CoworkerProfil
 export async function getCoworker(
   workspaceId: string,
   coworkerId: string,
-): Promise<(CoworkerProfile & { config?: unknown }) | null> {
+): Promise<CoworkerDetail | null> {
   if (useMockApi) {
     assertWorkspace(workspaceId);
-    return MOCK_COWORKERS.find((coworker) => coworker.id === coworkerId) ?? null;
+    return findFixtureCoworker(coworkerId);
   }
   try {
     const body = await apiFetch<unknown>(`/api/coworkers/${encodeURIComponent(coworkerId)}`);
@@ -158,13 +317,101 @@ export async function getCoworker(
     if (profile.workspace_id !== workspaceId) {
       return null;
     }
-    return { ...profile, config: parsed.config };
+    return { ...profile, config: parsed.config as CoworkerEditableConfig };
   } catch (error) {
     if (error instanceof ApiError && error.status === 404) {
       return null;
     }
     throw error;
   }
+}
+
+export async function updateCoworker(input: {
+  coworkerId: string;
+  command: CoworkerUpdateCommand;
+  csrfToken: string;
+}): Promise<CoworkerDetail> {
+  if (useMockApi) {
+    const current = findFixtureCoworker(input.coworkerId);
+    if (!current) throw new Error("coworker_not_found");
+    const { name, handle, title, native_subagents_enabled: _native, ...config } = input.command;
+    const updated: CoworkerDetail = {
+      ...current,
+      name,
+      handle,
+      title,
+      config_revision: current.config_revision + 1,
+      config,
+    };
+    persistFixtureCoworker(updated);
+    return updated;
+  }
+  const body = await apiFetch<{
+    coworker: unknown;
+    config: CoworkerEditableConfig;
+    request_id: string;
+  }>(`/api/coworkers/${encodeURIComponent(input.coworkerId)}`, {
+    method: "PATCH",
+    csrfToken: input.csrfToken,
+    body: JSON.stringify(input.command),
+  });
+  return { ...coworkerProfileSchema.parse(body.coworker), config: body.config };
+}
+
+export async function disableCoworker(input: {
+  coworkerId: string;
+  command: CoworkerDisableCommand;
+  csrfToken: string;
+}): Promise<CoworkerProfile> {
+  if (useMockApi) {
+    const current = findFixtureCoworker(input.coworkerId);
+    if (!current) throw new Error("coworker_not_found");
+    const disabled: CoworkerDetail = {
+      ...current,
+      status: "disabled",
+      config_revision: current.config_revision + 1,
+      config: { ...current.config, channel_ids: [], task_record_grants: [], tool_grants: [] },
+    };
+    persistFixtureCoworker(disabled);
+    return disabled;
+  }
+  const body = await apiFetch<unknown>(
+    `/api/coworkers/${encodeURIComponent(input.coworkerId)}/disable`,
+    {
+      method: "POST",
+      csrfToken: input.csrfToken,
+      body: JSON.stringify(input.command),
+    },
+  );
+  return coworkerProfileSchema.parse(stripRequestId(body as { request_id: string }));
+}
+
+export async function createFixtureResearcher(workspaceId: string): Promise<CoworkerDetail> {
+  if (!useMockApi) throw new Error("fixture_mode_required");
+  assertWorkspace(workspaceId);
+  const existing = storedFixtureResearcher();
+  if (existing) return existing;
+  const researcher: CoworkerDetail = {
+    ...FIXTURE_RESEARCHER_PROFILE,
+    config: {
+      standing_instructions:
+        "Analyze support and GitHub evidence, identify customer patterns, and prepare sourced briefings.",
+      model_preset: "default",
+      channel_ids: [DEFAULT_CHANNEL_ID],
+      budget: { max_turn_tokens: 12_000, max_tool_calls: 20 },
+      task_record_grants: [
+        {
+          channel_id: DEFAULT_CHANNEL_ID,
+          operations: ["create", "update_status", "update_fields"],
+        },
+      ],
+      tool_grants: ["SUPPORT_SEARCH", "GITHUB_GET_ISSUES"],
+      skill_version_ids: ["skill_version_001"],
+      component_version_ids: [],
+    },
+  };
+  persistFixtureCoworker(researcher);
+  return researcher;
 }
 
 export async function addChannelCoworker(input: {
@@ -229,25 +476,44 @@ export async function postChannelMessage(input: {
   }>;
 }> {
   if (useMockApi) {
+    const timeline = fixtureTimeline(input.channelId);
+    const sequence =
+      Math.max(0, ...timeline.messages.map((message) => message.channel_sequence)) + 1;
+    const fixtureId = crypto.randomUUID();
     const assignments = input.command.recipient_handles.flatMap((handle, index) => {
-      const coworker = MOCK_COWORKERS.find((candidate) => candidate.handle === handle);
+      const coworker = allFixtureCoworkers().find((candidate) => candidate.handle === handle);
       return coworker
         ? [
             {
-              run_step_id: `step_mock_${index + 1}`,
+              run_step_id: `step_mock_${fixtureId}_${index + 1}`,
               coworker_id: coworker.id,
-              logical_thread_id: `thread_mock_${coworker.id}`,
+              logical_thread_id: `thread_mock_${coworker.id}_${fixtureId}`,
             },
           ]
         : [];
     });
+    const message: ChannelTimelineMessage = {
+      schemaVersion: 1,
+      id: `msg_mock_${fixtureId}`,
+      channel_id: input.channelId,
+      channel_sequence: sequence,
+      author_type: "human",
+      author_id: MOCK_SESSION.user.id,
+      body: input.command.body,
+      parent_message_id: input.command.parent_message_id,
+      created_at: new Date().toISOString(),
+    };
+    persistFixtureTimeline({
+      ...timeline,
+      messages: [...timeline.messages, message].slice(-200),
+    });
     return {
-      message_id: "msg_mock",
-      event_id: "evt_mock",
-      sequence: 1,
+      message_id: message.id,
+      event_id: `evt_mock_${fixtureId}`,
+      sequence,
       recipient_handles: input.command.recipient_handles,
       routing_mode: input.command.routing_mode,
-      run_id: assignments.length > 0 ? "run_mock" : null,
+      run_id: assignments.length > 0 ? `run_mock_${fixtureId}` : null,
       run_step_ids: assignments.map((assignment) => assignment.run_step_id),
       run_step_assignments: assignments,
     };
@@ -281,13 +547,7 @@ export async function listChannelMessages(
   channelId: string,
 ): Promise<ChannelTimelineMessagesResponse> {
   if (useMockApi) {
-    return (
-      MOCK_CHANNEL_MESSAGES.find((timeline) => timeline.channel_id === channelId) ?? {
-        schemaVersion: 1,
-        channel_id: channelId,
-        messages: [],
-      }
-    );
+    return fixtureTimeline(channelId);
   }
   const body = await apiFetch<unknown>(`/api/channels/${encodeURIComponent(channelId)}/messages`);
   return channelTimelineMessagesResponseSchema.parse(
