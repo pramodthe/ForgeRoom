@@ -41,3 +41,12 @@ export type {
   TurnDoneOutcomeInput,
   IngestRunEventResult,
 } from "./turn-lifecycle";
+export {
+  requestRunStepStop,
+  markCancelCalled,
+  settleCancelledStep,
+  sessionHasCancellingStep,
+  enqueueCorrectionForStep,
+  markActiveTurnsNeedsAttentionOnRestart,
+} from "./run-control";
+export type { RequestStopResult, StoppableStepState } from "./run-control";

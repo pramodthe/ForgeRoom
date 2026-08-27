@@ -25,6 +25,7 @@ export async function startApiProcess(env: NodeJS.ProcessEnv = process.env) {
   const workspace = createWorkspaceService({
     store: workspaceStore,
     ...(trueforgeClient ? { trueforgeClient } : {}),
+    ...(sql ? { sql } : {}),
   });
   const app = createApiApp({ env: config, auth, workspace });
   let worker: ReturnType<typeof startWorker> | undefined;

@@ -723,4 +723,62 @@ export function mountWorkspaceRoutes(
     );
     return c.json(failure.body, failure.status);
   });
+
+  app.post("/api/runs/:runId/cancel", async (c) => {
+    const authed = await requireMutationSession(c, env, auth);
+    if (authed instanceof Response) {
+      return authed;
+    }
+    const runId = requireParam(c, "runId");
+    if (runId instanceof Response) {
+      return runId;
+    }
+    const body = (await c.req.json().catch(() => ({}))) as { run_step_id?: string };
+    if (!body.run_step_id) {
+      const failure = errorResponse("validation_failed", "run_step_id is required.", {
+        status: 400,
+      });
+      return c.json(failure.body, failure.status);
+    }
+    const result = await workspace.cancelRunStep(authed.session, runId, body.run_step_id);
+    if (!result.ok) {
+      return fail(c, result.error);
+    }
+    return okJson(c, result.value, 200);
+  });
+
+  app.post("/api/runs/:runId/steer", async (c) => {
+    const authed = await requireMutationSession(c, env, auth);
+    if (authed instanceof Response) {
+      return authed;
+    }
+    const runId = requireParam(c, "runId");
+    if (runId instanceof Response) {
+      return runId;
+    }
+    const body = (await c.req.json().catch(() => ({}))) as {
+      prior_run_step_id?: string;
+      channel_agent_session_id?: string;
+      content?: string;
+      bound_session_generation_id?: string;
+    };
+    if (!body.prior_run_step_id || !body.channel_agent_session_id || !body.content?.trim()) {
+      const failure = errorResponse(
+        "validation_failed",
+        "prior_run_step_id, channel_agent_session_id, and content are required.",
+        { status: 400 },
+      );
+      return c.json(failure.body, failure.status);
+    }
+    const result = await workspace.steerCorrection(authed.session, runId, {
+      priorRunStepId: body.prior_run_step_id,
+      channelAgentSessionId: body.channel_agent_session_id,
+      content: body.content,
+      boundSessionGenerationId: body.bound_session_generation_id ?? null,
+    });
+    if (!result.ok) {
+      return fail(c, result.error);
+    }
+    return okJson(c, result.value, 201);
+  });
 }

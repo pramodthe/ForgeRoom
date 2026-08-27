@@ -1,9 +1,10 @@
 ---
 id: P0-203
 title: Implement turn creation and normalized event ingestion
-status: in_progress
+status: done
 owner: cursor-agent
 started: 2026-08-26
+completed: 2026-08-26
 depends_on: [P0-107, P0-202]
 requirements: [RUN-005, RUN-006, AU-001, AU-004]
 specs: [../runtime.md#turn-creation-and-crash-reconciliation, ../runtime.md#event-normalization, ../contracts/events.md]

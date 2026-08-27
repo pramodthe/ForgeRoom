@@ -86,6 +86,18 @@ export class TrueForgeClient {
     return unwrapTurnEvents(payload);
   }
 
+  async cancelSession(
+    sessionId: string,
+    body: Record<string, unknown> = {},
+  ): Promise<{ cancelled: boolean; raw: unknown }> {
+    const payload = await this.request<unknown>(
+      "POST",
+      `/api/v1/sessions/${encodeURIComponent(sessionId)}/cancel`,
+      body,
+    );
+    return { cancelled: true, raw: payload };
+  }
+
   private async request<T>(method: string, path: string, body?: unknown): Promise<T> {
     const headers: Record<string, string> = {
       Accept: "application/json",
