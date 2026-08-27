@@ -7,7 +7,8 @@ import {
 } from "./channel-timeline-reducer";
 
 function restMessage(
-  overrides: Partial<ChannelTimelineMessage> & Pick<ChannelTimelineMessage, "id" | "channel_sequence">,
+  overrides: Partial<ChannelTimelineMessage> &
+    Pick<ChannelTimelineMessage, "id" | "channel_sequence">,
 ): ChannelTimelineMessage {
   return {
     schemaVersion: 1,
@@ -108,7 +109,12 @@ describe("channelTimelineReducer", () => {
     state = channelTimelineReducer(state, {
       type: "merge_messages",
       messages: [
-        restMessage({ id: "msg_human", channel_sequence: 1, author_type: "human", body: "Hi team" }),
+        restMessage({
+          id: "msg_human",
+          channel_sequence: 1,
+          author_type: "human",
+          body: "Hi team",
+        }),
       ],
     });
     expect(state.messages["human:msg_human"]).toMatchObject({

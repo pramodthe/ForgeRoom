@@ -174,9 +174,9 @@ describe("durable AG-UI streaming", () => {
         ORDER BY sequence ASC
       `;
       expect(channelEvents.length).toBeGreaterThan(0);
-      expect(channelEvents.every((row) => row.actor_type === "coworker" && row.actor_id === "cw_1")).toBe(
-        true,
-      );
+      expect(
+        channelEvents.every((row) => row.actor_type === "coworker" && row.actor_id === "cw_1"),
+      ).toBe(true);
       expect(channelEvents.map((row) => row.agui_event_type)).toEqual(
         expect.arrayContaining(["RUN_STARTED", "TEXT_MESSAGE_CONTENT", "RUN_FINISHED"]),
       );
@@ -197,12 +197,18 @@ describe("durable AG-UI streaming", () => {
       `;
       expect(aguiRecords.length).toBe(channelEvents.length);
       expect(aguiRecords.every((row) => row.agui_run_id === "agui_run_1")).toBe(true);
-      expect(aguiRecords.filter((row) => row.event_type.startsWith("RUN_")).every(
-        (row) => row.message_or_activity_id === "msg_1",
-      )).toBe(true);
-      expect(aguiRecords.filter((row) => row.event_type.startsWith("TEXT_MESSAGE_")).every(
-        (row) => row.message_or_activity_id !== "msg_1" && row.message_or_activity_id !== null,
-      )).toBe(true);
+      expect(
+        aguiRecords
+          .filter((row) => row.event_type.startsWith("RUN_"))
+          .every((row) => row.message_or_activity_id === "msg_1"),
+      ).toBe(true);
+      expect(
+        aguiRecords
+          .filter((row) => row.event_type.startsWith("TEXT_MESSAGE_"))
+          .every(
+            (row) => row.message_or_activity_id !== "msg_1" && row.message_or_activity_id !== null,
+          ),
+      ).toBe(true);
     });
   }, 60_000);
 

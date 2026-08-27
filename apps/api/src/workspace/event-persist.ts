@@ -22,9 +22,7 @@ export function resolveAguiEventRecordMessageOrActivityId(
   }
 }
 
-export function resolveAguiRunIdFromPersistedEvent(
-  aguiEvent: P0PersistedAguiEvent,
-): string | null {
+export function resolveAguiRunIdFromPersistedEvent(aguiEvent: P0PersistedAguiEvent): string | null {
   if (
     aguiEvent.type === "RUN_STARTED" ||
     aguiEvent.type === "RUN_ERROR" ||
