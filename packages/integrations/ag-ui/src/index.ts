@@ -50,6 +50,11 @@ export {
   type ExistingRunBinding,
 } from "./upstream";
 export { toPersistedAgUiEvent } from "./persisted";
+export {
+  initialUiPresentationState,
+  reduceUiPresentationState,
+  type UiPresentationState,
+} from "./ui-state-reducer";
 export { HttpAgent, type AgentSubscriber, type RunAgentParameters } from "@ag-ui/client";
 export { formatAgUiSseBody, formatAgUiSseEvent } from "./sse";
 export { buildAgUiCoworkerCapabilities, type AgUiCoworkerCapabilities } from "./capabilities";

@@ -2,11 +2,11 @@
 
 | Field | Current value |
 | --- | --- |
-| Overall | M1 Foundation done; P0-314 component registry in review |
+| Overall | M1 Foundation done; P0-314 done; P0-212 state/hash slice in progress |
 | Current phase | Phase 1 — Foundation |
-| Active task | P0-314 governed component registry, versions and grants (in_review) |
-| Next task | Merge P0-314 → unlock P0-208; continue P0-212 state/activity/JCS |
-| P0 blockers | Save-as-skill Run binding, TrueForge→artifact path, demo durable storage, run-limit hard enforcement |
+| Active task | P0-212 second slice — JCS event hashing + ChannelUIState/ThreadUIState |
+| Next task | Finish P0-212; P0-208 remains blocked on P0-302 |
+| P0 blockers | Save-as-skill Run binding, TrueForge→artifact path, demo durable storage, run-limit hard enforcement, P0-301→P0-302 for session rotation |
 | Last updated | 2026-08-27 |
 
 ## Milestones
@@ -50,6 +50,7 @@ Never put credentials in this file.
 
 ## Recently completed
 
+- P0-314 governed component registry/grants merged via PR #30.
 - P0-212 first durable channel timeline slice (lifecycle/text mirror + web timeline) merged via PR #29.
 - P0-211 TrueForge-to-AG-UI adapter bootstrap merged via PR #28.
 - P0-402 channel composer and coworker roster merged via PR #19 (`eb560d3`).
