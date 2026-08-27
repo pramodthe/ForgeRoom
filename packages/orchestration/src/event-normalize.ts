@@ -156,9 +156,7 @@ export function evaluateTurnDoneOutcome(payload: Record<string, unknown>): TurnD
     );
     const hasConnection = types.some(
       (type) =>
-        type.includes("connection") ||
-        type.includes("auth_required") ||
-        type.includes("mcp.auth"),
+        type.includes("connection") || type.includes("auth_required") || type.includes("mcp.auth"),
     );
     const hasApproval = types.some((type) => type.includes("approval"));
     return {

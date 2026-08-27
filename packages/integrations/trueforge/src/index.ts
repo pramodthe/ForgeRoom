@@ -24,10 +24,7 @@ export {
   assertAgentSpecPolicyHealthy,
   verifyCompiledAgentSpecPolicy,
 } from "./agent-spec-verification";
-export type {
-  AgentSpecPolicyExpectation,
-  AgentSpecPolicyFinding,
-} from "./agent-spec-verification";
+export type { AgentSpecPolicyExpectation, AgentSpecPolicyFinding } from "./agent-spec-verification";
 export { TrueForgeClient, loadTrueForgeClientFromEnv } from "./client";
 export {
   composioConnectorMcpRef,

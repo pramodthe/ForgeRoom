@@ -1,4 +1,8 @@
-import { P0_MAX_ARTIFACT_BYTES, P0_MAX_IMAGE_ENCODED_BYTES, P0_MAX_IMAGE_PIXELS } from "./extraction-p0-contract";
+import {
+  P0_MAX_ARTIFACT_BYTES,
+  P0_MAX_IMAGE_ENCODED_BYTES,
+  P0_MAX_IMAGE_PIXELS,
+} from "./extraction-p0-contract";
 import { isAllowedArtifactMimeType, isForbiddenArtifactMimeType } from "./validate-download";
 
 export type ArtifactPreviewText = {
@@ -23,9 +27,7 @@ export type ArtifactPreviewUnsupported = {
 };
 
 export type ArtifactPreviewResult =
-  | ArtifactPreviewText
-  | ArtifactPreviewImage
-  | ArtifactPreviewUnsupported;
+  ArtifactPreviewText | ArtifactPreviewImage | ArtifactPreviewUnsupported;
 
 const HTML_SIGNATURE = /<(?:script|iframe|object|embed|svg|html|body|meta)\b/i;
 const SVG_SIGNATURE = /<svg[\s>]/i;
@@ -73,7 +75,12 @@ export type BuildArtifactPreviewInput = {
       maxPixels: number;
       maxEncodedBytes: number;
       outputFormat: "png" | "webp";
-    }): Promise<{ content: Buffer; width: number; height: number; mimeType: "image/png" | "image/webp" }>;
+    }): Promise<{
+      content: Buffer;
+      width: number;
+      height: number;
+      mimeType: "image/png" | "image/webp";
+    }>;
   };
 };
 
@@ -142,7 +149,8 @@ export async function buildArtifactPreview(
 
 export function previewSecurityHeaders(): Record<string, string> {
   return {
-    "Content-Security-Policy": "default-src 'none'; script-src 'none'; style-src 'none'; img-src 'self'",
+    "Content-Security-Policy":
+      "default-src 'none'; script-src 'none'; style-src 'none'; img-src 'self'",
     "X-Content-Type-Options": "nosniff",
     "Referrer-Policy": "no-referrer",
   };

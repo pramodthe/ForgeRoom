@@ -1,7 +1,4 @@
-import {
-  hashComposioToolDescriptorBody,
-  type ObservedToolDescriptor,
-} from "./descriptors";
+import { hashComposioToolDescriptorBody, type ObservedToolDescriptor } from "./descriptors";
 import {
   assertP0ToolCount,
   findForbiddenSurfaces,
@@ -131,9 +128,7 @@ function buildCreateSessionBody(input: {
 function assertP0SessionInvariants(session: ComposioHostedSession): void {
   const forbidden = findForbiddenSurfaces(session.tools);
   if (forbidden.length > 0) {
-    throw new Error(
-      `P0 Composio session exposed forbidden surfaces: ${forbidden.join(", ")}`,
-    );
+    throw new Error(`P0 Composio session exposed forbidden surfaces: ${forbidden.join(", ")}`);
   }
 
   assertP0ToolCount(session.tools);
@@ -281,10 +276,7 @@ export class ComposioSessionClient {
    * (sha256 of raw GET /api/v3.1/tools/{slug} response text).
    */
   async getToolDescriptor(toolSlug: string): Promise<ObservedToolDescriptor> {
-    const body = await this.requestText(
-      "GET",
-      `/api/v3.1/tools/${encodeURIComponent(toolSlug)}`,
-    );
+    const body = await this.requestText("GET", `/api/v3.1/tools/${encodeURIComponent(toolSlug)}`);
     return {
       toolSlug,
       body,
@@ -303,7 +295,7 @@ export class ComposioSessionClient {
   /** Exact pinned connected-account status (ACTIVE required for dispatch). */
   async getConnectedAccount(accountId = this.connectedAccountId): Promise<ConnectedAccountHealth> {
     const details = await this.getConnectedAccountDetails(accountId);
-    if (!details.id) {
+    if (!details) {
       throw new Error("Composio connected account response omitted account id");
     }
     return {
@@ -318,13 +310,12 @@ export class ComposioSessionClient {
    * Pinned account plus safe scopes metadata for Connections status (CN-005).
    * Never returns tokens or credentials.
    */
-  async getConnectedAccountDetails(
-    accountId = this.connectedAccountId,
-  ): Promise<
-    (ConnectedAccountHealth & {
-      scopes: string[];
-      authConfigId?: string;
-    }) | null
+  async getConnectedAccountDetails(accountId = this.connectedAccountId): Promise<
+    | (ConnectedAccountHealth & {
+        scopes: string[];
+        authConfigId?: string;
+      })
+    | null
   > {
     const payload = await this.request<Record<string, unknown>>(
       "GET",
@@ -344,8 +335,13 @@ export class ComposioSessionClient {
       payload.auth_config && typeof payload.auth_config === "object"
         ? (payload.auth_config as Record<string, unknown>)
         : {};
+    const observedAccountId =
+      typeof payload.id === "string" && payload.id.length > 0 ? payload.id : null;
+    if (!observedAccountId) {
+      return null;
+    }
     return {
-      id: typeof payload.id === "string" && payload.id.length > 0 ? payload.id : null,
+      id: observedAccountId,
       status: typeof payload.status === "string" ? payload.status : "UNKNOWN",
       isDisabled: payload.is_disabled === true,
       toolkitSlug,
@@ -445,9 +441,7 @@ export class ComposioSessionClient {
     }
     const requested = input.connectedAccountId?.trim();
     if (requested && requested !== this.connectedAccountId) {
-      throw new Error(
-        "executeDirectTool connectedAccountId must match the client pinned account",
-      );
+      throw new Error("executeDirectTool connectedAccountId must match the client pinned account");
     }
     const accountId = this.connectedAccountId;
     const response = await this.fetchImpl(
@@ -507,8 +501,7 @@ export class ComposioSessionClient {
       sessionId,
       tools,
       config,
-      configVersion:
-        typeof payload.config_version === "number" ? payload.config_version : 1,
+      configVersion: typeof payload.config_version === "number" ? payload.config_version : 1,
       mcp: this.buildMcpSecrets(
         mcpUrl,
         payload.mcp?.headers && typeof payload.mcp.headers === "object"

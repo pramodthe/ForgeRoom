@@ -64,8 +64,7 @@ export type SandboxArtifactPublishAdapters = {
     sourceSandboxPath: string;
     metadataJson?: Record<string, unknown>;
   }) => Promise<
-    | { ok: true; created: boolean; sha256: string; byteSize: number }
-    | { ok: false; reason: string }
+    { ok: true; created: boolean; sha256: string; byteSize: number } | { ok: false; reason: string }
   >;
 };
 
@@ -309,7 +308,9 @@ export async function publishSandboxArtifactFromDiscovery(
 
 export async function executePublishSandboxArtifactCommand(
   adapters: SandboxArtifactPublishAdapters & {
-    loadDiscovery: (command: PublishSandboxArtifactCommand) => Promise<SandboxArtifactPublishInput | null>;
+    loadDiscovery: (
+      command: PublishSandboxArtifactCommand,
+    ) => Promise<SandboxArtifactPublishInput | null>;
   },
   command: PublishSandboxArtifactCommand,
 ): Promise<SandboxArtifactPublishResult> {

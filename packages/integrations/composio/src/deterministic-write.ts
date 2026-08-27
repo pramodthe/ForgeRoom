@@ -1,7 +1,4 @@
-import {
-  compareAccountHealth,
-  type ConnectedAccountHealth,
-} from "./manifest-verification";
+import { compareAccountHealth, type ConnectedAccountHealth } from "./manifest-verification";
 import {
   findForbiddenSurfaces,
   P0_COMPOSIO_DIRECT_TOOLS,
@@ -82,8 +79,7 @@ export type WriteDispatchPreflightFailure = {
 };
 
 export type WriteDispatchPreflightResult =
-  | WriteDispatchPreflightSuccess
-  | WriteDispatchPreflightFailure;
+  WriteDispatchPreflightSuccess | WriteDispatchPreflightFailure;
 
 /** Exact bound fields that stale a proposal when changed (AP-006). */
 export type WriteProposalBinding = {
@@ -208,18 +204,14 @@ export function preflightExactWriteDispatch(
   const accountSuffix = redactConnectedAccountId(input.expectedConnectedAccountId);
   const toolSlug = input.toolSlug.trim();
   const findingKinds: string[] = [];
-  const approvalRequired =
-    input.approvalRequiredTools ?? P0_COMPOSIO_APPROVAL_REQUIRED_TOOLS;
+  const approvalRequired = input.approvalRequiredTools ?? P0_COMPOSIO_APPROVAL_REQUIRED_TOOLS;
 
   if (input.account.id !== input.expectedConnectedAccountId) {
     findingKinds.push("account_mismatch");
     return failure("account_mismatch", toolSlug, accountSuffix, findingKinds, "blocked_connection");
   }
 
-  const accountFindings = compareAccountHealth(
-    input.account,
-    input.expectedToolkit ?? "github",
-  );
+  const accountFindings = compareAccountHealth(input.account, input.expectedToolkit ?? "github");
   for (const finding of accountFindings) {
     findingKinds.push(finding.kind);
   }
@@ -543,9 +535,7 @@ export function buildSafeWriteResultSummary(input: {
       : receipt?.kind === "labeled_safe_result"
         ? "labeled_safe_result"
         : "none";
-  const resultSummary =
-    receipt?.summary ??
-    `Safe write summary for ${target.display}`;
+  const resultSummary = receipt?.summary ?? `Safe write summary for ${target.display}`;
 
   const rawSerialized =
     input.rawResult === undefined || input.rawResult === null

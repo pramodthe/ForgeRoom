@@ -33,9 +33,11 @@ function fail(c: Context, error: WorkspaceServiceError) {
       ? 404
       : error.code === "forbidden"
         ? 403
-        : error.code === "conflict"
-          ? 409
-          : 400;
+        : error.code === "provider_unavailable"
+          ? 503
+          : error.code === "conflict"
+            ? 409
+            : 400;
   const failure = errorResponse(error.code, error.message, {
     status,
     details: ("details" in error ? error.details : undefined) as SafeJsonObject | undefined,

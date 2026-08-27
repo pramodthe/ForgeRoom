@@ -264,7 +264,10 @@ function stableStringify(value: unknown): string {
 /** Default recovery window after confirmed resume before ciphertext wipe (24h). */
 export const PAUSE_CIPHERTEXT_RECOVERY_WINDOW_MS = 24 * 60 * 60 * 1000;
 
-export function ciphertextExpiryAt(completedAtIso: string, nowIso?: string): {
+export function ciphertextExpiryAt(
+  completedAtIso: string,
+  nowIso?: string,
+): {
   expiresAt: string;
   expired: boolean;
 } {

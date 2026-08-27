@@ -83,7 +83,8 @@ export type WorkspaceServiceError =
   | { code: "validation_failed"; message: string; details?: SafeJsonObject }
   | { code: "conflict"; message: string; details?: SafeJsonObject }
   | { code: "recipient_required"; message: string; details?: SafeJsonObject }
-  | { code: "recipient_unavailable"; message: string; details?: SafeJsonObject };
+  | { code: "recipient_unavailable"; message: string; details?: SafeJsonObject }
+  | { code: "provider_unavailable"; message: string; details?: SafeJsonObject };
 
 export type WorkspaceServiceResult<T> =
   { ok: true; value: T } | { ok: false; error: WorkspaceServiceError };

@@ -877,8 +877,7 @@ export async function findPauseGroupByInterruptIds(
   sql: SqlClient,
   input: { workspaceId: string; interruptIds: string[] },
 ): Promise<
-  | { ok: true; pauseGroupId: string }
-  | { ok: false; reason: "not_found" | "ambiguous" | "empty" }
+  { ok: true; pauseGroupId: string } | { ok: false; reason: "not_found" | "ambiguous" | "empty" }
 > {
   if (input.interruptIds.length === 0) {
     return { ok: false, reason: "empty" };

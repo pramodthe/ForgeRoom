@@ -205,8 +205,7 @@ export async function publishArtifactRecord(
           channelId: input.channelId,
           sha256: input.sha256,
           revision: input.revision,
-        })) ??
-        (await loadArtifactById(sql, input.id));
+        })) ?? (await loadArtifactById(sql, input.id));
       if (existing) {
         if (
           existing.storageKey !== input.storageKey ||

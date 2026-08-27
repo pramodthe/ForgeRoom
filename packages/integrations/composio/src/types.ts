@@ -3,9 +3,7 @@ export type ComposioToolkitSlug = "github";
 
 /** Exact Phase 0 direct-tool slugs (two to four total). */
 export type P0ComposioDirectToolSlug =
-  | "GITHUB_GET_AN_ISSUE"
-  | "GITHUB_ADD_LABELS_TO_AN_ISSUE"
-  | "GITHUB_REMOVE_A_LABEL_FROM_AN_ISSUE";
+  "GITHUB_GET_AN_ISSUE" | "GITHUB_ADD_LABELS_TO_AN_ISSUE" | "GITHUB_REMOVE_A_LABEL_FROM_AN_ISSUE";
 
 export type ConnectedAccountsPin = Readonly<
   Record<ComposioToolkitSlug, readonly [string, ...string[]]>

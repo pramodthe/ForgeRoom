@@ -1,10 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { recordApprovalDecision } from "./approval-decision";
 import { derivePausePayloadKey } from "./pause-crypto";
-import {
-  persistPauseGroupCapture,
-  type PersistPauseGroupAction,
-} from "./pause-group";
+import { persistPauseGroupCapture, type PersistPauseGroupAction } from "./pause-group";
 import {
   claimPauseGroupResume,
   expirePauseResumeCiphertexts,
@@ -192,9 +189,9 @@ describe("atomic PauseResume", () => {
       expect(loaded.ok).toBe(true);
       if (!loaded.ok) throw new Error("load");
       expect(loaded.plaintext.responses).toHaveLength(2);
-      expect(loaded.plaintext.responses.every((r) => r.kind === "approval" || r.kind === "question")).toBe(
-        true,
-      );
+      expect(
+        loaded.plaintext.responses.every((r) => r.kind === "approval" || r.kind === "question"),
+      ).toBe(true);
 
       const second = await claimPauseGroupResume(sql, {
         pauseGroupId,
@@ -221,7 +218,7 @@ describe("atomic PauseResume", () => {
       expect(group[0]?.state).toBe("resuming");
       expect(group[0]?.resume_claim_token).toBeTruthy();
     });
-  });
+  }, 60_000);
 
   it("exposes interrupt ids for PauseGroup AG-UI resume authorization", async () => {
     await withMigratedDatabase(async (sql) => {
@@ -255,7 +252,7 @@ describe("atomic PauseResume", () => {
         expect.arrayContaining([...gate.requiredActionIds, ...gate.providerActionIds]),
       );
     });
-  });
+  }, 60_000);
 
   it("expires ciphertext after the recovery window", async () => {
     await withMigratedDatabase(async (sql) => {
@@ -313,5 +310,5 @@ describe("atomic PauseResume", () => {
       `;
       expect(row[0]?.response_payload_ciphertext).toBe("enc:v1:expired");
     });
-  });
+  }, 60_000);
 });

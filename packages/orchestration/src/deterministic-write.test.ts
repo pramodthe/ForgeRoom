@@ -68,10 +68,7 @@ describe("P0-309 write event projection", () => {
       agentTurnId: "turn_1",
       proposalState: "reconciled_succeeded",
     });
-    expect(events.map((event) => event.normalizedType)).toEqual([
-      "tool.started",
-      "tool.succeeded",
-    ]);
+    expect(events.map((event) => event.normalizedType)).toEqual(["tool.started", "tool.succeeded"]);
     const succeeded = events[1]!.payloadRedacted;
     expect(succeeded.tool_name).toBe("GITHUB_ADD_LABELS_TO_AN_ISSUE");
     expect(succeeded.receipt).toEqual(baseSummary.receipt);

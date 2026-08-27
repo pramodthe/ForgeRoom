@@ -179,11 +179,12 @@ export function assertP0ManifestHealthy(result: ManifestVerificationResult): voi
   );
 }
 
-const FROZEN_P0_DESCRIPTOR_ROWS: ReadonlyArray<Pick<ObservedToolDescriptor, "toolSlug" | "sha256">> =
-  Object.entries(P0_COMPOSIO_DESCRIPTOR_HASHES).map(([toolSlug, sha256]) => ({
-    toolSlug,
-    sha256,
-  }));
+const FROZEN_P0_DESCRIPTOR_ROWS: ReadonlyArray<
+  Pick<ObservedToolDescriptor, "toolSlug" | "sha256">
+> = Object.entries(P0_COMPOSIO_DESCRIPTOR_HASHES).map(([toolSlug, sha256]) => ({
+  toolSlug,
+  sha256,
+}));
 
 const FROZEN_P0_COMPILED_ALLOWLIST: CoworkerCompiledAllowlist = {
   connectorName: P0_COMPOSIO_TRUEFORGE_CONNECTOR_NAME,

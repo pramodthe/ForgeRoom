@@ -1,9 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { ComposioSessionClient } from "./client";
-import {
-  P0_COMPOSIO_DIRECT_TOOLS,
-  P0_COMPOSIO_FORBIDDEN_SURFACES,
-} from "./p0-contract";
+import { P0_COMPOSIO_DIRECT_TOOLS, P0_COMPOSIO_FORBIDDEN_SURFACES } from "./p0-contract";
 import { toRedactedSessionEvidence } from "./redact";
 
 function okSessionResponse(overrides: Record<string, unknown> = {}) {
@@ -159,6 +156,25 @@ describe("ComposioSessionClient", () => {
     expect(evidence.searchEnabled).toBe(false);
     expect(evidence.multiExecuteEnabled).toBe(false);
     expect(evidence.workbenchEnabled).toBe(false);
+  });
+
+  it("fails closed when connected-account details omit the account id", async () => {
+    const fetchImpl = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ status: "ACTIVE", toolkit: { slug: "github" } }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+    );
+    const client = new ComposioSessionClient({
+      apiKey: "test_api_key",
+      userId: "forgeroom_workspace_1",
+      connectedAccountId: "ca_xxxxnizY",
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+
+    await expect(client.getConnectedAccountDetails()).resolves.toBeNull();
+    await expect(client.getConnectedAccount()).rejects.toThrow(/omitted account id/);
   });
 
   it("executes a literal direct tool slug against the pinned account", async () => {

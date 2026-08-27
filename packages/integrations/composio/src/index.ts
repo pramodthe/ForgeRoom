@@ -8,10 +8,7 @@ export {
   assertP0ToolCount,
   findForbiddenSurfaces,
 } from "./p0-contract";
-export {
-  ComposioSessionClient,
-  loadComposioSessionClientFromEnv,
-} from "./client";
+export { ComposioSessionClient, loadComposioSessionClientFromEnv } from "./client";
 export {
   P0_COMPOSIO_DESCRIPTOR_HASHES,
   compareDescriptorHashes,

@@ -70,7 +70,10 @@ export function mountArtifactRoutes(
     }
     const encoded = encodeURIComponent(result.value.filename);
     c.header("Content-Type", result.value.mimeType);
-    c.header("Content-Disposition", `attachment; filename="${result.value.filename}"; filename*=UTF-8''${encoded}`);
+    c.header(
+      "Content-Disposition",
+      `attachment; filename="${result.value.filename}"; filename*=UTF-8''${encoded}`,
+    );
     c.header("Content-Length", String(result.value.content.byteLength));
     return c.body(new Uint8Array(result.value.content));
   });

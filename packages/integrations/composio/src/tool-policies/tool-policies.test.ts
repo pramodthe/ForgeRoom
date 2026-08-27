@@ -165,10 +165,7 @@ describe("demo write reconciliation and receipt", () => {
       }).matched,
     ).toBe(false);
 
-    const receipt = policy.verifyReceipt!(
-      { successful: true, data: { ok: true } },
-      args,
-    );
+    const receipt = policy.verifyReceipt!({ successful: true, data: { ok: true } }, args);
     expect(receipt).toEqual({
       kind: "verified_provider_receipt",
       toolName: "GITHUB_ADD_LABELS_TO_AN_ISSUE",
@@ -194,9 +191,7 @@ describe("demo write reconciliation and receipt", () => {
       expectedEffect: preview.expectedEffect,
     });
     expect(query.expect).toEqual({ kind: "label_absent", label: "forgeroom-p0-probe" });
-    expect(
-      evaluateReconciliation(query, { data: { labels: [] } }).matched,
-    ).toBe(true);
+    expect(evaluateReconciliation(query, { data: { labels: [] } }).matched).toBe(true);
   });
 });
 

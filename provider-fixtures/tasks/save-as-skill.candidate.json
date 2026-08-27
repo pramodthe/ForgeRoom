@@ -49,14 +49,7 @@
     "attachTo": "originating_coworker",
     "requiresSessionRotation": true,
     "invocationBeginsIn": "0.2",
-    "expectedSections": [
-      "when_to_use",
-      "inputs",
-      "method",
-      "validation",
-      "output",
-      "failures"
-    ]
+    "expectedSections": ["when_to_use", "inputs", "method", "validation", "output", "failures"]
   },
   "reviewManifest": {
     "status": "verified",
