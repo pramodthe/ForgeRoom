@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import type { AgentChannelEnvelope, P0PersistedAguiEvent } from "@forgeroom/contracts";
+import { canonicalizeJson } from "@forgeroom/domain";
 import { buildEnvelope } from "./event-builders";
 import { assertPersistableChannelEnvelope } from "./event-guard";
 import type { ChannelEventInsert, ChannelEventRecord } from "./store";
@@ -70,6 +71,6 @@ export function materializeChannelEvent(
 }
 
 export function hashAguiEvent(aguiEvent: unknown): string {
-  const digest = createHash("sha256").update(JSON.stringify(aguiEvent)).digest("hex");
+  const digest = createHash("sha256").update(canonicalizeJson(aguiEvent), "utf8").digest("hex");
   return `sha256:${digest}`;
 }

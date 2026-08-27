@@ -5,6 +5,42 @@ function stringField(input: Record<string, unknown>, key: string): string | unde
   return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
+function numberField(input: Record<string, unknown>, key: string): number | undefined {
+  const value = input[key];
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : undefined;
+}
+
+function readForgeRoomMeta(event: Record<string, unknown>): Record<string, unknown> | null {
+  const metadata = event.metadata;
+  if (!metadata || typeof metadata !== "object") return null;
+  const forgeroom = (metadata as Record<string, unknown>).forgeroom;
+  if (!forgeroom || typeof forgeroom !== "object") return null;
+  return forgeroom as Record<string, unknown>;
+}
+
+function resolveStateKind(
+  event: Record<string, unknown>,
+  meta: Record<string, unknown> | null,
+): "channel" | "thread" | undefined {
+  const direct = event.stateKind ?? meta?.stateKind;
+  if (direct === "channel" || direct === "thread") return direct;
+  const actorKind = meta?.actorKind;
+  if (actorKind === "system") return "channel";
+  if (actorKind === "coworker") return "thread";
+  return undefined;
+}
+
+function resolveBaseRevision(
+  event: Record<string, unknown>,
+  meta: Record<string, unknown> | null,
+): number | undefined {
+  return numberField(event, "revision") ?? (meta ? numberField(meta, "revision") : undefined);
+}
+
+function isPatchOp(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === "object" && typeof (value as { op?: unknown }).op === "string";
+}
+
 /**
  * Project an upstream AG-UI event into the deliberately small durable channel allowlist.
  * Provider metadata, reasoning, arbitrary payloads and interrupt response schemas never cross it.
@@ -72,6 +108,38 @@ export function toPersistedAgUiEvent(input: unknown): P0PersistedAguiEvent | nul
     };
   } else if (type === "TEXT_MESSAGE_END") {
     candidate = { type, messageId: stringField(event, "messageId") };
+  } else if (type === "STATE_SNAPSHOT") {
+    candidate = {
+      type,
+      snapshot: event.snapshot,
+    };
+  } else if (type === "STATE_DELTA") {
+    const meta = readForgeRoomMeta(event);
+    const stateKind = resolveStateKind(event, meta);
+    const revision = resolveBaseRevision(event, meta);
+
+    if (Array.isArray(event.patch) && stateKind && revision !== undefined) {
+      candidate = {
+        type,
+        stateKind,
+        revision,
+        patch: event.patch,
+      };
+    } else if (Array.isArray(event.delta) && stateKind && revision !== undefined) {
+      const ops = event.delta.filter(
+        (operation) => isPatchOp(operation) && operation.path !== "/revision",
+      );
+      candidate = {
+        type,
+        stateKind,
+        revision,
+        patch: [
+          { op: "test", path: "/revision", value: revision },
+          ...ops,
+          { op: "replace", path: "/revision", value: revision + 1 },
+        ],
+      };
+    }
   }
 
   const parsed = p0PersistedAguiEventSchema.safeParse(candidate);

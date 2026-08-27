@@ -4,3 +4,8 @@
  */
 export { HttpAgent, type AgentSubscriber, type RunAgentParameters } from "@ag-ui/client";
 export { buildLogicalAguiThreadId } from "./logical-thread";
+export {
+  initialUiPresentationState,
+  reduceUiPresentationState,
+  type UiPresentationState,
+} from "./ui-state-reducer";
