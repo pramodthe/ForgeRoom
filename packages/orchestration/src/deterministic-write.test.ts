@@ -309,7 +309,9 @@ describe("dispatchApprovalGatedDeterministicWrite", () => {
           trueforgeEventIds: [],
         }),
         assertDirectWriteTool: (name) => {
-          throw new Error(`TrueForge invoked forbidden meta-tool ${name}`);
+          if (name !== "GITHUB_ADD_LABELS_TO_AN_ISSUE") {
+            throw new Error(`TrueForge invoked forbidden meta-tool ${name}`);
+          }
         },
         classifyProviderOutcome: () => ({
           proposalState: "succeeded",

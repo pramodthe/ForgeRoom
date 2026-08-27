@@ -1,4 +1,4 @@
-import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, stat, unlink, writeFile } from "node:fs/promises";
 import { dirname, resolve, sep } from "node:path";
 import { assertStorageKeyMatchesScope } from "./storage-key";
 import {
@@ -77,6 +77,16 @@ export function createLocalDirectoryArtifactStorage(
         }
         throw error;
       }
+    },
+
+    async delete(input) {
+      assertStorageKeyMatchesScope(input.storageKey, input.workspaceId, input.channelId);
+      const objectPath = resolveObjectPath(rootDir, input.storageKey);
+      await unlink(objectPath).catch((error: NodeJS.ErrnoException) => {
+        if (error.code !== "ENOENT") {
+          throw error;
+        }
+      });
     },
   };
 }

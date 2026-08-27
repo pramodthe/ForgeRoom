@@ -335,7 +335,11 @@ export function createAgUiRunService(options: {
             previousTrueforgeTurnId: claim.previousTrueforgeTurnId,
             responses: loaded.plaintext.responses,
             localTrueforgeResumeTurnId: loaded.trueforgeResumeTurnId,
-            forceReconcile: !loaded.trueforgeResumeTurnId,
+            forceReconcile:
+              !loaded.trueforgeResumeTurnId ||
+              loaded.state === "claimed" ||
+              loaded.state === "creating" ||
+              loaded.state === "uncertain",
           },
         );
 

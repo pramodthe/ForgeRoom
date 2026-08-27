@@ -295,25 +295,45 @@ export async function executeClaimPauseGroupResume(
     };
   }
 
-  const createOrReconcileResponse = await createOrReconcileResponseTurn(
-    {
-      client: options.client,
-      lockForCreate: async () => ({ ok: true }),
-      bindResumeTurn: async () => undefined,
-      markUncertain: async ({ pauseResumeId, error }) => {
-        await markPauseResumeUncertain(options.sql, { pauseResumeId, error });
+  await options.sql`
+    SELECT pg_advisory_lock(
+      ('x' || substr(md5(${claim.pauseResumeId}), 1, 8))::bit(32)::int,
+      ('x' || substr(md5(${claim.pauseResumeId}), 9, 8))::bit(32)::int
+    )
+  `;
+  let createOrReconcileResponse: CreateOrReconcileResponseTurnResult;
+  try {
+    createOrReconcileResponse = await createOrReconcileResponseTurn(
+      {
+        client: options.client,
+        lockForCreate: async () => ({ ok: true }),
+        bindResumeTurn: async () => undefined,
+        markUncertain: async ({ pauseResumeId, error }) => {
+          await markPauseResumeUncertain(options.sql, { pauseResumeId, error });
+        },
       },
-    },
-    {
-      pauseResumeId: claim.pauseResumeId,
-      trueforgeSessionId: claim.trueforgeSessionId,
-      applicationRunToken: claim.applicationRunToken,
-      previousTrueforgeTurnId: claim.previousTrueforgeTurnId,
-      responses: loaded.plaintext.responses,
-      localTrueforgeResumeTurnId: loaded.trueforgeResumeTurnId,
-      forceReconcile: !loaded.trueforgeResumeTurnId,
-    },
-  );
+      {
+        pauseResumeId: claim.pauseResumeId,
+        trueforgeSessionId: claim.trueforgeSessionId,
+        applicationRunToken: claim.applicationRunToken,
+        previousTrueforgeTurnId: claim.previousTrueforgeTurnId,
+        responses: loaded.plaintext.responses,
+        localTrueforgeResumeTurnId: loaded.trueforgeResumeTurnId,
+        forceReconcile:
+          !loaded.trueforgeResumeTurnId ||
+          loaded.state === "claimed" ||
+          loaded.state === "creating" ||
+          loaded.state === "uncertain",
+      },
+    );
+  } finally {
+    await options.sql`
+      SELECT pg_advisory_unlock(
+        ('x' || substr(md5(${claim.pauseResumeId}), 1, 8))::bit(32)::int,
+        ('x' || substr(md5(${claim.pauseResumeId}), 9, 8))::bit(32)::int
+      )
+    `;
+  }
   if (createOrReconcileResponse.ok) {
     const completed = await completePauseResume(options.sql, {
       pauseResumeId: claim.pauseResumeId,
@@ -415,11 +435,14 @@ export function startWorkerProcess(options: WorkerProcessOptions | WorkerCommand
             return secret;
           })(),
         );
-        const workspaceId =
-          command.payload.workspace_id ??
-          resolved.workspaceId ??
-          process.env.WORKSPACE_ID ??
-          "workspace_1";
+        const workspaceId = command.payload.workspace_id;
+        if (!workspaceId) {
+          return {
+            command,
+            pauseResumeClaim: { ok: false, reason: "forbidden" },
+            createOrReconcileResponse: { ok: false, reason: "unavailable" },
+          };
+        }
         const result = await executeClaimPauseGroupResume(
           { sql, client: trueforge, encryptionKey, workspaceId },
           command,

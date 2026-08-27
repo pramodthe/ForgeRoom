@@ -25,6 +25,11 @@ export type ArtifactStorageAdapter = {
     workspaceId: string;
     channelId: string;
   }): Promise<boolean>;
+  delete?(input: {
+    storageKey: string;
+    workspaceId: string;
+    channelId: string;
+  }): Promise<void>;
 };
 
 export type PublishArtifactContentInput = {
