@@ -368,76 +368,86 @@ export function createConnectionService(options: ConnectionServiceOptions): Conn
         };
       }
 
-      // Idempotent reconnect: reuse an unexpired intent for the same key.
-      for (const existing of intents.values()) {
-        if (
-          existing.connectionId === connectionId &&
-          existing.workspaceId === session.workspace_id &&
-          existing.actorUserId === session.user.id
-        ) {
-          const bound = assertReconnectBoundToWorkspace({
-            binding: existing,
-            workspaceId: session.workspace_id,
-            connectionId,
-          });
-          if (bound.ok) {
-            return {
-              ok: true,
-              value: connectionReconnectResultSchema.parse({
-                schemaVersion: 1,
-                connection_id: connectionId,
-                intent_id: existing.intentId,
-                status: "connecting",
-                redirect_url: existing.redirectUrl,
-                expires_at: existing.expiresAt,
-                workspace_bound: true,
-                expected_account_suffix: existing.expectedConnectedAccountId.slice(-4),
-              }),
-            };
+      try {
+        // Idempotent reconnect: reuse an unexpired intent for the same key.
+        for (const existing of intents.values()) {
+          if (
+            existing.connectionId === connectionId &&
+            existing.workspaceId === session.workspace_id &&
+            existing.actorUserId === session.user.id
+          ) {
+            const bound = assertReconnectBoundToWorkspace({
+              binding: existing,
+              workspaceId: session.workspace_id,
+              connectionId,
+            });
+            if (bound.ok) {
+              return {
+                ok: true,
+                value: connectionReconnectResultSchema.parse({
+                  schemaVersion: 1,
+                  connection_id: connectionId,
+                  intent_id: existing.intentId,
+                  status: "connecting",
+                  redirect_url: existing.redirectUrl,
+                  expires_at: existing.expiresAt,
+                  workspace_bound: true,
+                  expected_account_suffix: existing.expectedConnectedAccountId.slice(-4),
+                }),
+              };
+            }
           }
         }
-      }
 
-      const link = await composio.createConnectLink({
-        authConfigId: options.env.composioAuthConfigId,
-        ...(options.reconnectCallbackUrl
-          ? { callbackUrl: options.reconnectCallbackUrl }
-          : {}),
-      });
-      const intentId = randomOpaqueId("crec");
-      const binding: ReconnectBinding = {
-        intentId,
-        connectionId,
-        workspaceId: session.workspace_id,
-        actorUserId: session.user.id,
-        expectedConnectedAccountId: composio.pinnedConnectedAccountId,
-        redirectUrl: link.redirectUrl,
-        expiresAt: link.expiresAt,
-        provisionalConnectedAccountId: link.provisionalConnectedAccountId,
-        createdAt: new Date().toISOString(),
-      };
-      intents.set(intentId, binding);
-      if (options.sql) {
-        await updateConnectorBindingStatus(options.sql, {
+        const link = await composio.createConnectLink({
+          authConfigId: options.env.composioAuthConfigId,
+          ...(options.reconnectCallbackUrl
+            ? { callbackUrl: options.reconnectCallbackUrl }
+            : {}),
+        });
+        const intentId = randomOpaqueId("crec");
+        const binding: ReconnectBinding = {
+          intentId,
           connectionId,
           workspaceId: session.workspace_id,
-          status: "connecting",
-          verifiedAt: null,
-        });
+          actorUserId: session.user.id,
+          expectedConnectedAccountId: composio.pinnedConnectedAccountId,
+          redirectUrl: link.redirectUrl,
+          expiresAt: link.expiresAt,
+          provisionalConnectedAccountId: link.provisionalConnectedAccountId,
+          createdAt: new Date().toISOString(),
+        };
+        intents.set(intentId, binding);
+        if (options.sql) {
+          await updateConnectorBindingStatus(options.sql, {
+            connectionId,
+            workspaceId: session.workspace_id,
+            status: "connecting",
+            verifiedAt: null,
+          });
+        }
+        return {
+          ok: true,
+          value: connectionReconnectResultSchema.parse({
+            schemaVersion: 1,
+            connection_id: connectionId,
+            intent_id: intentId,
+            status: "connecting",
+            redirect_url: link.redirectUrl,
+            expires_at: link.expiresAt,
+            workspace_bound: true,
+            expected_account_suffix: composio.pinnedConnectedAccountId.slice(-4),
+          }),
+        };
+      } catch {
+        return {
+          ok: false,
+          error: {
+            code: "provider_unavailable",
+            message: "Composio reconnect link could not be created.",
+          },
+        };
       }
-      return {
-        ok: true,
-        value: connectionReconnectResultSchema.parse({
-          schemaVersion: 1,
-          connection_id: connectionId,
-          intent_id: intentId,
-          status: "connecting",
-          redirect_url: link.redirectUrl,
-          expires_at: link.expiresAt,
-          workspace_bound: true,
-          expected_account_suffix: composio.pinnedConnectedAccountId.slice(-4),
-        }),
-      };
     },
 
     async reconnectStatus(session, connectionId) {
@@ -452,70 +462,89 @@ export function createConnectionService(options: ConnectionServiceOptions): Conn
         };
       }
 
-      let activeIntent: ReconnectBinding | null = null;
-      for (const binding of intents.values()) {
-        if (
-          binding.connectionId === connectionId &&
-          binding.workspaceId === session.workspace_id
-        ) {
-          activeIntent = binding;
+      try {
+        let activeIntent: ReconnectBinding | null = null;
+        for (const binding of intents.values()) {
+          if (
+            binding.connectionId === connectionId &&
+            binding.workspaceId === session.workspace_id
+          ) {
+            activeIntent = binding;
+          }
         }
-      }
 
-      const account = await composio.getConnectedAccountDetails();
-      const gate = evaluatePinnedConnectionGate({
-        account,
-        expectedConnectedAccountId: composio.pinnedConnectedAccountId,
-        observedAlternateAccountId: activeIntent?.provisionalConnectedAccountId ?? null,
-      });
-
-      let reconnectState: ConnectionReconnectStatus["reconnect_state"] = "idle";
-      if (activeIntent) {
-        const bound = assertReconnectBoundToWorkspace({
-          binding: activeIntent,
-          workspaceId: session.workspace_id,
-          connectionId,
+        const account = await composio.getConnectedAccountDetails();
+        const gate = evaluatePinnedConnectionGate({
+          account,
+          expectedConnectedAccountId: composio.pinnedConnectedAccountId,
+          observedAlternateAccountId: activeIntent?.provisionalConnectedAccountId ?? null,
         });
-        if (!bound.ok && bound.reason === "link_expired") {
-          reconnectState = "expired";
-        } else if (
-          activeIntent.provisionalConnectedAccountId &&
-          activeIntent.provisionalConnectedAccountId !== composio.pinnedConnectedAccountId &&
-          gate.status !== "active"
-        ) {
-          // Provisional link account differs from pinned pin — never adopt it.
-          reconnectState = "identity_mismatch";
-        } else if (gate.status === "active") {
-          reconnectState = "completed";
-        } else {
-          reconnectState = "pending";
+
+        let reconnectState: ConnectionReconnectStatus["reconnect_state"] = "idle";
+        if (activeIntent) {
+          const bound = assertReconnectBoundToWorkspace({
+            binding: activeIntent,
+            workspaceId: session.workspace_id,
+            connectionId,
+          });
+          if (!bound.ok && bound.reason === "link_expired") {
+            reconnectState = "expired";
+          } else if (
+            activeIntent.provisionalConnectedAccountId &&
+            activeIntent.provisionalConnectedAccountId !== composio.pinnedConnectedAccountId &&
+            gate.status !== "active"
+          ) {
+            // Provisional link account differs from pinned pin — never adopt it.
+            reconnectState = "identity_mismatch";
+          } else if (gate.status === "active") {
+            reconnectState = "completed";
+          } else {
+            reconnectState = "pending";
+          }
         }
-      }
 
-      const now = gate.status === "active" ? new Date().toISOString() : null;
-      if (options.sql) {
-        await updateConnectorBindingStatus(options.sql, {
-          connectionId,
-          workspaceId: session.workspace_id,
-          status: gate.status,
-          verifiedAt: now,
-        });
-      }
+        // Expired reconnect must not advertise a dispatchable active connection status.
+        const connectionStatus =
+          reconnectState === "expired" && gate.status === "active"
+            ? "unconfigured"
+            : gate.status;
+        const blocksDispatch =
+          reconnectState === "expired" ? true : gate.blocksDispatch;
+        const runStepState =
+          reconnectState === "expired" ? "blocked_connection" : gate.runStepState;
+        const now = connectionStatus === "active" ? new Date().toISOString() : null;
+        if (options.sql) {
+          await updateConnectorBindingStatus(options.sql, {
+            connectionId,
+            workspaceId: session.workspace_id,
+            status: connectionStatus,
+            verifiedAt: now,
+          });
+        }
 
-      return {
-        ok: true,
-        value: connectionReconnectStatusSchema.parse({
-          schemaVersion: 1,
-          connection_id: connectionId,
-          intent_id: activeIntent?.intentId ?? null,
-          reconnect_state: reconnectState,
-          connection_status: gate.status,
-          blocks_dispatch: gate.blocksDispatch,
-          run_step_state: gate.runStepState,
-          fallback_account_rejected: gate.fallbackAccountRejected,
-          verified_at: now,
-        }),
-      };
+        return {
+          ok: true,
+          value: connectionReconnectStatusSchema.parse({
+            schemaVersion: 1,
+            connection_id: connectionId,
+            intent_id: activeIntent?.intentId ?? null,
+            reconnect_state: reconnectState,
+            connection_status: connectionStatus,
+            blocks_dispatch: blocksDispatch,
+            run_step_state: runStepState,
+            fallback_account_rejected: gate.fallbackAccountRejected,
+            verified_at: now,
+          }),
+        };
+      } catch {
+        return {
+          ok: false,
+          error: {
+            code: "provider_unavailable",
+            message: "Composio reconnect status could not be observed.",
+          },
+        };
+      }
     },
   };
 }

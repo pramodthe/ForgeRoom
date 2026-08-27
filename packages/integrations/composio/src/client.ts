@@ -226,8 +226,9 @@ export class ComposioSessionClient {
   /** Build server-side MCP headers from the API key (never log). */
   buildMcpSecrets(url: string, responseHeaders?: Record<string, string>): ComposioMcpSecrets {
     const headers: Record<string, string> = {
-      "x-api-key": this.apiKey,
       ...(responseHeaders ?? {}),
+      // Trusted credential always wins over any provider-supplied header.
+      "x-api-key": this.apiKey,
     };
     return {
       type: "http",

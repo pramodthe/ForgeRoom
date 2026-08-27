@@ -86,6 +86,7 @@ export async function rotateOwnedChannelCoworkerSession(
     now,
   });
 
+  let swapped = false;
   try {
     if (input.mcpInFlightKnownTerminal !== null && input.mcpInFlightKnownTerminal !== undefined) {
       await recordMcpRotationOutcome(input.sql, {
@@ -156,6 +157,7 @@ export async function rotateOwnedChannelCoworkerSession(
         retiredAt: null,
       },
     });
+    swapped = true;
 
     await completeSessionRotation(input.sql, {
       channelAgentSessionId: input.channelAgentSessionId,
@@ -175,10 +177,18 @@ export async function rotateOwnedChannelCoworkerSession(
       cancelRequested: begun.requestActiveTurnCancellation,
     };
   } catch (error) {
-    await abortSessionRotation(input.sql, {
-      channelAgentSessionId: input.channelAgentSessionId,
-      now,
-    });
+    if (swapped) {
+      // New generation already committed — activate it rather than aborting onto a retired pointer.
+      await completeSessionRotation(input.sql, {
+        channelAgentSessionId: input.channelAgentSessionId,
+        now,
+      });
+    } else {
+      await abortSessionRotation(input.sql, {
+        channelAgentSessionId: input.channelAgentSessionId,
+        now,
+      });
+    }
     throw error;
   }
 }
