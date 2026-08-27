@@ -55,7 +55,7 @@ export function ChannelWorkroom({ workspaceId, channelId }: ChannelWorkroomProps
           <ChannelTimelinePane channel={channel} workspaceId={workspaceId} />
         </div>
       </div>
-      <WorkPanelPane />
+      <WorkPanelPane channelId={channel.id} channelName={channel.name} />
     </div>
   );
 }

@@ -20,6 +20,7 @@ import type { ConnectionFixture } from "./mock-fixtures";
 import {
   DEFAULT_CHANNEL_ID,
   MOCK_CHANNELS,
+  MOCK_CHANNEL_MESSAGES,
   MOCK_CONNECTIONS,
   MOCK_COWORKERS,
   MOCK_SKILL_DRAFTS,
@@ -27,9 +28,10 @@ import {
   MOCK_TASKS,
   MOCK_WORKSPACE_ID,
 } from "./mock-fixtures";
+import { isFixtureMode } from "./mode";
 import { apiFetch, ApiError, newIdempotencyKey, stripRequestId } from "./http-client";
 
-const useMockApi = import.meta.env.MODE === "test";
+const useMockApi = isFixtureMode;
 
 function assertWorkspace(workspaceId: string): void {
   if (workspaceId !== MOCK_WORKSPACE_ID) {
@@ -74,17 +76,30 @@ export async function listChannelRoster(
 ): Promise<ChannelRosterResponse> {
   if (useMockApi) {
     assertWorkspace(workspaceId);
-    const members = MOCK_COWORKERS.map((coworker) => ({
-      participant_id: coworker.id,
-      coworker_id: coworker.id,
-      handle: coworker.handle,
-      name: coworker.name,
-      title: coworker.title,
-      role: "member" as const,
-      availability: coworker.status === "disabled" ? ("disabled" as const) : ("available" as const),
-      assignment_summary: null,
-      effective_tools: ["demo.read", "demo.write"],
-    }));
+    const members = MOCK_COWORKERS.map((coworker) => {
+      const operatorWaiting = channelId === "ch_general_001" && coworker.handle === "operator";
+      return {
+        participant_id: coworker.id,
+        coworker_id: coworker.id,
+        handle: coworker.handle,
+        name: coworker.name,
+        title: coworker.title,
+        role: "member" as const,
+        availability:
+          coworker.status === "disabled"
+            ? ("disabled" as const)
+            : operatorWaiting
+              ? ("needs_you" as const)
+              : ("available" as const),
+        assignment_summary: operatorWaiting
+          ? "Waiting to publish billing macro"
+          : "Support review complete",
+        effective_tools:
+          coworker.handle === "analyst"
+            ? ["GITHUB_GET_ISSUES", "support.read", "DataTable", "BarOrLineChart"]
+            : ["INTERCOM_UPDATE_MACRO", "sandbox.run", "TaskCard", "ArtifactCard"],
+      };
+    });
     return channelRosterResponseSchema.parse({
       schemaVersion: 1,
       channel_id: channelId,
@@ -266,7 +281,13 @@ export async function listChannelMessages(
   channelId: string,
 ): Promise<ChannelTimelineMessagesResponse> {
   if (useMockApi) {
-    return { schemaVersion: 1, channel_id: channelId, messages: [] };
+    return (
+      MOCK_CHANNEL_MESSAGES.find((timeline) => timeline.channel_id === channelId) ?? {
+        schemaVersion: 1,
+        channel_id: channelId,
+        messages: [],
+      }
+    );
   }
   const body = await apiFetch<unknown>(`/api/channels/${encodeURIComponent(channelId)}/messages`);
   return channelTimelineMessagesResponseSchema.parse(

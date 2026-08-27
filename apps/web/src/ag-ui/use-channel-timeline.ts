@@ -1,6 +1,7 @@
 import { agentChannelEnvelopeSchema, type ChannelTimelineMessage } from "@forgeroom/contracts";
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { apiUrl } from "../api/http-client";
+import { isFixtureMode } from "../api/mode";
 import {
   channelTimelineReducer,
   initialChannelTimelineState,
@@ -36,6 +37,10 @@ export function useChannelTimeline(input: {
   }, [input.initialMessages]);
 
   useEffect(() => {
+    if (isFixtureMode) {
+      setConnection("live");
+      return;
+    }
     let source: EventSource | null = null;
     let reconnectTimer: number | null = null;
     let cancelled = false;

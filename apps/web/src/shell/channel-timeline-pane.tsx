@@ -120,6 +120,7 @@ export function ChannelTimelinePane({ workspaceId, channel }: ChannelTimelinePan
         }
       />
       <ChannelTimeline
+        channelId={channel.id}
         messages={timeline.messages}
         runs={timeline.runs}
         roster={rosterQuery.data.coworkers}

@@ -56,26 +56,42 @@ export function AppHeader({ workspaceId }: AppHeaderProps) {
   }
 
   return (
-    <header className="flex items-center justify-between border-b border-zinc-200 bg-white px-4 py-3">
-      <nav aria-label="Primary" className="flex items-center gap-4">
-        {NAV_ITEMS.map((item) => {
-          const href = navHref(workspaceId, item.segment);
-          const active = pathname.includes(`/${item.segment}`);
-          return (
-            <Link
-              key={item.segment}
-              to={href}
-              className={`text-sm ${active ? "font-semibold text-zinc-900" : "text-zinc-600 hover:text-zinc-900"}`}
-            >
-              {item.label}
-            </Link>
-          );
-        })}
-      </nav>
+    <header className="flex h-14 shrink-0 items-center justify-between border-b border-zinc-200 bg-white px-4">
+      <div className="flex items-center gap-6">
+        <Link
+          to={workspaceChannelsPath(workspaceId)}
+          className="flex items-center gap-2.5"
+          aria-label="ForgeRoom home"
+        >
+          <span className="grid h-8 w-8 place-items-center rounded-xl bg-zinc-950 text-sm font-black text-white shadow-sm">
+            F
+          </span>
+          <span className="text-sm font-semibold tracking-tight text-zinc-950">ForgeRoom</span>
+        </Link>
+        <nav aria-label="Primary" className="flex items-center gap-1 rounded-xl bg-zinc-100 p-1">
+          {NAV_ITEMS.map((item) => {
+            const href = navHref(workspaceId, item.segment);
+            const active = pathname.includes(`/${item.segment}`);
+            return (
+              <Link
+                key={item.segment}
+                to={href}
+                className={`rounded-lg px-3 py-1.5 text-xs transition-colors ${active ? "bg-white font-semibold text-zinc-950 shadow-sm" : "text-zinc-500 hover:text-zinc-900"}`}
+              >
+                {item.label}
+              </Link>
+            );
+          })}
+        </nav>
+      </div>
       <div className="flex items-center gap-3 text-sm text-zinc-700">
-        <span>{session.user.display_name}</span>
+        <span className="hidden text-xs text-zinc-500 2xl:inline">Demo workspace</span>
+        <span className="grid h-8 w-8 place-items-center rounded-full bg-violet-100 text-xs font-semibold text-violet-700">
+          {session.user.display_name.slice(0, 1).toUpperCase()}
+        </span>
+        <span className="text-xs font-medium">{session.user.display_name}</span>
         <HostButton
-          className="rounded border border-zinc-300 px-2 py-1 text-xs"
+          className="rounded-lg border border-zinc-200 px-2.5 py-1.5 text-xs text-zinc-500 hover:bg-zinc-50 hover:text-zinc-900"
           onClick={() => void onLogout()}
         >
           Log out

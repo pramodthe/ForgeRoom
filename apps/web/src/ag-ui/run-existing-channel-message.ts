@@ -1,6 +1,7 @@
 import { HttpAgent } from "@forgeroom/ag-ui/browser";
 import type { PostedChannelMessage } from "../api/workspace-api";
 import { apiUrl } from "../api/http-client";
+import { isFixtureMode } from "../api/mode";
 
 export async function runExistingChannelMessage(input: {
   channelId: string;
@@ -8,6 +9,7 @@ export async function runExistingChannelMessage(input: {
   csrfToken: string;
   posted: PostedChannelMessage;
 }): Promise<void> {
+  if (isFixtureMode) return;
   if (!input.posted.run_id) return;
 
   await Promise.all(
