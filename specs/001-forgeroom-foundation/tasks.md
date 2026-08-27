@@ -33,7 +33,7 @@ Each task file is authoritative for its status and evidence. Keep this index and
 | [ ] | [P0-208](./tasks/P0-208-session-rotation.md) | Capability/skill intersection and rotation | blocked | P0-202, P0-302, P0-314 |
 | [ ] | [P0-210](./tasks/P0-210-agui-compatibility-spike.md) | Freeze AG-UI and prove bridge | done | P0-000, P0-101 |
 | [x] | [P0-211](./tasks/P0-211-trueforge-agui-adapter.md) | TrueForge-to-AG-UI adapter | done | P0-102, P0-203, P0-210 |
-| [ ] | [P0-212](./tasks/P0-212-agui-persistence-state-replay.md) | AG-UI persistence and replay | in_progress | P0-103, P0-107, P0-211 |
+| [ ] | [P0-212](./tasks/P0-212-agui-persistence-state-replay.md) | AG-UI persistence and replay | in_progress (first slice merged) | P0-103, P0-107, P0-211 |
 | [ ] | [P0-213](./tasks/P0-213-conversational-coworker-drafts.md) | Conversational CoworkerDraft provisioning | blocked | P0-106, P0-208 |
 | [ ] | [P0-301](./tasks/P0-301-composio-session.md) | Composio direct-tools session | blocked | P0-000, P0-101 |
 | [ ] | [P0-302](./tasks/P0-302-manifest-verification.md) | Connector/AgentSpec verification | blocked | P0-201, P0-301 |
@@ -48,7 +48,7 @@ Each task file is authoritative for its status and evidence. Keep this index and
 | [ ] | [P0-311](./tasks/P0-311-daytona.md) | Daytona sandbox event path | blocked | P0-201, P0-203 |
 | [ ] | [P0-312](./tasks/P0-312-artifact-extraction.md) | Artifact extraction and preview | blocked | P0-310, P0-311 |
 | [ ] | [P0-313](./tasks/P0-313-audit-receipt.md) | Audit timeline and JSON receipt | blocked | P0-203, P0-309, P0-312, P0-315 |
-| [ ] | [P0-314](./tasks/P0-314-component-registry-grants.md) | Fixed governed component registry | blocked | P0-102, P0-103, P0-104, P0-210 |
+| [ ] | [P0-314](./tasks/P0-314-component-registry-grants.md) | Fixed governed component registry | in_progress | P0-102, P0-103, P0-104, P0-210 |
 | [ ] | [P0-315](./tasks/P0-315-component-tool-interaction-gateway.md) | Component/interaction gateway | blocked | P0-201, P0-208, P0-211, P0-212, P0-314 |
 | [ ] | [P0-316](./tasks/P0-316-controlled-component-library.md) | Small controlled component library | blocked | P0-312, P0-314, P0-401 |
 | [ ] | [P0-318](./tasks/P0-318-save-run-as-skill.md) | Save successful Run as skill | blocked | P0-104, P0-106, P0-206, P0-208, P0-403 |

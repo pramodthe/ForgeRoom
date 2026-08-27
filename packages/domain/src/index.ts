@@ -48,3 +48,33 @@ export {
   TASK_TRANSITIONS,
 } from "./transitions";
 export { isOwnerRole, isRecentAuthentication, OWNER_ROLE, type WorkspaceRole } from "./auth";
+export { canonicalizeJson } from "./components/jcs";
+export {
+  assertDescriptorMatches,
+  buildComponentDescriptorPreimage,
+  componentDefinitionFromPreimage,
+  hashComponentDescriptor,
+  type ComponentDefinition,
+  type ComponentDefinitionInput,
+  type ComponentDescriptorPreimageV1,
+  type ComponentExposure,
+  type ComponentKind,
+  type ConfirmationPolicy,
+} from "./components/descriptor";
+export {
+  buildGrantScopePreimage,
+  canOfferToCoworker,
+  hashGrantScope,
+  intersectComponentAvailability,
+  isComponentEffectivelyGranted,
+  recomputeDescriptorHash,
+  type ComponentAvailabilityReason,
+  type ComponentAvailabilityResult,
+  type GrantScopePreimageV1,
+} from "./components/grants";
+export {
+  getRegistryDefinition,
+  listAgentToolDefinitions,
+  listServerOnlyDefinitions,
+  P0_CONTROLLED_REGISTRY,
+} from "./components/registry";

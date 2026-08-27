@@ -6,6 +6,8 @@ import { mountAgUiRoutes } from "./ag-ui/routes";
 import { errorResponse } from "./http";
 import { createWorkspaceService, type WorkspaceService } from "./workspace/service";
 import { mountWorkspaceRoutes } from "./workspace/routes";
+import { createComponentService, type ComponentService } from "./components/service";
+import { mountComponentRoutes } from "./components/routes";
 import type { createSql } from "@forgeroom/db";
 import type { TrueForgeClient } from "@forgeroom/trueforge";
 
@@ -13,6 +15,7 @@ export function createApiApp(options?: {
   env?: ApiEnv;
   auth?: AuthService;
   workspace?: WorkspaceService;
+  components?: ComponentService;
   trueforgeClient?: TrueForgeClient;
   sql?: ReturnType<typeof createSql>;
 }) {
@@ -20,6 +23,14 @@ export function createApiApp(options?: {
   const env = options?.env;
   const auth = options?.auth ?? (env ? createAuthService({ env }) : undefined);
   const workspace = options?.workspace ?? (env && auth ? createWorkspaceService() : undefined);
+  const components =
+    options?.components ??
+    (workspace
+      ? createComponentService({
+          workspace,
+          ...(options?.sql ? { sql: options.sql } : {}),
+        })
+      : undefined);
 
   app.get("/health", (c) =>
     c.json({
@@ -51,6 +62,9 @@ export function createApiApp(options?: {
   }
   if (env && auth && workspace) {
     mountWorkspaceRoutes(app, { env, auth, workspace });
+    if (components) {
+      mountComponentRoutes(app, { env, auth, components });
+    }
     mountAgUiRoutes(app, {
       env,
       auth,
