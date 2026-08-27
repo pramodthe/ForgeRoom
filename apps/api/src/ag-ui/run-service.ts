@@ -247,7 +247,7 @@ export function createAgUiRunService(options: {
           ok: true,
           value: {
             threadId: resolved.value.logicalThreadId,
-            aguiRunId: input.runId,
+            aguiRunId: bound.value.aguiRunId,
             applicationRunId: existing.application_run_id,
             runStepId: existing.run_step_id,
             agentTurnId: bound.value.agentTurnId,
@@ -313,7 +313,7 @@ export function createAgUiRunService(options: {
         ok: true,
         value: {
           threadId: resolved.value.logicalThreadId,
-          aguiRunId: input.runId,
+          aguiRunId: bound.value.aguiRunId,
           applicationRunId: posted.value.run_id,
           runStepId,
           agentTurnId: bound.value.agentTurnId,
@@ -362,7 +362,7 @@ export function createAgUiRunService(options: {
       };
       const writeEvent = async (event: Record<string, unknown>) => {
         const durableEvent = toPersistedAgUiEvent(event);
-        if (durableEvent) {
+        if (durableEvent && durableMirrorHealthy) {
           const mirrored = await workspace.appendCoworkerAgUiEvent({
             channelId: bootstrap.channelId,
             coworkerId: bootstrap.coworkerId,
@@ -375,8 +375,8 @@ export function createAgUiRunService(options: {
             event: durableEvent,
           });
           if (!mirrored.ok) {
+            // Channel mirror outage must not abort provider ingestion or lifecycle settlement.
             durableMirrorHealthy = false;
-            throw new Error("Durable AG-UI channel mirror failed");
           }
         }
         if (await canDeliver()) {

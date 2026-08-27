@@ -318,4 +318,36 @@ describe("durable AG-UI streaming", () => {
       expect(steps[0]?.completed_at).toBeNull();
     });
   }, 60_000);
+
+  it("refuses to overwrite a bound turn's agui_run_id with a different client run id", async () => {
+    await withMigratedDatabase(async (sql) => {
+      await seedRuntime(sql);
+      await sql`
+        UPDATE agent_turns
+        SET trueforge_turn_id = 'tf_turn_bound', agui_run_id = 'agui_original', state = 'streaming'
+        WHERE id = 'turn_1'
+      `;
+      const result = await bindDurableTrueForgeTurn({
+        sql,
+        trueforgeClient: {
+          async createTurn() {
+            throw new Error("must not create");
+          },
+          async listTurns() {
+            throw new Error("must not list");
+          },
+        },
+        runStepId: "step_1",
+        content: "Retry under a new run id",
+        clientAguiRunId: "agui_different",
+        timeoutMs: 50,
+        intervalMs: 1,
+      });
+      expect(result).toEqual({ ok: false, reason: "agui_run_conflict" });
+      const turns = await sql<{ agui_run_id: string }[]>`
+        SELECT agui_run_id FROM agent_turns WHERE id = 'turn_1'
+      `;
+      expect(turns[0]?.agui_run_id).toBe("agui_original");
+    });
+  }, 60_000);
 });
