@@ -135,6 +135,22 @@ describe("toPersistedAgUiEvent", () => {
     expect(
       toPersistedAgUiEvent({
         type: "STATE_DELTA",
+        delta: [{ op: "replace", path: "/phase", value: "interrupted" }, "not-an-op"],
+        metadata: {
+          forgeroom: {
+            schemaVersion: 1,
+            channelId: "channel_demo",
+            coworkerId: "coworker_operator",
+            actorKind: "coworker",
+            revision: 1,
+          },
+        },
+      }),
+    ).toBeNull();
+
+    expect(
+      toPersistedAgUiEvent({
+        type: "STATE_DELTA",
         delta: [{ op: "replace", path: "/phase", value: "interrupted" }],
         metadata: {
           forgeroom: {
