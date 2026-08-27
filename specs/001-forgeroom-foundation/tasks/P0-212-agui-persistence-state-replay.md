@@ -24,13 +24,13 @@ Concurrent coworker streams form one correctly attributed, refresh-safe channel 
 - [ ] `generated_source_ref` rows deterministically materialize source-free schema-valid live/replay activities; authorized iframe source is delivered only through the separate render-capability path.
 - [ ] Live and replay serialize the exact persisted closed `browserEvent` and are byte-identical RFC 8785 JCS UTF-8; event_hash covers that object, source_ref_hash covers the full server ref, and neither path exposes source/blob/capability data. *(event_hash now JCS for all persisted AG-UI events; browserEvent/source_ref still open)*
 - [x] A fanned-out human sourceMessageId renders once across full/compacted replay; per-coworker inputs do not duplicate it. *(human via REST messages; coworker text via stream lanes)*
-- [x] A pure reducer isolates concurrent message/activity IDs and actor ownership; browser mounting and any optional CopilotKit wrapper belong to P0-408. *(text/runs + ChannelUIState/ThreadUIState; activities deferred)*
+- [x] A pure reducer isolates concurrent message/activity IDs and actor ownership; browser mounting and any optional CopilotKit wrapper belong to P0-408. *(text/runs + ChannelUIState/ThreadUIState + activities)*
 - [x] Exactly one channel/system lane owns ChannelUIState; per-coworker streams may carry only their separately typed ThreadUIState and cannot race shared state. *(contracts + `reduceUiPresentationState`)*
-- [ ] Every registered activity delta tests/increments activityRevision; resync snapshots preserve the current revision, and wrong-base, delayed pre-resync, gap, duplicate and forbidden-path cases request a replacement snapshot.
+- [x] Every registered activity delta tests/increments activityRevision; resync snapshots preserve the current revision, and wrong-base, delayed pre-resync, gap, duplicate and forbidden-path cases request a replacement snapshot. *(contracts + `reduceActivityPresentationState`)*
 - [x] `STATE_SNAPSHOT` replaces state; delta applies RFC 6902 with revision test and safe-path allowlist. *(schema + pure reducer)*
 - [x] Missing/invalid base requests a fresh snapshot rather than guessing.
 - [ ] Full replay and compacted snapshot replay produce identical messages, activities, run state and hashes.
-- [ ] Security-sensitive state paths cannot be emitted or patched. *(contracts reject; reducer resyncs — leave open until activity/source paths land)*
+- [ ] Security-sensitive state paths cannot be emitted or patched. *(contracts reject; reducer resyncs — leave open until source_ref paths land)*
 
 ## Verification
 
@@ -48,3 +48,9 @@ Run concurrency, cursor-by-cursor reconnect, patch divergence and full-versus-co
 - `toPersistedAgUiEvent` projects `STATE_SNAPSHOT` / `STATE_DELTA`.
 - Pure `reduceUiPresentationState` owns channel vs thread lanes, snapshot replace, revisioned deltas, and `need_*_snapshot` on divergence.
 - Still open: activities, `generated_source_ref`, compaction equivalence, browserEvent closed-form hashing.
+
+## Notes (2026-08-27 third slice)
+
+- `toPersistedAgUiEvent` projects `ACTIVITY_SNAPSHOT` / `ACTIVITY_DELTA`; persist path records activity `messageId`.
+- Pure `reduceActivityPresentationState` applies revisioned activity deltas with snapshot-resync latches.
+- Still open: `generated_source_ref` / browserEvent closed-form hashing, compaction equivalence.

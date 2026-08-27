@@ -13,6 +13,8 @@ export function resolveAguiEventRecordMessageOrActivityId(
     case "TEXT_MESSAGE_START":
     case "TEXT_MESSAGE_CONTENT":
     case "TEXT_MESSAGE_END":
+    case "ACTIVITY_SNAPSHOT":
+    case "ACTIVITY_DELTA":
       return aguiEvent.messageId ?? null;
     case "RUN_STARTED":
     case "RUN_ERROR":
