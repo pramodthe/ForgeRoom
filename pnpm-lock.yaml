@@ -245,6 +245,12 @@ importers:
       '@ag-ui/core':
         specifier: 0.0.57
         version: 0.0.57
+      '@forgeroom/contracts':
+        specifier: workspace:*
+        version: link:../../contracts
+      '@forgeroom/orchestration':
+        specifier: workspace:*
+        version: link:../../orchestration
       '@forgeroom/test-fixtures':
         specifier: workspace:*
         version: link:../../test-fixtures

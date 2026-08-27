@@ -441,6 +441,18 @@ export type WorkspaceService = {
     config?: Partial<CoworkerEditableConfig>;
     toolGrants?: string[];
   }): Promise<CoworkerRecord>;
+  resolveAgUiCoworkerContext(
+    session: SessionResponse,
+    channelId: string,
+    coworkerId: string,
+  ): Promise<
+    WorkspaceServiceResult<{
+      coworker: { id: string; handle: string };
+      logicalThreadId: string;
+      trueforgeSessionId: string | null;
+      availability: ChannelRosterResponse["coworkers"][number]["availability"];
+    }>
+  >;
 };
 
 export function createWorkspaceService(options?: {
@@ -2733,6 +2745,62 @@ export function createWorkspaceService(options?: {
           queue_item_id: queued.queueItemId,
           run_step_id: queued.runStepId,
           input_type: "correction" as const,
+        },
+      };
+    },
+
+    async resolveAgUiCoworkerContext(session, channelId, coworkerId) {
+      const loaded = await loadOwnedChannel(session, channelId);
+      if (!loaded.ok) {
+        return loaded;
+      }
+      const coworker = await store.getCoworker(coworkerId);
+      if (!coworker || coworker.workspaceId !== loaded.value.workspaceId) {
+        return {
+          ok: false,
+          error: { code: "not_found", message: "Coworker not found." },
+        };
+      }
+      const participants = await store.listParticipants(channelId);
+      const isMember = participants.some(
+        (row) =>
+          row.participantType === "coworker" &&
+          row.participantId === coworkerId &&
+          row.removedAt === null,
+      );
+      if (!isMember) {
+        return {
+          ok: false,
+          error: {
+            code: "not_found",
+            message: "Coworker is not a participant in this channel.",
+          },
+        };
+      }
+      const sessions = await store.listChannelAgentSessions(channelId);
+      const sessionStateByCoworker = new Map(
+        sessions.map((row) => [row.agentProfileId, row.state] as const),
+      );
+      const agentSession = sessions.find((row) => row.agentProfileId === coworkerId);
+      const logicalThreadId =
+        agentSession?.logicalAguiThreadId ?? `thread_${channelId}_${coworkerId}`;
+      let trueforgeSessionId: string | null = null;
+      if (sql && agentSession?.currentGenerationId) {
+        const rows = await sql<{ trueforge_session_id: string }[]>`
+          SELECT trueforge_session_id
+          FROM channel_agent_session_generations
+          WHERE id = ${agentSession.currentGenerationId}
+          LIMIT 1
+        `;
+        trueforgeSessionId = rows[0]?.trueforge_session_id ?? null;
+      }
+      return {
+        ok: true,
+        value: {
+          coworker: { id: coworker.id, handle: coworker.handle },
+          logicalThreadId,
+          trueforgeSessionId,
+          availability: mapRosterAvailability(coworker, sessionStateByCoworker.get(coworkerId)),
         },
       };
     },

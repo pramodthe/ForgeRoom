@@ -13,7 +13,7 @@ import { agentTurnStateSchema } from "./runs";
 export const packageBoundarySchema = z
   .object({
     release: z.literal("0.1"),
-    agUiProfile: z.literal("unset-pending-P0-210"),
+    agUiProfile: z.literal("pure_ag_ui_0_0_57"),
     copilotKit: z.literal("disabled"),
     openGeneratedUi: z.literal("disabled"),
     upstreamAgUiAdapters: z.literal("owned-by-P0-211"),
@@ -24,7 +24,7 @@ export type PackageBoundary = z.infer<typeof packageBoundarySchema>;
 
 export const PACKAGE_BOUNDARY: PackageBoundary = {
   release: "0.1",
-  agUiProfile: "unset-pending-P0-210",
+  agUiProfile: "pure_ag_ui_0_0_57",
   copilotKit: "disabled",
   openGeneratedUi: "disabled",
   upstreamAgUiAdapters: "owned-by-P0-211",
