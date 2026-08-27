@@ -1,4 +1,4 @@
-import { HttpAgent } from "@forgeroom/ag-ui";
+import { HttpAgent } from "@forgeroom/ag-ui/browser";
 import type { PostedChannelMessage } from "../api/workspace-api";
 import { apiUrl } from "../api/http-client";
 
