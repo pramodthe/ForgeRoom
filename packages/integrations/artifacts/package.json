@@ -11,6 +11,9 @@
     "test": "vitest run",
     "build": "tsc -p tsconfig.json --noEmit"
   },
+  "dependencies": {
+    "sharp": "^0.34.3"
+  },
   "devDependencies": {
     "@types/node": "catalog:",
     "typescript": "catalog:",

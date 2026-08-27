@@ -47,4 +47,39 @@ export const auditReceiptSchema = z
   .strict();
 
 export type Artifact = z.infer<typeof artifactSchema>;
+
+export const artifactPreviewTextSchema = z
+  .object({
+    kind: z.literal("text"),
+    mime_type: z.string().min(1),
+    content: z.string(),
+    truncated: z.boolean(),
+  })
+  .strict();
+
+export const artifactPreviewImageSchema = z
+  .object({
+    kind: z.literal("image"),
+    mime_type: z.enum(["image/png", "image/webp"]),
+    width: z.number().int().positive(),
+    height: z.number().int().positive(),
+    alt_text_status: z.enum(["missing", "provided"]),
+    byte_size: nonNegativeIntSchema,
+  })
+  .strict();
+
+export const artifactPreviewUnsupportedSchema = z
+  .object({
+    kind: z.literal("unsupported"),
+    reason: z.string().min(1),
+  })
+  .strict();
+
+export const artifactPreviewSchema = z.discriminatedUnion("kind", [
+  artifactPreviewTextSchema,
+  artifactPreviewImageSchema,
+  artifactPreviewUnsupportedSchema,
+]);
+
+export type ArtifactPreview = z.infer<typeof artifactPreviewSchema>;
 export type AuditReceipt = z.infer<typeof auditReceiptSchema>;

@@ -35,6 +35,41 @@ export {
   mcpToolNames,
   registerHeaderAuthMcpServer,
 } from "./mcp-connector";
+export {
+  assertSandboxEnabledToolPolicy,
+  buildSandboxOnlyAgentSpecInstructions,
+  DaytonaProbeClient,
+  evaluateCredentialCanary,
+  evaluateEgressProbe,
+  extractToolCallsFromModelMessage,
+  isSandboxCommandToolName,
+  loadDaytonaProbeClientFromEnv,
+  mapTrueForgeWireEventsToSandboxLifecycle,
+  sha256Utf8,
+  toRedactedSandboxEvidence,
+  verifySandboxEnabledToolPolicy,
+} from "./sandbox";
+export type {
+  CredentialCanaryProbeResult,
+  DaytonaProbeClientOptions,
+  EgressProbeResult,
+  MappedSandboxLifecycleEvent,
+  RedactedSandboxEvidence,
+  SandboxApplicationEventType,
+  SandboxCommandState,
+  SandboxProfilePolicyResult,
+} from "./sandbox";
+export {
+  P0_DAYTONA_API_BASE,
+  P0_SANDBOX_CREDENTIAL_CANARY_ENV_KEYS,
+  P0_SANDBOX_EGRESS_PROBE_URL,
+  P0_SANDBOX_FIXTURE_DEMO_LINES,
+  P0_SANDBOX_FIXTURE_DEMO_LINES_SHA256,
+  P0_SANDBOX_FIXTURE_REMOTE_PATH,
+  P0_SANDBOX_FORBIDDEN_SENSITIVE_READ_TOOLS,
+  P0_TRUEFORGE_SANDBOX_CREATED_WIRE_TYPE,
+  P0_TRUEFORGE_SANDBOX_FILE_WIRE_TYPE,
+} from "./sandbox-p0-contract";
 export type {
   RegisterHeaderAuthMcpServerInput,
   TrueForgeConfiguredMcpServer,

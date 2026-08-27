@@ -95,6 +95,28 @@ export class TrueForgeClient {
     return unwrapTurnEvents(payload);
   }
 
+  /** Download a file produced in the turn sandbox (TrueForge sandbox-file endpoint). */
+  async downloadSandboxFile(
+    sessionId: string,
+    turnId: string,
+    sandboxPath: string,
+  ): Promise<Uint8Array> {
+    const params = new URLSearchParams({ path: sandboxPath });
+    const path = `/api/v1/sessions/${encodeURIComponent(sessionId)}/turns/${encodeURIComponent(turnId)}/download-sandbox-file?${params}`;
+    const headers: Record<string, string> = { Accept: "application/octet-stream" };
+    if (this.apiKey) {
+      headers.Authorization = `Bearer ${this.apiKey}`;
+    }
+    const response = await this.fetchImpl(`${this.baseUrl}${path}`, { method: "GET", headers });
+    if (!response.ok) {
+      throw new Error(
+        `TrueForge sandbox file download failed (${response.status}) for ${sandboxPath}`,
+      );
+    }
+    const buffer = await response.arrayBuffer();
+    return new Uint8Array(buffer);
+  }
+
   async cancelSession(
     sessionId: string,
     body: Record<string, unknown> = {},

@@ -167,3 +167,13 @@ export type {
   ConnectorBindingRow,
   EnsureP0ConnectorBindingInput,
 } from "./connector-bindings";
+export {
+  findArtifactByContentRevision,
+  loadArtifactById,
+  publishArtifactRecord,
+} from "./artifact-storage";
+export type {
+  ArtifactRecord,
+  PublishArtifactRecordInput,
+  PublishArtifactRecordResult,
+} from "./artifact-storage";

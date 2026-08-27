@@ -34,6 +34,13 @@ import {
   createOrReconcileResponseTurn,
   type CreateOrReconcileResponseTurnResult,
 } from "@forgeroom/orchestration/create-or-reconcile-response-turn";
+import {
+  createTrueForgeDownloadAdapter,
+  executePublishSandboxArtifactCommand,
+  type PublishSandboxArtifactCommand,
+  type SandboxArtifactPublishAdapters,
+  type SandboxArtifactPublishInput,
+} from "@forgeroom/orchestration/artifact-extraction";
 import { TrueForgeClient, type TrueForgeClient as TrueForgeClientType } from "@forgeroom/trueforge";
 
 export function parseWorkerCommand(input: unknown): InternalWorkerCommand {
@@ -51,6 +58,7 @@ export type WorkerDispatchResult = {
     | CreateOrReconcileResponseTurnResult
     | { ok: false; reason: "unavailable" };
   ingest?: IngestRunEventResult | { ok: false; reason: "unavailable" };
+  publishSandboxArtifact?: Awaited<ReturnType<typeof executePublishSandboxArtifactCommand>>;
 };
 
 export type WorkerProcessOptions = {
@@ -58,7 +66,10 @@ export type WorkerProcessOptions = {
   /** When set, DB-backed commands run against this client. */
   sql?: ReturnType<typeof createSql>;
   databaseUrl?: string;
-  trueforge?: Pick<TrueForgeClientType, "createTurn" | "listTurns" | "cancelSession">;
+  trueforge?: Pick<
+    TrueForgeClientType,
+    "createTurn" | "listTurns" | "cancelSession" | "downloadSandboxFile"
+  >;
   pausePayloadEncryptionSecret?: string;
   loadTurnCreateContext?: (agentTurnId: string) => Promise<{
     applicationRunToken: string;
@@ -67,6 +78,10 @@ export type WorkerProcessOptions = {
     localTrueforgeTurnId: string | null;
     trueforgeSessionId: string;
   } | null>;
+  loadArtifactDiscovery?: (
+    artifactId: string,
+  ) => Promise<SandboxArtifactPublishInput | null>;
+  publishArtifact?: SandboxArtifactPublishAdapters["publishArtifact"];
   /** When true (default with sql), mark active turns needs_attention on start. */
   markNeedsAttentionOnStart?: boolean;
   workspaceId?: string;
@@ -172,6 +187,24 @@ export async function executeIngestTrueForgeEvent(
     event,
     turnDoneOutcome,
   });
+}
+
+export async function executePublishSandboxArtifact(
+  options: {
+    client: Pick<TrueForgeClientType, "downloadSandboxFile">;
+    loadDiscovery: NonNullable<WorkerProcessOptions["loadArtifactDiscovery"]>;
+    publishArtifact: NonNullable<WorkerProcessOptions["publishArtifact"]>;
+  },
+  command: PublishSandboxArtifactCommand,
+) {
+  return executePublishSandboxArtifactCommand(
+    {
+      downloadSandboxFile: createTrueForgeDownloadAdapter(options.client),
+      loadDiscovery: options.loadDiscovery,
+      publishArtifact: options.publishArtifact,
+    },
+    command,
+  );
 }
 
 export async function executeStopCancelOnce(
@@ -432,6 +465,24 @@ export function startWorkerProcess(options: WorkerProcessOptions | WorkerCommand
           await resolved.executeCommand?.(command);
         }
         return { command, ingest };
+      }
+
+      if (command.name === "publish_sandbox_artifact") {
+        if (!trueforge || !resolved.loadArtifactDiscovery || !resolved.publishArtifact) {
+          return { command, publishSandboxArtifact: { ok: false, kind: "not_found", reason: "unavailable", events: [] } };
+        }
+        const publishSandboxArtifact = await executePublishSandboxArtifact(
+          {
+            client: trueforge,
+            loadDiscovery: resolved.loadArtifactDiscovery,
+            publishArtifact: resolved.publishArtifact,
+          },
+          command,
+        );
+        if (publishSandboxArtifact.ok) {
+          await resolved.executeCommand?.(command);
+        }
+        return { command, publishSandboxArtifact };
       }
 
       await resolved.executeCommand?.(command);

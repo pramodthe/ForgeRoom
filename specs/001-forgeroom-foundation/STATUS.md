@@ -2,11 +2,11 @@
 
 | Field | Current value |
 | --- | --- |
-| Overall | M0 Demo contract done; M1 Foundation done; P0-208 done; P0-212/P0-314 done; P0-301–P0-309 done |
+| Overall | M0 Demo contract done; M1 Foundation done; P0-208 done; P0-212/P0-314 done; P0-301–P0-312 done |
 | Current phase | Phase 1 — Foundation / M3 tools |
 | Active task | — |
-| Next task | Critical path: P0-310 / P0-311 (then P0-312); also ready: P0-109, P0-213, P0-315 |
-| P0 blockers | TrueForge→artifact path, demo durable storage, run-limit hard enforcement |
+| Next task | Critical path: P0-313; also ready: P0-109, P0-213, P0-315 |
+| P0 blockers | Run-limit hard enforcement |
 | Last updated | 2026-08-27 |
 
 ## Milestones
@@ -24,8 +24,8 @@
 
 Still open for later owner tasks (see `decisions/OPEN.md` and `provider-fixtures/`):
 
-- Demo durable artifact storage adapter and checked-in deployment diagram (OD-006/OD-007).
-- TrueForge sandbox-file → application artifact retain path.
+- Demo deployment diagram for persistent `ARTIFACT_STORAGE_DIR` mount (OD-006/OD-007) — adapter implemented; live host probe still candidate.
+- TrueForge sandbox-file → application artifact retain path implemented in P0-312; live TrueForge turn probe still blocked on OpenAI billing.
 - Run-limit hard enforcement evidence (P0-204 / OD-008).
 - OD-009 synthetic fixture `#35` live write/reconcile/reset verified (`pthebesfsu-a11y` write collaborator).
 
@@ -34,8 +34,8 @@ Verified 2026-08-26 / 2026-08-27 live probes:
 - Composio github toolkit, tool slugs, account suffix `nizY`, descriptor hashes.
 - P0-301 hosted MCP direct-tools session (exact three tools; forbidden meta surfaces absent; MCP secrets server-side only).
 - Synthetic provider fixture `pramodthe/ForgeRoom#35` (label `forgeroom-p0-probe`); live Composio write/reconcile/reset **verified 2026-08-27**: `pthebesfsu-a11y` has ForgeRoom **write** (invite accepted; not pending). Earlier same-day 403 ("Must have admin rights to Repository") was pre-acceptance; re-probe add/remove/GET succeeded with existing label + `repo` OAuth scope.
-- Daytona sandbox SDK upload/download (partial — TrueForge→storage path blocked on adapter wiring).
-- Local `ARTIFACT_STORAGE_DIR` adapter retain (separate probe; not yet same bytes as Daytona download).
+- Daytona P0-311 verified 2026-08-27: wire→lifecycle mapping, credential canary absent, egress measured, fixture demo-lines SHA; TrueForge→storage extraction implemented in P0-312 (live turn probe blocked on OpenAI billing).
+- Local `ARTIFACT_STORAGE_DIR` adapter retain (**verified in P0-310**; persistence probe in adapter tests).
 - Local TrueForge + OpenAI: preset `openai/gpt-5-4-mini`; Operator smoke turn `p0-openai-ok`; Research permission exactDiff frozen.
 - Save-as-skill TrueForge instruction-only turn `done` (session suffix `30yd5y`, turn suffix `194qgy`, output sha256 `550cc8bd…82530c9`); Task/Save-as-skill fixtures verified.
 - Local deployment preflight **pass** (TrueForge + OpenAI).
@@ -55,6 +55,8 @@ Never put credentials in this file.
 
 ## Recently completed
 
+- P0-312 artifact extraction and safe preview (TrueForge sandbox-file discovery; path/MIME/size validation; durable hash publication; authenticated preview with CSP/script disabled; image re-encode via sharp; worker `publish_sandbox_artifact` wiring).
+- P0-310 durable artifact storage (local-directory adapter; workspace/channel-scoped keys; idempotent content-addressed publish; authenticated GET/download; persistence probe; preview deferred to P0-312).
 - P0-208 capability intersection and session rotation (policy/grant/account/AgentSpec ∩; rotating blocks claims; atomic generation swap retains old TrueForge IDs; normals rebind / responses never migrate; MCP reconcile without claim denial; skill attach cannot expand authority; `session-rotation.verified.json`).
 - P0-304 Connections API and health (fixed-account status/Test/Reconnect; Connect Link workspace-bound; expiry→`blocked_connection` with no fallback; catalog endpoints closed; `connections.verified.json`).
 - P0-309 approval-gated deterministic write (`GITHUB_ADD_LABELS_TO_AN_ISSUE` in approval-required set; deny→zero mutation; binding change→new proposal; allow→one PauseResume intent; timeout→`unknown` no auto-retry; GET reconcile to final state; verified receipt only when adapter verifies; `deterministic-write.verified.json`).

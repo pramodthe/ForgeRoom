@@ -18,7 +18,9 @@
     "./real-read": "./src/real-read.ts",
     "./deterministic-write": "./src/deterministic-write.ts",
     "./capability-intersection": "./src/capability-intersection.ts",
-    "./session-rotation": "./src/session-rotation.ts"
+    "./session-rotation": "./src/session-rotation.ts",
+    "./sandbox": "./src/sandbox.ts",
+    "./artifact-extraction": "./src/artifact-extraction.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit",
@@ -26,6 +28,7 @@
     "build": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@forgeroom/artifacts": "workspace:*",
     "@forgeroom/contracts": "workspace:*",
     "@forgeroom/trueforge": "workspace:*"
   },

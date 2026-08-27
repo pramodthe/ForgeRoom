@@ -195,3 +195,28 @@ export type {
   RotateChannelCoworkerSessionInput,
   RotatedChannelCoworkerSession,
 } from "./session-rotator";
+export {
+  assertNoSandboxSecrets,
+  dispatchSandboxLifecycleProjection,
+  projectSandboxActivitySnapshots,
+  projectSandboxRunEvents,
+} from "./sandbox";
+export type {
+  ProjectedSandboxActivity,
+  ProjectedSandboxRunEvent,
+  SandboxLifecycleDispatchResult,
+} from "./sandbox";
+export {
+  createTrueForgeDownloadAdapter,
+  executePublishSandboxArtifactCommand,
+  projectArtifactActivitySnapshot,
+  publishSandboxArtifactFromDiscovery,
+} from "./artifact-extraction";
+export type {
+  ProjectedArtifactActivity,
+  ProjectedArtifactRunEvent,
+  PublishSandboxArtifactCommand,
+  SandboxArtifactPublishAdapters,
+  SandboxArtifactPublishInput,
+  SandboxArtifactPublishResult,
+} from "./artifact-extraction";
