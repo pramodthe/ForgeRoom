@@ -503,6 +503,12 @@ describe("channel and coworker API", () => {
     });
     expect(first.status).toBe(201);
     const firstBody = withoutRequestId(await first.json()) as { message_id: string };
+    const archived = await app.request(`/api/channels/${channel.id}/archive`, {
+      method: "POST",
+      headers: mutationHeaders(env, cookie, session.csrf_token),
+      body: JSON.stringify({ schemaVersion: 1, idempotency_key: "idem_msg_archive" }),
+    });
+    expect(archived.status).toBe(200);
     const second = await app.request(`/api/channels/${channel.id}/messages`, {
       method: "POST",
       headers: mutationHeaders(env, cookie, session.csrf_token),

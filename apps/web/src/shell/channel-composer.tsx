@@ -79,7 +79,11 @@ export function ChannelComposer({
           placeholder="Write a message… Use @coworker or @team when multiple coworkers are in the channel."
           value={body}
           disabled={disabled || submitting}
-          onChange={(event) => setBody(event.target.value)}
+          onChange={(event) => {
+            setBody(event.target.value);
+            // Body edits start a new logical send — never reuse a prior attempt key.
+            setSendIdempotencyKey(null);
+          }}
           onKeyDown={(event) => {
             if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
               event.preventDefault();

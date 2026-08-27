@@ -1311,6 +1311,66 @@ export function createWorkspaceService(options?: {
       if (!loaded.ok) {
         return loaded;
       }
+
+      type MessagePostResult = {
+        message_id: string;
+        event_id: string;
+        sequence: number;
+        recipient_handles: string[];
+        routing_mode: "direct" | "team";
+      };
+
+      const reloadPostedMessage = async (messageId: string): Promise<MessagePostResult | null> => {
+        const message = await store.getMessage(messageId);
+        if (!message || message.channelId !== channelId) {
+          return null;
+        }
+        let afterSequence = -1;
+        while (true) {
+          const page = await store.listEventsAfter(channelId, afterSequence, { limit: 512 });
+          for (const row of page.events) {
+            if (row.id !== message.eventId) {
+              continue;
+            }
+            const agui = row.aguiEventJson;
+            const payload =
+              agui && agui.type === "CUSTOM" && agui.name === "message.created"
+                ? (agui.payload as {
+                    routing_mode?: "direct" | "team";
+                    recipient_handles?: string[];
+                  })
+                : null;
+            if (!payload?.routing_mode || !payload.recipient_handles) {
+              return null;
+            }
+            return {
+              message_id: message.id,
+              event_id: message.eventId,
+              sequence: row.sequence,
+              recipient_handles: payload.recipient_handles,
+              routing_mode: payload.routing_mode,
+            };
+          }
+          if (!page.hasMore || page.events.length === 0) {
+            return null;
+          }
+          afterSequence = page.events[page.events.length - 1]!.sequence;
+        }
+      };
+
+      // Replay durable success before live archived/routing checks so retries stay stable.
+      if (command.idempotency_key) {
+        const replay = await reloadIdempotentResult(
+          loaded.value.workspaceId,
+          "channel.message",
+          command.idempotency_key,
+          reloadPostedMessage,
+        );
+        if (replay) {
+          return replay;
+        }
+      }
+
       if (loaded.value.status === "archived") {
         return {
           ok: false,
@@ -1368,14 +1428,6 @@ export function createWorkspaceService(options?: {
           },
         };
       }
-
-      type MessagePostResult = {
-        message_id: string;
-        event_id: string;
-        sequence: number;
-        recipient_handles: string[];
-        routing_mode: "direct" | "team";
-      };
 
       const appendMessage = async (
         messageId: string,
@@ -1444,41 +1496,6 @@ export function createWorkspaceService(options?: {
             };
           }
           throw error;
-        }
-      };
-
-      const reloadPostedMessage = async (messageId: string): Promise<MessagePostResult | null> => {
-        const message = await store.getMessage(messageId);
-        if (!message || message.channelId !== channelId) {
-          return null;
-        }
-        let afterSequence = -1;
-        while (true) {
-          const page = await store.listEventsAfter(channelId, afterSequence, { limit: 512 });
-          for (const row of page.events) {
-            if (row.id !== message.eventId) {
-              continue;
-            }
-            const agui = row.aguiEventJson;
-            const payload =
-              agui && agui.type === "CUSTOM" && agui.name === "message.created"
-                ? (agui.payload as {
-                    routing_mode?: "direct" | "team";
-                    recipient_handles?: string[];
-                  })
-                : null;
-            return {
-              message_id: message.id,
-              event_id: message.eventId,
-              sequence: row.sequence,
-              recipient_handles: payload?.recipient_handles ?? [...routing.recipient_handles],
-              routing_mode: payload?.routing_mode ?? routing.routing_mode,
-            };
-          }
-          if (!page.hasMore || page.events.length === 0) {
-            return null;
-          }
-          afterSequence = page.events[page.events.length - 1]!.sequence;
         }
       };
 
