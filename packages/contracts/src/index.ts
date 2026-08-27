@@ -322,8 +322,13 @@ export {
   persistedTextMessageStartEventSchema,
   persistedTextMessageContentEventSchema,
   persistedTextMessageEndEventSchema,
+  persistedMessagesSnapshotEventSchema,
+  persistedAssistantSnapshotMessageSchema,
 } from "./events";
 export type { AgentChannelEnvelope, P0PersistedAguiEvent } from "./events";
+export type PersistedMessagesSnapshotEvent = import("zod").infer<
+  typeof import("./events").persistedMessagesSnapshotEventSchema
+>;
 export type ForgeRoomActivityContent = import("zod").infer<
   typeof import("./events").forgeRoomActivityContentSchema
 >;
