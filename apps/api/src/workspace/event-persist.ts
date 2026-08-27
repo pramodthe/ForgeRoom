@@ -1,8 +1,37 @@
 import { createHash } from "node:crypto";
-import type { AgentChannelEnvelope } from "@forgeroom/contracts";
+import type { AgentChannelEnvelope, P0PersistedAguiEvent } from "@forgeroom/contracts";
 import { buildEnvelope } from "./event-builders";
 import { assertPersistableChannelEnvelope } from "./event-guard";
 import type { ChannelEventInsert, ChannelEventRecord } from "./store";
+
+export function resolveAguiEventRecordMessageOrActivityId(
+  aguiEvent: P0PersistedAguiEvent,
+  sourceMessageId?: string | null,
+): string | null {
+  switch (aguiEvent.type) {
+    case "TEXT_MESSAGE_START":
+    case "TEXT_MESSAGE_CONTENT":
+    case "TEXT_MESSAGE_END":
+      return aguiEvent.messageId ?? null;
+    case "RUN_STARTED":
+    case "RUN_ERROR":
+    case "RUN_FINISHED":
+      return sourceMessageId ?? null;
+    default:
+      return null;
+  }
+}
+
+export function resolveAguiRunIdFromPersistedEvent(aguiEvent: P0PersistedAguiEvent): string | null {
+  if (
+    aguiEvent.type === "RUN_STARTED" ||
+    aguiEvent.type === "RUN_ERROR" ||
+    aguiEvent.type === "RUN_FINISHED"
+  ) {
+    return aguiEvent.runId ?? null;
+  }
+  return null;
+}
 
 export function materializeChannelEvent(
   channelId: string,

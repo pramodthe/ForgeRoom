@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import type { ChannelRosterCoworker } from "@forgeroom/contracts";
-import { postChannelMessage } from "../api/workspace-api";
+import { postChannelMessage, type PostedChannelMessage } from "../api/workspace-api";
 import {
   buildComposerMessageCommand,
   composerBlockReason,
@@ -13,7 +13,7 @@ type ChannelComposerProps = {
   roster: readonly ChannelRosterCoworker[];
   csrfToken: string;
   disabled?: boolean;
-  onSent?: (messageId: string) => void;
+  onSent?: (result: PostedChannelMessage, body: string) => void;
 };
 
 export function ChannelComposer({
@@ -57,9 +57,10 @@ export function ChannelComposer({
         csrfToken,
         command: commandResult.command,
       });
+      const sentBody = commandResult.command.body;
       setBody("");
       setSendIdempotencyKey(null);
-      onSent?.(result.message_id);
+      onSent?.(result, sentBody);
     } catch (sendError) {
       setError(sendError instanceof Error ? sendError.message : "Unable to send message.");
     } finally {

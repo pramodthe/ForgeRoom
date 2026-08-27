@@ -4,6 +4,7 @@ import type {
   ChannelParticipantAddCommand,
   ChannelRosterCoworker,
   ChannelRosterResponse,
+  ChannelTimelineMessagesResponse,
   CoworkerProfile,
   SkillDraft,
   SkillVersion,
@@ -12,6 +13,7 @@ import type {
 import {
   channelRosterResponseSchema,
   channelSchema,
+  channelTimelineMessagesResponseSchema,
   coworkerProfileSchema,
 } from "@forgeroom/contracts";
 import type { ConnectionFixture } from "./mock-fixtures";
@@ -199,20 +201,55 @@ export async function postChannelMessage(input: {
   csrfToken: string;
 }): Promise<{
   message_id: string;
+  event_id: string;
+  sequence: number;
   recipient_handles: string[];
   routing_mode: "direct" | "team";
+  run_id: string | null;
+  run_step_ids: string[];
+  run_step_assignments: Array<{
+    run_step_id: string;
+    coworker_id: string;
+    logical_thread_id: string;
+  }>;
 }> {
   if (useMockApi) {
+    const assignments = input.command.recipient_handles.flatMap((handle, index) => {
+      const coworker = MOCK_COWORKERS.find((candidate) => candidate.handle === handle);
+      return coworker
+        ? [
+            {
+              run_step_id: `step_mock_${index + 1}`,
+              coworker_id: coworker.id,
+              logical_thread_id: `thread_mock_${coworker.id}`,
+            },
+          ]
+        : [];
+    });
     return {
       message_id: "msg_mock",
+      event_id: "evt_mock",
+      sequence: 1,
       recipient_handles: input.command.recipient_handles,
       routing_mode: input.command.routing_mode,
+      run_id: assignments.length > 0 ? "run_mock" : null,
+      run_step_ids: assignments.map((assignment) => assignment.run_step_id),
+      run_step_assignments: assignments,
     };
   }
   const body = await apiFetch<{
     message_id: string;
+    event_id: string;
+    sequence: number;
     recipient_handles: string[];
     routing_mode: "direct" | "team";
+    run_id: string | null;
+    run_step_ids: string[];
+    run_step_assignments: Array<{
+      run_step_id: string;
+      coworker_id: string;
+      logical_thread_id: string;
+    }>;
     request_id: string;
   }>(`/api/channels/${encodeURIComponent(input.channelId)}/messages`, {
     method: "POST",
@@ -220,11 +257,21 @@ export async function postChannelMessage(input: {
     body: JSON.stringify(input.command),
   });
   const parsed = stripRequestId(body);
-  return {
-    message_id: parsed.message_id,
-    recipient_handles: parsed.recipient_handles,
-    routing_mode: parsed.routing_mode,
-  };
+  return parsed;
+}
+
+export type PostedChannelMessage = Awaited<ReturnType<typeof postChannelMessage>>;
+
+export async function listChannelMessages(
+  channelId: string,
+): Promise<ChannelTimelineMessagesResponse> {
+  if (useMockApi) {
+    return { schemaVersion: 1, channel_id: channelId, messages: [] };
+  }
+  const body = await apiFetch<unknown>(`/api/channels/${encodeURIComponent(channelId)}/messages`);
+  return channelTimelineMessagesResponseSchema.parse(
+    stripRequestId(body as { request_id: string }),
+  );
 }
 
 export async function listSkillDrafts(workspaceId: string): Promise<SkillDraft[]> {

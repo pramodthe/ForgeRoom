@@ -2,12 +2,12 @@
 
 | Field | Current value |
 | --- | --- |
-| Overall | M1 Foundation done; P0-211 AG-UI adapter in progress |
+| Overall | M1 Foundation done; P0-211 merged; first durable channel timeline slice in review |
 | Current phase | Phase 1 — Foundation |
-| Active task | P0-211 (in_progress — AG-UI adapter bootstrap slice) |
-| Next task | Finish P0-211; then P0-314 / P0-208 rotation |
+| Active task | P0-212 first slice (in_progress — lifecycle/text channel mirror + web timeline) |
+| Next task | Merge timeline slice PR; continue P0-212 (state/activity/JCS) or P0-314 |
 | P0 blockers | Save-as-skill Run binding, TrueForge→artifact path, demo durable storage, run-limit hard enforcement |
-| Last updated | 2026-08-26 |
+| Last updated | 2026-08-27 |
 
 ## Milestones
 
@@ -50,6 +50,7 @@ Never put credentials in this file.
 
 ## Recently completed
 
+- P0-211 TrueForge-to-AG-UI adapter bootstrap merged via PR #28.
 - P0-402 channel composer and coworker roster merged via PR #19 (`eb560d3`).
 - P0-401 authenticated three-pane app shell merged via PR #15 (`c4e08e3`).
 - P0-108 bounded channel context and pins merged to `main` via PR #10 (`1c3589b`).

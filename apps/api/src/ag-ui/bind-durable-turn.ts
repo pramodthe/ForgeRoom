@@ -100,7 +100,10 @@ export async function bindDurableTrueForgeTurn(input: {
   intervalMs?: number;
 }): Promise<
   | { ok: true; value: BoundDurableTurn }
-  | { ok: false; reason: "queue_missing" | "claim_failed" | "create_failed" | "timeout" }
+  | {
+      ok: false;
+      reason: "queue_missing" | "claim_failed" | "create_failed" | "timeout" | "agui_run_conflict";
+    }
 > {
   const timeoutMs = input.timeoutMs ?? 30_000;
   const intervalMs = input.intervalMs ?? 100;
@@ -110,17 +113,11 @@ export async function bindDurableTrueForgeTurn(input: {
   while (Date.now() - startedAt < timeoutMs) {
     const existing = await loadBoundTurnForStep(input.sql, input.runStepId);
     if (existing) {
+      // Once a TrueForge turn is bound, never rewrite its AG-UI correlation.
       if (existing.aguiRunId !== input.clientAguiRunId) {
-        await input.sql`
-          UPDATE agent_turns
-          SET agui_run_id = ${input.clientAguiRunId}
-          WHERE id = ${existing.agentTurnId}
-        `;
+        return { ok: false, reason: "agui_run_conflict" };
       }
-      return {
-        ok: true,
-        value: { ...existing, aguiRunId: input.clientAguiRunId },
-      };
+      return { ok: true, value: existing };
     }
 
     const queueItem = await loadQueueItemForStep(input.sql, input.runStepId);

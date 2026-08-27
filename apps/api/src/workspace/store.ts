@@ -142,6 +142,7 @@ export type ChannelEventInsert = {
     applicationRunId?: string;
     runStepId?: string;
     agentTurnId?: string;
+    aguiRunId?: string;
     coworkerId?: string;
     logicalThreadId?: string;
     sourceMessageId?: string;
@@ -409,6 +410,10 @@ export type WorkspaceCatalogStore = {
 
   getMessage(id: string): Promise<MessageRecord | null>;
   getMessageByEventId(eventId: string): Promise<MessageRecord | null>;
+  listMessages(
+    channelId: string,
+    limit?: number,
+  ): Promise<Array<MessageRecord & { channelSequence: number }>>;
 
   getPin(id: string): Promise<PinRecord | null>;
   listActivePins(channelId: string): Promise<PinRecord[]>;
@@ -919,6 +924,20 @@ export function createMemoryWorkspaceStore(): WorkspaceCatalogStore {
     },
     async getMessageByEventId(eventId) {
       return [...messages.values()].find((row) => row.eventId === eventId) ?? null;
+    },
+    async listMessages(channelId, limit = 200) {
+      return [...messages.values()]
+        .filter((row) => row.channelId === channelId)
+        .sort((left, right) =>
+          left.createdAt === right.createdAt
+            ? left.id.localeCompare(right.id)
+            : left.createdAt.localeCompare(right.createdAt),
+        )
+        .slice(-Math.min(Math.max(limit, 1), 200))
+        .flatMap((row) => {
+          const event = events.get(row.eventId);
+          return event ? [{ ...structuredClone(row), channelSequence: event.sequence }] : [];
+        });
     },
     async getPin(id) {
       const row = pins.get(id);

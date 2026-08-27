@@ -11,6 +11,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@forgeroom/ag-ui": "workspace:*",
     "@forgeroom/contracts": "workspace:*",
     "@forgeroom/orchestration": "workspace:*",
     "@forgeroom/ui-components": "workspace:*",

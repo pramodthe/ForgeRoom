@@ -1,5 +1,17 @@
 import { EventSchemas, RunAgentInputSchema, type RunAgentInput } from "@ag-ui/core";
 import { isP0UnsupportedCapability, unsupportedCapability } from "@forgeroom/contracts";
+import { z } from "zod";
+
+const existingRunBindingSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    sourceMessageId: z.string().min(1),
+    applicationRunId: z.string().min(1),
+    runStepId: z.string().min(1),
+  })
+  .strict();
+
+export type ExistingRunBinding = z.infer<typeof existingRunBindingSchema>;
 
 export type ParsedRunAgentInput = {
   ok: true;
@@ -81,4 +93,14 @@ export function extractLatestUserMessageContent(input: RunAgentInput): string | 
     }
   }
   return null;
+}
+
+export function extractExistingRunBinding(input: RunAgentInput): ExistingRunBinding | null {
+  if (!input.forwardedProps || typeof input.forwardedProps !== "object") {
+    return null;
+  }
+  const parsed = existingRunBindingSchema.safeParse(
+    (input.forwardedProps as { forgeroomV1?: unknown }).forgeroomV1,
+  );
+  return parsed.success ? parsed.data : null;
 }

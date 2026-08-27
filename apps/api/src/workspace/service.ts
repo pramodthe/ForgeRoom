@@ -6,6 +6,7 @@ import type {
   ChannelContextEnvelope,
   ChannelCreateCommand,
   ChannelMessageCommand,
+  ChannelTimelineMessagesResponse,
   ChannelPin,
   ChannelPinCreateCommand,
   ChannelPinRemoveCommand,
@@ -16,6 +17,7 @@ import type {
   CoworkerUpdateCommand,
   SafeJsonObject,
   SessionResponse,
+  P0PersistedAguiEvent,
 } from "@forgeroom/contracts";
 import {
   channelPinSchema,
@@ -271,6 +273,10 @@ export type WorkspaceService = {
     session: SessionResponse,
     channelId: string,
   ): Promise<WorkspaceServiceResult<ChannelRosterResponse>>;
+  listMessages(
+    session: SessionResponse,
+    channelId: string,
+  ): Promise<WorkspaceServiceResult<ChannelTimelineMessagesResponse>>;
   updateChannel(
     session: SessionResponse,
     channelId: string,
@@ -310,6 +316,11 @@ export type WorkspaceService = {
       routing_mode: "direct" | "team";
       run_id: string | null;
       run_step_ids: string[];
+      run_step_assignments: Array<{
+        run_step_id: string;
+        coworker_id: string;
+        logical_thread_id: string;
+      }>;
     }>
   >;
   createPin(
@@ -369,6 +380,17 @@ export type WorkspaceService = {
       has_more: boolean;
     }>
   >;
+  appendCoworkerAgUiEvent(input: {
+    channelId: string;
+    coworkerId: string;
+    logicalThreadId: string;
+    applicationRunId: string;
+    runStepId: string;
+    agentTurnId: string;
+    aguiRunId: string;
+    sourceMessageId: string;
+    event: P0PersistedAguiEvent;
+  }): Promise<WorkspaceServiceResult<AgentChannelEnvelope>>;
   /**
    * Subscribe after durable commit fan-out. Caller owns SSE lifetime (no open DB txn).
    */
@@ -974,6 +996,32 @@ export function createWorkspaceService(options?: {
       };
     },
 
+    async listMessages(session, channelId) {
+      const loaded = await loadOwnedChannel(session, channelId);
+      if (!loaded.ok) {
+        return loaded;
+      }
+      const rows = await store.listMessages(channelId, 200);
+      return {
+        ok: true,
+        value: {
+          schemaVersion: 1,
+          channel_id: channelId,
+          messages: rows.map((row) => ({
+            schemaVersion: 1,
+            id: row.id,
+            channel_id: row.channelId,
+            channel_sequence: row.channelSequence,
+            author_type: row.authorType,
+            author_id: row.authorId,
+            body: row.body,
+            parent_message_id: row.parentMessageId,
+            created_at: row.createdAt,
+          })),
+        },
+      };
+    },
+
     async updateChannel(session, channelId, command) {
       const loaded = await loadOwnedChannel(session, channelId);
       if (!loaded.ok) {
@@ -1401,6 +1449,32 @@ export function createWorkspaceService(options?: {
         routing_mode: "direct" | "team";
         run_id: string | null;
         run_step_ids: string[];
+        run_step_assignments: Array<{
+          run_step_id: string;
+          coworker_id: string;
+          logical_thread_id: string;
+        }>;
+      };
+
+      type RunStepAssignment = MessagePostResult["run_step_assignments"][number];
+
+      const loadRunStepAssignments = async (runId: string): Promise<RunStepAssignment[]> => {
+        if (!sql) return [];
+        const steps = await sql<
+          { id: string; assigned_agent_id: string; logical_agui_thread_id: string }[]
+        >`
+          SELECT rs.id, rs.assigned_agent_id, cas.logical_agui_thread_id
+          FROM run_steps rs
+          JOIN turn_queue_items tqi ON tqi.run_step_id = rs.id
+          JOIN channel_agent_sessions cas ON cas.id = tqi.channel_agent_session_id
+          WHERE rs.run_id = ${runId}
+          ORDER BY rs.id
+        `;
+        return steps.map((step) => ({
+          run_step_id: step.id,
+          coworker_id: step.assigned_agent_id,
+          logical_thread_id: step.logical_agui_thread_id,
+        }));
       };
 
       const reloadPostedMessage = async (
@@ -1457,6 +1531,7 @@ export function createWorkspaceService(options?: {
             }
             let runId: string | null = null;
             let runStepIds: string[] = [];
+            let runStepAssignments: RunStepAssignment[] = [];
             if (sql) {
               const runs = await sql<{ id: string }[]>`
                 SELECT id FROM runs WHERE source_message_id = ${messageId} LIMIT 1
@@ -1505,6 +1580,11 @@ export function createWorkspaceService(options?: {
                   });
                   runId = repaired.runId;
                   runStepIds = repaired.steps.map((step) => step.id);
+                  runStepAssignments = repaired.steps.map((step) => ({
+                    run_step_id: step.id,
+                    coworker_id: step.assignedAgentId,
+                    logical_thread_id: step.logicalThreadId,
+                  }));
                 } catch {
                   // A concurrent retry may have repaired the same source message.
                   const repairedRuns = await sql<{ id: string }[]>`
@@ -1517,10 +1597,10 @@ export function createWorkspaceService(options?: {
                 }
               }
               if (runStepIds.length === 0) {
-                const steps = await sql<{ id: string }[]>`
-                  SELECT id FROM run_steps WHERE run_id = ${runId} ORDER BY id
-                `;
-                runStepIds = steps.map((step) => step.id);
+                runStepAssignments = await loadRunStepAssignments(runId);
+                runStepIds = runStepAssignments.map((step) => step.run_step_id);
+              } else if (runStepAssignments.length === 0) {
+                runStepAssignments = await loadRunStepAssignments(runId);
               }
             }
             return {
@@ -1531,6 +1611,7 @@ export function createWorkspaceService(options?: {
               routing_mode: payload.routing_mode,
               run_id: runId,
               run_step_ids: runStepIds,
+              run_step_assignments: runStepAssignments,
             };
           }
           if (!page.hasMore || page.events.length === 0) {
@@ -1674,7 +1755,11 @@ export function createWorkspaceService(options?: {
       const ensureRunForMessage = async (
         messageId: string,
         createdAt: string,
-      ): Promise<{ runId: string; runStepIds: string[] } | null> => {
+      ): Promise<{
+        runId: string;
+        runStepIds: string[];
+        runStepAssignments: RunStepAssignment[];
+      } | null> => {
         if (!sql || !plannedSteps) {
           return null;
         }
@@ -1682,10 +1767,12 @@ export function createWorkspaceService(options?: {
           SELECT id FROM runs WHERE source_message_id = ${messageId} LIMIT 1
         `;
         if (existing[0]) {
-          const steps = await sql<{ id: string }[]>`
-            SELECT id FROM run_steps WHERE run_id = ${existing[0].id} ORDER BY id
-          `;
-          return { runId: existing[0].id, runStepIds: steps.map((step) => step.id) };
+          const assignments = await loadRunStepAssignments(existing[0].id);
+          return {
+            runId: existing[0].id,
+            runStepIds: assignments.map((step) => step.run_step_id),
+            runStepAssignments: assignments,
+          };
         }
         const created = await createDirectMultiAgentRun(sql, {
           channelId,
@@ -1699,6 +1786,11 @@ export function createWorkspaceService(options?: {
         return {
           runId: created.runId,
           runStepIds: created.steps.map((step) => step.id),
+          runStepAssignments: created.steps.map((step) => ({
+            run_step_id: step.id,
+            coworker_id: step.assignedAgentId,
+            logical_thread_id: step.logicalThreadId,
+          })),
         };
       };
 
@@ -1740,6 +1832,7 @@ export function createWorkspaceService(options?: {
 
           let runId: string | null = null;
           let runStepIds: string[] = [];
+          let runStepAssignments: RunStepAssignment[] = [];
           if (sql && plannedSteps) {
             try {
               const ensured = await ensureRunForMessage(messageId, createdAt);
@@ -1754,6 +1847,7 @@ export function createWorkspaceService(options?: {
               }
               runId = ensured.runId;
               runStepIds = ensured.runStepIds;
+              runStepAssignments = ensured.runStepAssignments;
             } catch (error) {
               return {
                 ok: false,
@@ -1781,6 +1875,7 @@ export function createWorkspaceService(options?: {
               routing_mode: routing.routing_mode,
               run_id: runId,
               run_step_ids: runStepIds,
+              run_step_assignments: runStepAssignments,
             },
           };
         } catch (error) {
@@ -2417,6 +2512,48 @@ export function createWorkspaceService(options?: {
           has_more: page.hasMore,
         },
       };
+    },
+
+    async appendCoworkerAgUiEvent(input) {
+      try {
+        const appended = await store.appendChannelEvent({
+          channelId: input.channelId,
+          allowArchived: true,
+          event: {
+            id: randomOpaqueId("evt"),
+            type: `agui.${input.event.type.toLowerCase()}`,
+            actorType: "coworker",
+            actorId: input.coworkerId,
+            runId: input.applicationRunId,
+            logicalThreadId: input.logicalThreadId,
+            createdAt: now().toISOString(),
+            draft: {
+              actorKind: "coworker",
+              coworkerId: input.coworkerId,
+              logicalThreadId: input.logicalThreadId,
+              applicationRunId: input.applicationRunId,
+              runStepId: input.runStepId,
+              agentTurnId: input.agentTurnId,
+              aguiRunId: input.aguiRunId,
+              sourceMessageId: input.sourceMessageId,
+              aguiEvent: input.event,
+            },
+          },
+        });
+        publish(appended);
+        return { ok: true, value: appended.envelope };
+      } catch (error) {
+        if (error instanceof ChannelEventPersistenceError) {
+          return {
+            ok: false,
+            error: { code: "validation_failed", message: error.message },
+          };
+        }
+        if (error instanceof Error && error.message.includes("not found")) {
+          return { ok: false, error: { code: "not_found", message: "Channel not found." } };
+        }
+        throw error;
+      }
     },
 
     subscribeChannelEvents(channelId, listener) {

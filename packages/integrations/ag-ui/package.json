@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./browser": "./src/browser.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit",
@@ -17,7 +18,8 @@
     "@forgeroom/contracts": "workspace:*",
     "@forgeroom/orchestration": "workspace:*",
     "@forgeroom/test-fixtures": "workspace:*",
-    "rxjs": "7.8.1"
+    "rxjs": "7.8.1",
+    "zod": "^3.25.76"
   },
   "devDependencies": {
     "@types/node": "catalog:",

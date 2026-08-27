@@ -53,6 +53,7 @@ export type EnvelopeDraft = {
   applicationRunId?: string;
   runStepId?: string;
   agentTurnId?: string;
+  aguiRunId?: string;
   coworkerId?: string;
   logicalThreadId?: string;
   sourceMessageId?: string;

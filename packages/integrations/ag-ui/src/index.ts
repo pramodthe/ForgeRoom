@@ -41,12 +41,16 @@ export { buildLogicalAguiThreadId } from "./logical-thread";
 export { buildForgeRoomEventMetadata, type ForgeRoomEventMetadataV1 } from "./metadata";
 export {
   extractLatestUserMessageContent,
+  extractExistingRunBinding,
   parseUpstreamAgUiEvent,
   parseUpstreamRunAgentInput,
   type ParsedAgUiEvent,
   type ParsedRunAgentInput,
   type UpstreamParseFailure,
+  type ExistingRunBinding,
 } from "./upstream";
+export { toPersistedAgUiEvent } from "./persisted";
+export { HttpAgent, type AgentSubscriber, type RunAgentParameters } from "@ag-ui/client";
 export { formatAgUiSseBody, formatAgUiSseEvent } from "./sse";
 export { buildAgUiCoworkerCapabilities, type AgUiCoworkerCapabilities } from "./capabilities";
 export {

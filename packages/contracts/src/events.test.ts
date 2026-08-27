@@ -774,3 +774,45 @@ describe("custom application events", () => {
     ).toBe(true);
   });
 });
+
+describe("durable AG-UI lifecycle and text events", () => {
+  const coworkerBase = {
+    schemaVersion: 1 as const,
+    channelId: "channel_1",
+    channelSequence: 7,
+    applicationRunId: "application_run_1",
+    runStepId: "step_1",
+    agentTurnId: "turn_1",
+    actorKind: "coworker" as const,
+    coworkerId: "coworker_1",
+    logicalThreadId: "thread_1",
+    sourceMessageId: "message_1",
+  };
+
+  it("accepts a minimal assistant text delta", () => {
+    expect(
+      agentChannelEnvelopeSchema.safeParse({
+        ...coworkerBase,
+        aguiEvent: {
+          type: "TEXT_MESSAGE_CONTENT",
+          messageId: "assistant_message_1",
+          delta: "A user-visible answer.",
+        },
+      }).success,
+    ).toBe(true);
+  });
+
+  it("rejects raw metadata on persisted lifecycle events", () => {
+    expect(
+      agentChannelEnvelopeSchema.safeParse({
+        ...coworkerBase,
+        aguiEvent: {
+          type: "RUN_STARTED",
+          threadId: "thread_1",
+          runId: "agui_run_1",
+          metadata: { provider_key: "must-not-persist" },
+        },
+      }).success,
+    ).toBe(false);
+  });
+});

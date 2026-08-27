@@ -99,6 +99,9 @@ importers:
 
   apps/web:
     dependencies:
+      '@forgeroom/ag-ui':
+        specifier: workspace:*
+        version: link:../../packages/integrations/ag-ui
       '@forgeroom/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
@@ -257,6 +260,9 @@ importers:
       rxjs:
         specifier: 7.8.1
         version: 7.8.1
+      zod:
+        specifier: ^3.25.76
+        version: 3.25.76
     devDependencies:
       '@types/node':
         specifier: 'catalog:'
