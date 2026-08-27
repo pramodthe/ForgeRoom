@@ -20,8 +20,8 @@
   },
   "trueforgeToArtifactStorage": {
     "status": "blocked",
-    "blockedOn": "TRUEFORGE_API_KEY",
-    "note": "TrueForge sandbox-file → application artifact storage retain/download path not probed."
+    "blockedOn": "TrueForge sandbox-file publish → ForgeRoom artifact storage adapter wiring (P0-201+)",
+    "note": "Harness + OpenAI ready (Operator smoke pass). End-to-end sandbox-file → application artifact retain/download path not probed yet."
   },
   "bodyReference": "daytona/sample-artifact.candidate.md"
 }

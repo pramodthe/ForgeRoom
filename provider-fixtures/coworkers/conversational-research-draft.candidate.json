@@ -4,24 +4,34 @@
   "ownerTask": "P0-000",
   "decisionId": "OD-012",
   "implementationOwners": ["P0-213", "P0-105"],
+  "probeDate": "2026-08-26",
   "prompt": "Create a Research coworker that can read GitHub and web data but cannot modify anything.",
   "expectedProposal": {
     "name": "Research",
     "handle": "research",
     "title": "Read-only research coworker",
     "native_subagents_enabled": false,
-    "model_preset": null,
-    "model_preset_status": "blocked-on-secrets",
+    "model_provider": "openai",
+    "model_preset": "openai/gpt-5-4-mini",
+    "model_preset_status": "verified",
+    "trueforge_agent_name": "forgeroom-research-draft",
+    "trueforge_agent_id_suffix": "shnmec",
     "budget": {
       "max_turn_tokens": 12000,
       "max_tool_calls": 20
     },
     "sandbox": false,
-    "tool_grants_status": "blocked-on-secrets",
-    "tool_grants_constraint": "read-only catalogue IDs only; zero write/destructive grants; no new account connection"
+    "tool_grants_status": "verified-read-only-candidate",
+    "tool_grants_constraint": "read-only catalogue IDs only; zero write/destructive grants; no new account connection",
+    "allowed_direct_tool_slugs": ["GITHUB_GET_AN_ISSUE"],
+    "denied_direct_tool_slugs": [
+      "GITHUB_ADD_LABELS_TO_AN_ISSUE",
+      "GITHUB_REMOVE_A_LABEL_FROM_AN_ISSUE"
+    ],
+    "web_data_note": "No verified Composio web toolkit in P0-000; GitHub read is the frozen live grant. Web remains aspirational in the prompt until a read toolkit is probed."
   },
   "expectedPermissionPreview": {
-    "status": "candidate",
+    "status": "verified-candidate",
     "mustIncludeDenials": [
       "write_tools",
       "destructive_tools",
@@ -29,7 +39,37 @@
       "native_subagents",
       "knowledge_memory_workflow_unsupported_in_p0"
     ],
-    "exactDiff": null,
-    "note": "Exact resolved denials/tools filled after catalogue + live Composio grants exist"
+    "exactDiff": {
+      "grants": [
+        {
+          "directToolSlug": "GITHUB_GET_AN_ISSUE",
+          "role": "read",
+          "riskClass": "read"
+        }
+      ],
+      "denials": [
+        {
+          "code": "write_tools",
+          "examples": ["GITHUB_ADD_LABELS_TO_AN_ISSUE"]
+        },
+        {
+          "code": "destructive_tools",
+          "examples": ["GITHUB_REMOVE_A_LABEL_FROM_AN_ISSUE"]
+        },
+        {
+          "code": "new_account_connection",
+          "note": "Must not request or create Composio connected accounts"
+        },
+        {
+          "code": "native_subagents",
+          "note": "P0 feature profile disables native subagents"
+        },
+        {
+          "code": "knowledge_memory_workflow_unsupported_in_p0",
+          "note": "Unsupported in P0 profile"
+        }
+      ]
+    },
+    "note": "Exact Composio read/write slugs from OD-003 verified catalogue. Conversational draft UI binding remains P0-213."
   }
 }

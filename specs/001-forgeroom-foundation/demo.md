@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Status | P0-000 live probes partial — Composio/Daytona/local storage verified; TrueForge model preset + DB fixture reset + demo deployment still blocked |
+| Status | P0-000 live probes partial — Composio/Daytona/OpenAI+TrueForge presets verified; Save-as-skill Run + TrueForge→artifact + demo storage still open |
 | Duration | Three minutes maximum |
 | Product framing | General AI coworker channel; scenario is only a fixture |
 | Fixture root | `provider-fixtures/` |
@@ -11,14 +11,14 @@
 
 P0-000 replaces provider/demo TBDs with frozen choices or explicitly labeled candidates. P0-210 replaces the exact pure AG-UI package rows after compatibility evidence and records optional CopilotKit as disabled unless parity-proven.
 
-Verification labels: `frozen` (must honor), `candidate` (preferred pending probe/selection), `blocked-on-secrets` (needs live credentials), `verified` (probe evidence attached — Composio, Daytona, local artifact storage as of 2026-08-26).
+Verification labels: `frozen` (must honor), `candidate` (preferred pending probe/selection), `blocked-on-secrets` (needs live credentials), `verified` (probe evidence attached — Composio, Daytona, local artifact storage, OpenAI/TrueForge presets as of 2026-08-26).
 
 | Decision | Locked value | Status |
 | --- | --- | --- |
 | Product name | ForgeRoom | frozen |
 | Demo task | Reconcile the synthetic demo record and publish a sandbox summary | candidate |
-| Seeded coworker name/role/model | Operator / demo operator coworker / model preset pending probe | candidate (model blocked-on-secrets) |
-| Conversationally created coworker prompt/expected role/model | Prompt frozen: `Create a Research coworker that can read GitHub and web data but cannot modify anything.`; expected handle `research`; read-only denials candidate; model preset blocked-on-secrets | prompt frozen; preview candidate |
+| Seeded coworker name/role/model | Operator / demo operator coworker / `openai/gpt-5-4-mini` (TrueForge agent `forgeroom-operator`) | verified |
+| Conversationally created coworker prompt/expected role/model | Prompt frozen: `Create a Research coworker that can read GitHub and web data but cannot modify anything.`; expected handle `research`; model `openai/gpt-5-4-mini`; read-only exactDiff in fixture (UI binding P0-213) | prompt frozen; preview verified-candidate |
 | Exact `@ag-ui/*` package versions | Candidate baseline `@ag-ui/core@0.0.57` + `@ag-ui/client@0.0.57`; P0-210 selects after fixtures | candidate |
 | Optional CopilotKit runtime/React versions | Disabled by default; no canary; no forced overrides; enable `/api/copilotkit` only after coherent-graph parity | frozen policy |
 | Controlled component demo | DataTable + bar chart + TaskCard + ArtifactCard + ChoiceForm/filter fixtures under `provider-fixtures/controlled-ui/` | candidate |
@@ -32,7 +32,7 @@ Verification labels: `frozen` (must honor), `candidate` (preferred pending probe
 | Pinned connected-account IDs | Secret env only; redacted suffix `nizY` in `composio/accounts.verified.json` | verified |
 | Observed descriptor hashes | `provider-fixtures/composio/descriptors/manifest.json` | verified |
 | Synthetic provider fixture | `pramodthe/Hi-Tuto#10`, label `forgeroom-p0-probe`; reset via remove-label tool | verified |
-| Fixture reset command | Provider: `GITHUB_REMOVE_A_LABEL_FROM_AN_ISSUE`; DB reset owned by P0-105 (schema not migrated locally) | verified provider / blocked DB |
+| Fixture reset command | Provider: `GITHUB_REMOVE_A_LABEL_FROM_AN_ISSUE`; DB reset owned by P0-105 (schema migrated locally; seed/reset implementation pending) | verified provider / DB schema ready |
 | Artifact storage | Local `ARTIFACT_STORAGE_DIR` retain verified; demo durable adapter candidate | verified local; demo candidate |
 | Deployment topology | Local preflight verified 2026-08-26; demo host candidate | partial verified |
 | Run wall-time limit | 180 seconds | candidate |

@@ -21,11 +21,11 @@ Every provider- and demo-specific TBD is replaced by a verified, safe, reproduci
 
 - [x] Exact applications, direct-tool slugs, pinned account suffixes and descriptor hashes are recorded.
 - [x] Deterministic write and reconciliation read succeed on synthetic fixture data.
-- [x] Provider fixture reset runs twice without duplicates (label remove idempotent; label absent after both runs). DB fixture reset blocked until P0-103 migrations applied locally.
+- [x] Provider fixture reset runs twice without duplicates (label remove idempotent; label absent after both runs). DB schema ready for fixture reset — migrations applied locally 2026-08-26 (`workspaces` + full P0-103 schema present).
 - [x] One seeded coworker and the exact conversational prompt/permission-draft fixture for creating the second coworker are frozen.
-- [ ] The fixed TaskRecord fixture and one successful Run suitable for Save-as-skill are deterministic (TaskRecord candidate frozen; successful Run binding still requires TrueForge live probe — see save-as-skill.candidate.json).
-- [x] Daytona produces sample file (SDK upload/download verified); local artifact adapter retain verified separately. TrueForge→storage path blocked on `TRUEFORGE_API_KEY`.
-- [x] Run limits and deployment topology are recorded (local preflight partial — TrueForge/model keys blocked; demo host candidate).
+- [ ] The fixed TaskRecord fixture and one successful Run suitable for Save-as-skill are deterministic (TaskRecord candidate frozen; successful Run binding still requires TrueForge live Run — see save-as-skill.candidate.json).
+- [x] Daytona produces sample file (SDK upload/download verified); local artifact adapter retain verified separately. TrueForge→storage path still blocked on adapter wiring (harness+OpenAI ready).
+- [x] Run limits and deployment topology are recorded (local preflight **pass** — TrueForge v0.1.4 + OpenAI `openai/gpt-5-4-mini`; demo host candidate).
 - [x] Pure AG-UI baseline candidates/fixtures and the optional-CopilotKit coherent-graph/no-canary/no-forced-override policy are frozen for P0-210 selection.
 - [x] Controlled DataTable, bar/line chart, TaskCard, ArtifactCard and ChoiceForm/filter fixtures are deterministic, bounded and visually useful.
 - [x] Native subagents, coordinator synthesis, component catalogue and `iframe_v1` are disabled in the P0 feature profile and rejected as unsupported.
@@ -45,11 +45,14 @@ Run redacted live probes for Composio read/write/read-back, fixture reset, a man
   - **Composio PASS**: 1 github account ACTIVE (suffix `nizY`); tools `GITHUB_GET_AN_ISSUE`, `GITHUB_ADD_LABELS_TO_AN_ISSUE`, `GITHUB_REMOVE_A_LABEL_FROM_AN_ISSUE`; synthetic `pramodthe/Hi-Tuto#10` label write + reconcile; descriptor hashes in `composio/descriptors/manifest.json`.
   - **Daytona PARTIAL**: sandbox created (suffix `4c94`); SDK upload/download match (content sha256 `1026610d…9c369`). TrueForge→storage path blocked.
   - **Artifact storage PARTIAL (local adapter)**: `forgeroom-p0-probe-sample.md` retained under `ARTIFACT_STORAGE_DIR` (sha256 `fe283ac9…9f53`) — separate probe; not same bytes as Daytona download.
-  - **Deployment topology PARTIAL**: local preflight pass for DB/Composio/Daytona/storage; blocked on `TRUEFORGE_API_KEY`, `MODEL_PROVIDER_API_KEY`.
-  - **BLOCKED**: Operator/Research model presets (OD-005), Research permission preview (OD-012), Save-as-skill Run binding, TrueForge sandbox→artifact path, DB fixture reset (workspaces table missing — run P0-103 migrations), demo durable storage, run-limit watchdog (P0-204).
+  - **Deployment topology PASS**: local preflight includes TrueForge `http://127.0.0.1:8790` + OpenAI provider.
+  - **OD-005 PASS**: Operator/Research model preset `openai/gpt-5-4-mini`; agents `forgeroom-operator` / `forgeroom-research-draft`; smoke turn `done` → `p0-openai-ok`. Local TrueForge needs no `TRUEFORGE_API_KEY`.
+  - **OD-012 PARTIAL**: Research permission preview exactDiff frozen from verified Composio catalogue (read `GITHUB_GET_AN_ISSUE`; deny writes/destructive/new-account/native-subagents); conversational UI binding remains P0-213.
+  - **BLOCKED**: Save-as-skill Run binding, TrueForge sandbox→artifact path, demo durable storage, run-limit watchdog (P0-204).
+  - **DB READY (2026-08-26)**: `pnpm --filter @forgeroom/db migrate` reports up to date; `workspaces` table present (seed count 1). P0-105 idempotent seed/reset can proceed.
 - Descriptor exports/hashes: `provider-fixtures/composio/descriptors/manifest.json`
-- Fixture reset evidence: provider label reset idempotent; DB reset pending P0-105 + migrations
-- Open risks: `TRUEFORGE_API_KEY` and `MODEL_PROVIDER_API_KEY` required to finish remaining acceptance criteria
+- Fixture reset evidence: provider label reset idempotent; DB reset pending P0-105
+- Open risks: Save-as-skill successful Run; TrueForge→artifact wiring; demo object storage; P0-204 run-limit hard enforcement
 
 ## Work log
 
@@ -74,18 +77,19 @@ Run redacted live probes for Composio read/write/read-back, fixture reset, a man
   - [x] Descriptor hash exports: `composio/descriptors/manifest.json`.
   - [x] Deterministic write + reconciliation read on synthetic data: `pramodthe/Hi-Tuto#10` label probe.
   - [x] Provider fixture reset twice (`OD-009`): label removal idempotent.
-  - [ ] Model presets for Operator/Research (`OD-005`): blocked — `TRUEFORGE_API_KEY`, `MODEL_PROVIDER_API_KEY`.
-  - [x] Daytona sandbox SDK upload/download verified; local adapter retain verified separately (different sha256). TrueForge→storage path blocked.
+  - [x] Model presets for Operator/Research (`OD-005`): `openai/gpt-5-4-mini` on local TrueForge; Operator smoke turn verified.
+  - [x] Research draft permission preview (`OD-012`): exactDiff from Composio verified catalogue; UI binding deferred to P0-213.
+  - [x] Daytona sandbox SDK upload/download verified; local adapter retain verified separately (different sha256). TrueForge→storage path blocked on adapter wiring.
 
 ## Handoff (partial — do not mark done)
 
 ~~~text
 Task: P0-000
-Outcome: Composio/Daytona SDK/local-adapter probes verified with redacted evidence (separate artifact hashes documented); TrueForge model preset + DB fixture reset + demo deployment still blocked.
+Outcome: Composio/Daytona/OpenAI+TrueForge model presets verified with redacted evidence; Save-as-skill Run + TrueForge→artifact + demo storage still open.
 Requirements: AG-010, TR-001, SK-001, AGUI-009, GUI-003, TL-001, TL-003, TL-004, AP-004, SB-001
-Changed: provider-fixtures/**, demo.md, STATUS.md, test-fixtures test
-Verified: pnpm --filter @forgeroom/test-fixtures test
-Evidence: provider-fixtures/composio/{accounts.verified.json,descriptors/manifest.json,tools.candidate.json}; daytona/sample-artifact.verified.json; LIVE_PROBE_CHECKLIST.md
-Open risks: TRUEFORGE_API_KEY + MODEL_PROVIDER_API_KEY; P0-103 migrations for DB fixture reset; demo object storage
-Next: set TrueForge/model keys and re-run blocked probes; P0-105 can seed DB once migrations applied
+Changed: provider-fixtures/**, demo.md, STATUS.md, decisions/OPEN.md, P0-000 task
+Verified: Operator smoke turn on openai/gpt-5-4-mini; Composio/Daytona prior probes
+Evidence: provider-fixtures/coworkers/seeded-operator.candidate.json; conversational-research-draft.candidate.json; LIVE_PROBE_CHECKLIST.md
+Open risks: Save-as-skill successful Run; TrueForge→artifact wiring; demo object storage; P0-204 run-limit hard enforcement
+Next: finish remaining P0-000 blockers or start P0-105 DB seed/reset with schema ready
 ~~~
