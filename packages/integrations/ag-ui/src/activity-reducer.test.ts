@@ -97,7 +97,7 @@ describe("reduceActivityPresentationState", () => {
         ],
       }),
     );
-    expect(state.activities.act_1?.phase).toBe("running");
+    expect(state.activities.act_1).toMatchObject({ phase: "running" });
     expect(state.needActivitySnapshots.act_1).toBe(true);
 
     state = reduceActivityPresentationState(
@@ -113,7 +113,7 @@ describe("reduceActivityPresentationState", () => {
         ],
       }),
     );
-    expect(state.activities.act_1?.phase).toBe("running");
+    expect(state.activities.act_1).toMatchObject({ phase: "running" });
     expect(state.needActivitySnapshots.act_1).toBe(true);
 
     state = reduceActivityPresentationState(
@@ -178,9 +178,13 @@ describe("reduceActivityPresentationState", () => {
         activityType: "forgeroom.coworker_work.v1",
         replace: true,
         content: {
-          ...coworkerWork(9, "failed"),
+          schemaVersion: 1,
+          activityRevision: 9,
+          activityType: "forgeroom.coworker_work.v1",
           coworkerId: "cw_other",
           logicalThreadId: "thread_other",
+          assignment: "Inspect issues",
+          phase: "failed",
         },
       }),
       coworkerId: "cw_other",
