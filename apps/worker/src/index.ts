@@ -15,12 +15,14 @@ import {
   type RequestStopResult,
 } from "@forgeroom/db";
 import {
-  createOrReconcileTurn,
   evaluateTurnDoneOutcome,
   normalizeTrueForgeEvent,
   startWorker,
-  type CreateOrReconcileTurnResult,
 } from "@forgeroom/orchestration";
+import {
+  createOrReconcileTurn,
+  type CreateOrReconcileTurnResult,
+} from "@forgeroom/orchestration/create-or-reconcile-turn";
 import { TrueForgeClient, type TrueForgeClient as TrueForgeClientType } from "@forgeroom/trueforge";
 
 export function parseWorkerCommand(input: unknown): InternalWorkerCommand {
