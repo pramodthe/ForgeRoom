@@ -102,7 +102,7 @@ export function ChannelTimeline(props: {
                 props.channelId === "ch_general_001" &&
                 message.authorId === "cw_operator_001" ? (
                 <ControlledComponentSlot slotId="ui_operations_plan_rev_2">
-                  <OperationsPlanCards />
+                  <OperationsPlanCards workspaceId={props.workspaceId} />
                 </ControlledComponentSlot>
               ) : isFixtureMode &&
                 props.channelId === "ch_ops_002" &&

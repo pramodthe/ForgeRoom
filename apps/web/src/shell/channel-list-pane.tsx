@@ -44,12 +44,16 @@ export function ChannelListPane({
         <div className="flex items-center justify-between border-b border-zinc-200 px-3 py-3">
           <div>
             <h2 className="text-xs font-semibold text-zinc-800">Channels</h2>
-            <p className="mt-0.5 text-[10px] text-zinc-400">2 rooms · 2 coworkers</p>
+            <p className="mt-0.5 text-[10px] text-zinc-400">
+              {channels.length} {channels.length === 1 ? "room" : "rooms"}
+            </p>
           </div>
           <button
             type="button"
-            className="grid h-7 w-7 place-items-center rounded-lg border border-zinc-200 bg-white text-base text-zinc-500 shadow-sm hover:text-zinc-900"
-            aria-label="Create channel"
+            disabled
+            title="Channel creation is not connected yet"
+            className="grid h-7 w-7 cursor-not-allowed place-items-center rounded-lg border border-zinc-200 bg-zinc-100 text-base text-zinc-400"
+            aria-label="Channel creation pending"
           >
             +
           </button>

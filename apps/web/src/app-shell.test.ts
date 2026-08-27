@@ -7,6 +7,7 @@ import {
   createFixtureResearcher,
   disableCoworker,
   getCoworker,
+  getFixtureApprovalDecision,
   getSkillVersion,
   listChannelMessages,
   listChannelRoster,
@@ -15,6 +16,7 @@ import {
   listTasks,
   postChannelMessage,
   publishFixtureRunSkill,
+  recordFixtureApprovalDecision,
   updateCoworker,
   updateFixtureTaskStatus,
 } from "./api/workspace-api";
@@ -182,6 +184,25 @@ describe("mock fixtures", () => {
     expect(updated.status).toBe("done");
     expect(updated.current_revision).toBe(before.current_revision + 1);
     expect((await listTasks(MOCK_WORKSPACE_ID))[0]?.status).toBe("done");
+  });
+
+  it("rejects task transitions outside the domain state machine", async () => {
+    await expect(
+      updateFixtureTaskStatus({
+        workspaceId: MOCK_WORKSPACE_ID,
+        taskId: "task_review_002",
+        status: "done",
+      }),
+    ).rejects.toThrow("task_transition_not_allowed:todo->done");
+  });
+
+  it("persists fixture approval decisions through the API adapter", async () => {
+    expect(getFixtureApprovalDecision(MOCK_WORKSPACE_ID)).toBe("pending");
+    await recordFixtureApprovalDecision({
+      workspaceId: MOCK_WORKSPACE_ID,
+      decision: "changes_requested",
+    });
+    expect(getFixtureApprovalDecision(MOCK_WORKSPACE_ID)).toBe("changes_requested");
   });
 
   it("publishes the fixture run skill and binds it to Operator", async () => {

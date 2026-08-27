@@ -2,6 +2,7 @@ import { Link, useParams } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { LoadingState, RouteErrorState } from "@forgeroom/ui-components";
 import type { TaskRecordV1, TaskStatus } from "@forgeroom/contracts";
+import { TASK_TRANSITIONS } from "@forgeroom/domain/transitions";
 import { useState, type ReactNode } from "react";
 import {
   getTask,
@@ -380,6 +381,7 @@ function TaskTransitionPanel({ workspaceId, task }: { workspaceId: string; task:
       await queryClient.invalidateQueries({ queryKey: ["tasks", workspaceId] });
     },
   });
+  const transitions = TASK_TRANSITIONS[task.status];
 
   return (
     <div className="mt-3 space-y-2">
@@ -393,25 +395,36 @@ function TaskTransitionPanel({ workspaceId, task }: { workspaceId: string; task:
           {mutation.error.message}
         </p>
       ) : null}
-      <button
-        type="button"
-        onClick={() => mutation.mutate("done")}
-        disabled={!isFixtureMode || mutation.isPending || task.status === "done"}
-        className="w-full rounded-lg bg-zinc-950 px-3 py-2 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:bg-zinc-300"
-      >
-        {task.status === "done" ? "Done recorded" : mutation.isPending ? "Saving…" : "Mark done"}
-      </button>
-      <button
-        type="button"
-        onClick={() => mutation.mutate("blocked")}
-        disabled={!isFixtureMode || mutation.isPending || task.status === "blocked"}
-        className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-xs font-medium text-zinc-700 disabled:cursor-not-allowed disabled:text-zinc-400"
-      >
-        {task.status === "blocked" ? "Blocked recorded" : "Mark blocked"}
-      </button>
+      {transitions.map((status, index) => (
+        <button
+          key={status}
+          type="button"
+          onClick={() => mutation.mutate(status)}
+          disabled={!isFixtureMode || mutation.isPending}
+          className={`${index === 0 ? "bg-zinc-950 font-semibold text-white disabled:bg-zinc-300" : "border border-zinc-200 font-medium text-zinc-700 disabled:text-zinc-400"} w-full rounded-lg px-3 py-2 text-xs disabled:cursor-not-allowed`}
+        >
+          {mutation.isPending && mutation.variables === status
+            ? "Saving…"
+            : TASK_TRANSITION_LABEL[status]}
+        </button>
+      ))}
+      {transitions.length === 0 ? (
+        <p className="rounded-lg bg-zinc-100 p-3 text-[11px] text-zinc-600">
+          This task is in a terminal state.
+        </p>
+      ) : null}
     </div>
   );
 }
+
+const TASK_TRANSITION_LABEL: Record<TaskStatus, string> = {
+  todo: "Move to todo",
+  in_progress: "Start or resume task",
+  blocked: "Mark blocked",
+  in_review: "Send to review",
+  done: "Mark done",
+  cancelled: "Cancel task",
+};
 
 function History({
   title,

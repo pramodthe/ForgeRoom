@@ -23,6 +23,7 @@ import {
   skillVersionSchema,
   taskRecordV1Schema,
 } from "@forgeroom/contracts";
+import { canTransitionTask } from "@forgeroom/domain/transitions";
 import type { ConnectionFixture } from "./mock-fixtures";
 import {
   DEFAULT_CHANNEL_ID,
@@ -52,10 +53,13 @@ const fixtureCoworkers = new Map<string, CoworkerDetail>();
 const fixtureTimelines = new Map<string, ChannelTimelineMessagesResponse>();
 const fixtureTasks = new Map<string, TaskRecordV1>();
 let fixtureRunSkill: SkillVersion | null = null;
+export type FixtureApprovalDecision = "pending" | "approved" | "denied" | "changes_requested";
+const fixtureApprovalDecisions = new Map<string, FixtureApprovalDecision>();
 const FIXTURE_COWORKER_STORAGE_PREFIX = "forgeroom:fixture:coworker:v1:";
 const FIXTURE_TIMELINE_STORAGE_PREFIX = "forgeroom:fixture:timeline:v1:";
 const FIXTURE_TASK_STORAGE_PREFIX = "forgeroom:fixture:task:v1:";
 const FIXTURE_RUN_SKILL_STORAGE_KEY = "forgeroom:fixture:skill:v1:run_4A91";
+const FIXTURE_APPROVAL_STORAGE_PREFIX = "forgeroom:fixture:approval:v1:";
 
 const FIXTURE_RESEARCHER_PROFILE = coworkerProfileSchema.parse({
   schemaVersion: 1,
@@ -93,6 +97,28 @@ function fixtureStorage(): Storage | null {
   return window.localStorage;
 }
 
+type FixtureStorageWrite = { key: string; value: string };
+
+function commitFixtureStorage(writes: readonly FixtureStorageWrite[]): void {
+  const storage = fixtureStorage();
+  if (!storage) return;
+  const previous = writes.map(({ key }) => ({ key, value: storage.getItem(key) }));
+  try {
+    for (const write of writes) storage.setItem(write.key, write.value);
+  } catch (error) {
+    for (const snapshot of previous.reverse()) {
+      try {
+        if (snapshot.value === null) storage.removeItem(snapshot.key);
+        else storage.setItem(snapshot.key, snapshot.value);
+      } catch {
+        // Best-effort rollback only. The in-memory state remains unchanged and the caller sees the
+        // original persistence error instead of reporting a successful mutation.
+      }
+    }
+    throw error;
+  }
+}
+
 function readStoredFixtureCoworker(coworkerId: string): CoworkerDetail | null {
   const storage = fixtureStorage();
   if (!storage) return null;
@@ -125,11 +151,13 @@ function readStoredFixtureCoworker(coworkerId: string): CoworkerDetail | null {
 }
 
 function persistFixtureCoworker(coworker: CoworkerDetail): void {
+  commitFixtureStorage([
+    {
+      key: `${FIXTURE_COWORKER_STORAGE_PREFIX}${coworker.id}`,
+      value: JSON.stringify(coworker),
+    },
+  ]);
   fixtureCoworkers.set(coworker.id, coworker);
-  fixtureStorage()?.setItem(
-    `${FIXTURE_COWORKER_STORAGE_PREFIX}${coworker.id}`,
-    JSON.stringify(coworker),
-  );
 }
 
 function storedFixtureResearcher(): CoworkerDetail | null {
@@ -179,11 +207,13 @@ function fixtureTimeline(channelId: string): ChannelTimelineMessagesResponse {
 }
 
 function persistFixtureTimeline(timeline: ChannelTimelineMessagesResponse): void {
+  commitFixtureStorage([
+    {
+      key: `${FIXTURE_TIMELINE_STORAGE_PREFIX}${timeline.channel_id}`,
+      value: JSON.stringify(timeline),
+    },
+  ]);
   fixtureTimelines.set(timeline.channel_id, timeline);
-  fixtureStorage()?.setItem(
-    `${FIXTURE_TIMELINE_STORAGE_PREFIX}${timeline.channel_id}`,
-    JSON.stringify(timeline),
-  );
 }
 
 function fixtureTask(task: TaskRecordV1): TaskRecordV1 {
@@ -208,8 +238,10 @@ function fixtureTask(task: TaskRecordV1): TaskRecordV1 {
 }
 
 function persistFixtureTask(task: TaskRecordV1): void {
+  commitFixtureStorage([
+    { key: `${FIXTURE_TASK_STORAGE_PREFIX}${task.id}`, value: JSON.stringify(task) },
+  ]);
   fixtureTasks.set(task.id, task);
-  fixtureStorage()?.setItem(`${FIXTURE_TASK_STORAGE_PREFIX}${task.id}`, JSON.stringify(task));
 }
 
 function storedFixtureRunSkill(): SkillVersion | null {
@@ -225,11 +257,6 @@ function storedFixtureRunSkill(): SkillVersion | null {
     storage.removeItem(FIXTURE_RUN_SKILL_STORAGE_KEY);
     return null;
   }
-}
-
-function persistFixtureRunSkill(skill: SkillVersion): void {
-  fixtureRunSkill = skill;
-  fixtureStorage()?.setItem(FIXTURE_RUN_SKILL_STORAGE_KEY, JSON.stringify(skill));
 }
 
 function fixtureCoworker(coworker: CoworkerProfile): CoworkerDetail {
@@ -354,6 +381,9 @@ export async function updateFixtureTaskStatus(input: {
   assertWorkspace(input.workspaceId);
   const current = await getTask(input.workspaceId, input.taskId);
   if (!current) throw new Error("task_not_found");
+  if (!canTransitionTask(current.status, input.status)) {
+    throw new Error(`task_transition_not_allowed:${current.status}->${input.status}`);
+  }
   const updated = taskRecordV1Schema.parse({
     ...current,
     status: input.status,
@@ -698,16 +728,62 @@ export async function publishFixtureRunSkill(workspaceId: string): Promise<Skill
   });
   const operator = findFixtureCoworker("cw_operator_001");
   if (!operator || operator.status !== "active") throw new Error("operator_not_available");
-  persistFixtureCoworker({
+  const updatedOperator: CoworkerDetail = {
     ...operator,
     config_revision: operator.config_revision + 1,
     config: {
       ...operator.config,
       skill_version_ids: [...new Set([...operator.config.skill_version_ids, skill.id])],
     },
-  });
-  persistFixtureRunSkill(skill);
+  };
+  commitFixtureStorage([
+    {
+      key: `${FIXTURE_COWORKER_STORAGE_PREFIX}${updatedOperator.id}`,
+      value: JSON.stringify(updatedOperator),
+    },
+    { key: FIXTURE_RUN_SKILL_STORAGE_KEY, value: JSON.stringify(skill) },
+  ]);
+  fixtureCoworkers.set(updatedOperator.id, updatedOperator);
+  fixtureRunSkill = skill;
   return skill;
+}
+
+function fixtureApprovalStorageKey(workspaceId: string): string {
+  return `${FIXTURE_APPROVAL_STORAGE_PREFIX}${workspaceId}:ap_91F`;
+}
+
+export function getFixtureApprovalDecision(workspaceId: string): FixtureApprovalDecision {
+  if (!useMockApi) return "pending";
+  assertWorkspace(workspaceId);
+  const cached = fixtureApprovalDecisions.get(workspaceId);
+  if (cached) return cached;
+  const storage = fixtureStorage();
+  if (!storage) return "pending";
+  const storageKey = fixtureApprovalStorageKey(workspaceId);
+  try {
+    const value = storage.getItem(storageKey);
+    if (value === "approved" || value === "denied" || value === "changes_requested") {
+      fixtureApprovalDecisions.set(workspaceId, value);
+      return value;
+    }
+    if (value !== null) storage.removeItem(storageKey);
+  } catch {
+    return "pending";
+  }
+  return "pending";
+}
+
+export async function recordFixtureApprovalDecision(input: {
+  workspaceId: string;
+  decision: Exclude<FixtureApprovalDecision, "pending">;
+}): Promise<FixtureApprovalDecision> {
+  if (!useMockApi) throw new Error("Approvals are not connected in live mode yet.");
+  assertWorkspace(input.workspaceId);
+  commitFixtureStorage([
+    { key: fixtureApprovalStorageKey(input.workspaceId), value: input.decision },
+  ]);
+  fixtureApprovalDecisions.set(input.workspaceId, input.decision);
+  return input.decision;
 }
 
 export async function listConnections(workspaceId: string): Promise<ConnectionFixture[]> {

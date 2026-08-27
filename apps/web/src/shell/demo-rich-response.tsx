@@ -1,5 +1,10 @@
 import { Link } from "@tanstack/react-router";
 import { useState } from "react";
+import {
+  getFixtureApprovalDecision,
+  recordFixtureApprovalDecision,
+  type FixtureApprovalDecision,
+} from "../api/workspace-api";
 import { workspaceConnectionsPath } from "../routes/paths";
 
 const SUPPORT_DATA = [
@@ -260,10 +265,24 @@ function Metric(props: { label: string; value: string; delta: string; warning?: 
   );
 }
 
-export function OperationsPlanCards() {
-  const [decision, setDecision] = useState<"pending" | "approved" | "denied" | "changes_requested">(
-    "pending",
+export function OperationsPlanCards({ workspaceId }: { workspaceId: string }) {
+  const [decision, setDecision] = useState<FixtureApprovalDecision>(() =>
+    getFixtureApprovalDecision(workspaceId),
   );
+  const [savingDecision, setSavingDecision] = useState(false);
+  const [decisionError, setDecisionError] = useState<string | null>(null);
+
+  async function decide(next: Exclude<FixtureApprovalDecision, "pending">) {
+    setSavingDecision(true);
+    setDecisionError(null);
+    try {
+      setDecision(await recordFixtureApprovalDecision({ workspaceId, decision: next }));
+    } catch {
+      setDecisionError("The fixture decision could not be saved. No decision was recorded.");
+    } finally {
+      setSavingDecision(false);
+    }
+  }
   return (
     <div className="space-y-3">
       <section className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
@@ -325,23 +344,26 @@ export function OperationsPlanCards() {
             <button
               type="button"
               className="rounded-lg px-3 py-2 text-xs font-medium text-zinc-600 hover:bg-white"
-              onClick={() => setDecision("denied")}
+              disabled={savingDecision}
+              onClick={() => void decide("denied")}
             >
               Deny
             </button>
             <button
               type="button"
               className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-xs font-medium text-zinc-700 hover:bg-zinc-50"
-              onClick={() => setDecision("changes_requested")}
+              disabled={savingDecision}
+              onClick={() => void decide("changes_requested")}
             >
               Request changes
             </button>
             <button
               type="button"
               className="rounded-lg bg-zinc-950 px-3 py-2 text-xs font-semibold text-white hover:bg-zinc-800"
-              onClick={() => setDecision("approved")}
+              disabled={savingDecision}
+              onClick={() => void decide("approved")}
             >
-              Approve once
+              {savingDecision ? "Saving…" : "Approve once"}
             </button>
           </div>
         ) : (
@@ -349,10 +371,15 @@ export function OperationsPlanCards() {
             className={`mt-4 rounded-lg px-3 py-2 text-sm font-medium ${decision === "approved" ? "bg-emerald-50 text-emerald-800" : decision === "changes_requested" ? "bg-amber-50 text-amber-800" : "bg-red-50 text-red-800"}`}
             role="status"
           >
-            Decision recorded: {decision}. The coworker will resume after the approval group is
-            ready.
+            Fixture decision recorded: {decision}. It is preserved across refresh. Runtime resume is
+            not connected in prototype mode.
           </div>
         )}
+        {decisionError ? (
+          <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-800" role="alert">
+            {decisionError}
+          </p>
+        ) : null}
       </section>
     </div>
   );

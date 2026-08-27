@@ -46,3 +46,4 @@ Run browser component/API fixtures, keyboard/axe checks, 1440 px visual snapshot
 ## Work log
 
 - 2026-08-27 — PR #36 added a fixture-driven parallel frontend prototype for the coworker, Task and Save-as-skill review surfaces. This is visual and interaction progress only: the task remains blocked and unchecked until the server-backed revisions, authorized mutations, refresh recovery and complete P0 E2E evidence satisfy the acceptance criteria above.
+- 2026-08-27 — The prototype review pass now enforces the shared Task transition state machine, persists fixture approval decisions across refresh without claiming runtime resume, atomically commits fixture storage before in-memory state and labels unavailable channel creation honestly. Verified with repository lint, typecheck, all test suites, production builds and headed Playwright interaction checks. These checks harden the prototype but do not unblock or complete P0-410.
