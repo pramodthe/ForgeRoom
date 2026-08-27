@@ -10,7 +10,7 @@ describe("TrueForge boundary", () => {
   it("exposes the P0-201 harness with native subagents and iframe disabled", () => {
     expect(describeTrueForgeBoundary()).toEqual({
       harness: "trueforge",
-      sdk: "p0-201",
+      sdk: "p0-203",
       nativeSubagents: "disabled",
       iframe_v1: "disabled",
       credentials: "server-side-only",

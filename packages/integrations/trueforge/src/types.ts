@@ -49,3 +49,44 @@ export type CreateSessionInput = {
   /** Inline AgentSpec body (preferred for immutable P0 generations). */
   spec: TrueForgeAgentSpec;
 };
+
+/** Explicit predecessor: never pass TrueForge `"auto"` from ForgeRoom. */
+export type PreviousTurnIdInput = "none" | string;
+
+export type UserMessageInput = {
+  type: "user.message";
+  content: string;
+};
+
+export type TurnInputItem = UserMessageInput | Record<string, unknown>;
+
+export type CreateTurnInput = {
+  input: TurnInputItem[];
+  previousTurnId: PreviousTurnIdInput;
+  /** ForgeRoom always creates with stream=false, then subscribe separately. */
+  stream?: boolean;
+};
+
+export type TrueForgeTurnState = {
+  status: string;
+  required_actions?: unknown[];
+  output?: unknown;
+  completed_at?: string;
+  [key: string]: unknown;
+};
+
+export type TrueForgeTurn = {
+  id: string;
+  session_id: string;
+  previous_turn_id: string | null;
+  input: TurnInputItem[];
+  state: TrueForgeTurnState;
+  created_at: string;
+};
+
+export type TrueForgeTurnEvent = {
+  type: string;
+  id: string;
+  sequence_number?: number;
+  [key: string]: unknown;
+};

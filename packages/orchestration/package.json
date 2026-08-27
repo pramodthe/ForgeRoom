@@ -6,7 +6,9 @@
   "exports": {
     ".": "./src/index.ts",
     "./session": "./src/session.ts",
-    "./turn-queue": "./src/turn-queue.ts"
+    "./turn-queue": "./src/turn-queue.ts",
+    "./event-normalize": "./src/event-normalize.ts",
+    "./turn-creation": "./src/turn-creation.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit",

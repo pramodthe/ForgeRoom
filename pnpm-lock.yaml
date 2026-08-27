@@ -163,6 +163,9 @@ importers:
       '@forgeroom/orchestration':
         specifier: workspace:*
         version: link:../../packages/orchestration
+      '@forgeroom/trueforge':
+        specifier: workspace:*
+        version: link:../../packages/integrations/trueforge
     devDependencies:
       '@types/node':
         specifier: 'catalog:'

@@ -30,3 +30,14 @@ export type {
   ClaimTurnQueueItemResult,
   SqlClient as TurnQueueSqlClient,
 } from "./turn-queue";
+export {
+  bindTrueForgeTurnId,
+  markAgentTurnUncertain,
+  ingestNormalizedTrueForgeEvent,
+  lockAgentTurnForCreate,
+} from "./turn-lifecycle";
+export type {
+  NormalizedRunEventInput,
+  TurnDoneOutcomeInput,
+  IngestRunEventResult,
+} from "./turn-lifecycle";

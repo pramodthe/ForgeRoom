@@ -13,7 +13,8 @@
   "dependencies": {
     "@forgeroom/contracts": "workspace:*",
     "@forgeroom/db": "workspace:*",
-    "@forgeroom/orchestration": "workspace:*"
+    "@forgeroom/orchestration": "workspace:*",
+    "@forgeroom/trueforge": "workspace:*"
   },
   "devDependencies": {
     "esbuild": "^0.25.9",
