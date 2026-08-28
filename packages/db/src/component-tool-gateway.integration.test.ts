@@ -9,12 +9,33 @@ import {
 import {
   HASH,
   NOW,
-  DATA_TABLE_DESCRIPTOR_HASH,
+  alignSeededDataTableToRegistry,
   seedRuntime,
   withMigratedDatabase,
 } from "./test-harness";
 
 const TASK_CARD_DESCRIPTOR_HASH = getRegistryDefinition("TaskCard")!.descriptorHash;
+
+async function seedBrokeredDataTable(sql: Parameters<typeof seedRuntime>[0]): Promise<{
+  componentVersionId: string;
+  descriptorHash: string;
+}> {
+  const aligned = await alignSeededDataTableToRegistry(sql);
+  await sql`
+    INSERT INTO ui_component_grants (
+      id, component_version_id, workspace_id, channel_id, agent_profile_id, granted_by, granted_at
+    )
+    VALUES ('cg_broker', ${aligned.componentVersionId}, 'ws_1', NULL, 'cw_1', 'user_1', ${NOW})
+  `;
+  await sql`
+    UPDATE session_revisions
+    SET effective_config_redacted_json = ${sql.json({
+      component_tool_names: ["ui.dataTable"],
+    })}
+    WHERE id = 'sr_1'
+  `;
+  return aligned;
+}
 
 describe("component tool gateway", () => {
   it("loads offer context and finalizes a building instance", async () => {
@@ -47,7 +68,7 @@ describe("component tool gateway", () => {
         coworkerId: "cw_1",
         expectedSessionGeneration: 1,
         componentVersionId: "compv_1",
-        expectedDescriptorHash: DATA_TABLE_DESCRIPTOR_HASH,
+        expectedDescriptorHash: HASH,
         expectedGrantScopeHash: grantScopeHash,
       });
       expect(offer.ok).toBe(true);
@@ -87,19 +108,7 @@ describe("component tool gateway", () => {
   it("brokers a noninteractive MCP component tool call into a ready instance", async () => {
     await withMigratedDatabase(async (sql) => {
       await seedRuntime(sql);
-      await sql`
-        INSERT INTO ui_component_grants (
-          id, component_version_id, workspace_id, channel_id, agent_profile_id, granted_by, granted_at
-        )
-        VALUES ('cg_mcp', 'compv_1', 'ws_1', NULL, 'cw_1', 'user_1', ${NOW})
-      `;
-      await sql`
-        UPDATE session_revisions
-        SET effective_config_redacted_json = ${sql.json({
-          component_tool_names: ["ui.dataTable"],
-        })}
-        WHERE id = 'sr_1'
-      `;
+      await seedBrokeredDataTable(sql);
 
       const result = await brokerComponentToolMcpCall(sql, {
         generationId: "gen_1",
@@ -120,9 +129,9 @@ describe("component tool gateway", () => {
       });
       expect(result.instanceId).toMatch(/^ui_/);
 
-      const rows = await sql<
-        { status: string; render_grant_id: string | null }[]
-      >`SELECT status, render_grant_id FROM ui_instances WHERE id = ${result.instanceId}`;
+      const rows = await sql<{ status: string; render_grant_id: string | null }[]>`
+        SELECT status, render_grant_id FROM ui_instances WHERE id = ${result.instanceId}
+      `;
       expect(rows[0]).toMatchObject({ status: "ready", render_grant_id: expect.any(String) });
 
       const revisions = await sql<{ render_node_set_json: unknown }[]>`
@@ -151,24 +160,15 @@ describe("component tool gateway", () => {
   it("provisions broker DataGrants when a data-function grant exists", async () => {
     await withMigratedDatabase(async (sql) => {
       await seedRuntime(sql);
-      await sql`
-        INSERT INTO ui_component_grants (
-          id, component_version_id, workspace_id, channel_id, agent_profile_id, granted_by, granted_at
-        )
-        VALUES ('cg_rows', 'compv_1', 'ws_1', NULL, 'cw_1', 'user_1', ${NOW})
-      `;
+      const aligned = await seedBrokeredDataTable(sql);
       await sql`
         INSERT INTO ui_data_function_grants (
           id, component_version_id, function_name, workspace_id, limits_json, granted_by, granted_at
         )
-        VALUES ('dfg_rows', 'compv_1', 'rows', 'ws_1', '{"max_rows":10}'::jsonb, 'user_1', ${NOW})
-      `;
-      await sql`
-        UPDATE session_revisions
-        SET effective_config_redacted_json = ${sql.json({
-          component_tool_names: ["ui.dataTable"],
-        })}
-        WHERE id = 'sr_1'
+        VALUES (
+          'dfg_rows', ${aligned.componentVersionId}, 'rows', 'ws_1', '{"max_rows":10}'::jsonb,
+          'user_1', ${NOW}
+        )
       `;
 
       const result = await brokerComponentToolMcpCall(sql, {
@@ -275,19 +275,7 @@ describe("component tool gateway", () => {
   it("quarantines when publication/descriptor drifts before instance creation", async () => {
     await withMigratedDatabase(async (sql) => {
       await seedRuntime(sql);
-      await sql`
-        INSERT INTO ui_component_grants (
-          id, component_version_id, workspace_id, channel_id, agent_profile_id, granted_by, granted_at
-        )
-        VALUES ('cg_drift', 'compv_1', 'ws_1', NULL, 'cw_1', 'user_1', ${NOW})
-      `;
-      await sql`
-        UPDATE session_revisions
-        SET effective_config_redacted_json = ${sql.json({
-          component_tool_names: ["ui.dataTable"],
-        })}
-        WHERE id = 'sr_1'
-      `;
+      const aligned = await seedBrokeredDataTable(sql);
 
       const props = {
         caption: "Results",
@@ -306,11 +294,13 @@ describe("component tool gateway", () => {
       if (!postArgs.ok) {
         return;
       }
+      expect(postArgs.value.componentVersionId).toBe(aligned.componentVersionId);
 
+      // Point publication back at the seeded HASH version (immutable rows cannot be mutated).
       await sql`
-        UPDATE ui_component_versions
-        SET descriptor_hash = ${HASH}
-        WHERE id = 'compv_1'
+        UPDATE ui_components
+        SET current_published_version_id = 'compv_1'
+        WHERE id = 'comp_1'
       `;
 
       const beforeCreate = await recheckBrokerComponentAuthority(sql, {
@@ -349,6 +339,7 @@ describe("component tool gateway", () => {
   it("quarantines when the component grant is revoked before broker finalize", async () => {
     await withMigratedDatabase(async (sql) => {
       await seedRuntime(sql);
+      await alignSeededDataTableToRegistry(sql);
       await sql`
         UPDATE session_revisions
         SET effective_config_redacted_json = ${sql.json({

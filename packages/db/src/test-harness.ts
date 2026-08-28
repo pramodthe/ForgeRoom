@@ -305,7 +305,7 @@ export async function seedRuntime(sql: postgres.Sql): Promise<void> {
     )
     VALUES (
       'compv_1', 'comp_1', '1.0.0', 'agent_tool', 'none', 'Table',
-      '{}'::jsonb, 'DataTable@1.0.0', ${DATA_TABLE_DESCRIPTOR_HASH}, 'user_1', ${NOW}
+      '{}'::jsonb, 'DataTable@1.0.0', ${HASH}, 'user_1', ${NOW}
     )
   `;
   await sql`
@@ -358,4 +358,31 @@ export async function seedRuntime(sql: postgres.Sql): Promise<void> {
       '{}'::jsonb, 'active', ${NOW}, ${NOW}
     )
   `;
+}
+
+/**
+ * Point the seeded DataTable at a published version whose descriptor hash matches
+ * the code-owned registry (seed keeps HASH for registry republish compatibility).
+ */
+export async function alignSeededDataTableToRegistry(
+  sql: Parameters<typeof seedRuntime>[0],
+): Promise<{ componentVersionId: string; descriptorHash: string }> {
+  const descriptorHash = DATA_TABLE_DESCRIPTOR_HASH;
+  await sql`
+    INSERT INTO ui_component_versions (
+      id, component_id, semantic_version, exposure, confirmation_policy, model_description,
+      argument_schema_json, renderer_key, descriptor_hash, published_by, published_at
+    )
+    VALUES (
+      'compv_1_registry', 'comp_1', '1.0.1', 'agent_tool', 'none', 'Table',
+      '{}'::jsonb, 'DataTable@1.0.0', ${descriptorHash}, 'user_1', ${NOW}
+    )
+    ON CONFLICT (id) DO NOTHING
+  `;
+  await sql`
+    UPDATE ui_components
+    SET current_published_version_id = 'compv_1_registry'
+    WHERE id = 'comp_1'
+  `;
+  return { componentVersionId: "compv_1_registry", descriptorHash };
 }
