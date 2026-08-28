@@ -32,7 +32,11 @@ describe("agent turn create context", () => {
         WHERE id = 'q_1'
       `;
 
-      const inputSchema = { type: "object", additionalProperties: false, properties: {} };
+      const inputSchema = {
+        type: "object",
+        additionalProperties: false,
+        properties: { selectedRowId: { type: "string" } },
+      };
       const interruptId = "intr_ctx";
       const actionBody = actionGrantSchema.parse({
         schemaVersion: 1,
