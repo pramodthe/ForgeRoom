@@ -23,7 +23,9 @@ function fail(
         ? 403
         : error.code === "conflict"
           ? 409
-          : 400;
+          : error.code === "provider_unavailable"
+            ? 503
+            : 400;
   const failure = errorResponse(error.code as ErrorCode, error.message, {
     status,
     details: error.details,

@@ -301,140 +301,146 @@ export function createComponentService(options: {
       }
 
       const keyHash = idempotencyKeyHash(command.idempotency_key);
-      const [priorAudit] = await sql<{ redacted_payload_json: unknown }[]>`
-        SELECT redacted_payload_json
-        FROM audit_events
-        WHERE workspace_id = ${workspaceId}
-          AND action IN ('component.grant', 'component.revoke')
-          AND redacted_payload_json->>'coworker_id' = ${coworkerId}
-          AND redacted_payload_json->>'idempotency_key_hash' = ${keyHash}
-        ORDER BY created_at DESC
-        LIMIT 1
-      `;
-      if (priorAudit) {
-        const payload = parseAuditPayload(priorAudit.redacted_payload_json);
-        if (payload) {
-          const replayComponent = componentFromAuditPayload(payload);
-          const grantId = payload.grant_id;
-          const action = payload.action;
-          const sessionRotations = payload.session_rotations;
-          if (
-            typeof grantId === "string" &&
-            (action === "granted" || action === "revoked" || action === "noop") &&
-            replayComponent &&
-            Array.isArray(sessionRotations) &&
-            sessionRotations.every((row) => typeof row === "string")
-          ) {
-            if (sessionRotations.length > 0 && rotateGrantSessions) {
-              try {
-                await rotateGrantSessions({
-                  workspaceId,
-                  coworkerId,
-                  sessionIds: sessionRotations,
-                  createdBy: session.user.id,
-                  granted: action === "granted",
-                });
-              } catch (error) {
-                return {
-                  ok: false,
-                  error: {
-                    code: "provider_unavailable",
-                    message: "Component grant saved but session rotation failed; retry or refresh.",
-                    details: {
-                      reason: "session_rotation_failed",
-                      message: error instanceof Error ? error.message : String(error),
+      await sql`SELECT pg_advisory_lock(hashtext(${keyHash}))`;
+      try {
+        const [priorAudit] = await sql<{ redacted_payload_json: unknown }[]>`
+          SELECT redacted_payload_json
+          FROM audit_events
+          WHERE workspace_id = ${workspaceId}
+            AND action IN ('component.grant', 'component.revoke')
+            AND redacted_payload_json->>'coworker_id' = ${coworkerId}
+            AND redacted_payload_json->>'idempotency_key_hash' = ${keyHash}
+          ORDER BY created_at DESC
+          LIMIT 1
+        `;
+        if (priorAudit) {
+          const payload = parseAuditPayload(priorAudit.redacted_payload_json);
+          if (payload) {
+            const replayComponent = componentFromAuditPayload(payload);
+            const grantId = payload.grant_id;
+            const action = payload.action;
+            const sessionRotations = payload.session_rotations;
+            if (
+              typeof grantId === "string" &&
+              (action === "granted" || action === "revoked" || action === "noop") &&
+              replayComponent &&
+              Array.isArray(sessionRotations) &&
+              sessionRotations.every((row) => typeof row === "string")
+            ) {
+              if (sessionRotations.length > 0 && rotateGrantSessions) {
+                try {
+                  await rotateGrantSessions({
+                    workspaceId,
+                    coworkerId,
+                    sessionIds: sessionRotations,
+                    createdBy: session.user.id,
+                    granted: action === "granted",
+                  });
+                } catch (error) {
+                  return {
+                    ok: false,
+                    error: {
+                      code: "provider_unavailable",
+                      message:
+                        "Component grant saved but session rotation failed; retry or refresh.",
+                      details: {
+                        reason: "session_rotation_failed",
+                        message: error instanceof Error ? error.message : String(error),
+                      },
                     },
-                  },
-                };
+                  };
+                }
               }
+              return {
+                ok: true,
+                value: {
+                  grant_id: grantId,
+                  action,
+                  component: replayComponent,
+                  session_rotations: sessionRotations,
+                },
+              };
             }
-            return {
-              ok: true,
-              value: {
-                grant_id: grantId,
-                action,
-                component: replayComponent,
-                session_rotations: sessionRotations,
-              },
-            };
           }
         }
-      }
 
-      let applied;
-      try {
-        applied = await applyComponentGrantChange(sql, {
-          grantInput: {
-            componentVersionId: match.id,
-            workspaceId,
-            channelId: null,
-            agentProfileId: coworkerId,
-            grantedBy: session.user.id,
-            granted: command.granted,
-          },
-          audit: {
-            workspaceId,
-            actorUserId: session.user.id,
-            action: command.granted ? "component.grant" : "component.revoke",
-            targetType: "ui_component_grant",
-            targetId: "",
-            payload: {
-              coworker_id: coworkerId,
-              component_version_id: match.id,
-              stable_name: match.stableName,
-              descriptor_hash: match.descriptorHash,
-              granted: command.granted,
-              idempotency_key_hash: keyHash,
-              component: disclosed,
-            },
-          },
-          sessionAgentProfileId: coworkerId,
-        });
-      } catch (error) {
-        return {
-          ok: false,
-          error: {
-            code: "forbidden",
-            message: error instanceof Error ? error.message : "Component grant rejected.",
-          },
-        };
-      }
-
-      const result = applied.grant;
-
-      if (result.changed && applied.sessionRotations.length > 0 && rotateGrantSessions) {
+        let applied;
         try {
-          await rotateGrantSessions({
-            workspaceId,
-            coworkerId,
-            sessionIds: applied.sessionRotations,
-            createdBy: session.user.id,
-            granted: command.granted,
+          applied = await applyComponentGrantChange(sql, {
+            grantInput: {
+              componentVersionId: match.id,
+              workspaceId,
+              channelId: null,
+              agentProfileId: coworkerId,
+              grantedBy: session.user.id,
+              granted: command.granted,
+            },
+            audit: {
+              workspaceId,
+              actorUserId: session.user.id,
+              action: command.granted ? "component.grant" : "component.revoke",
+              targetType: "ui_component_grant",
+              targetId: "",
+              payload: {
+                coworker_id: coworkerId,
+                component_version_id: match.id,
+                stable_name: match.stableName,
+                descriptor_hash: match.descriptorHash,
+                granted: command.granted,
+                idempotency_key_hash: keyHash,
+                component: disclosed,
+              },
+            },
+            sessionAgentProfileId: coworkerId,
           });
         } catch (error) {
           return {
             ok: false,
             error: {
-              code: "provider_unavailable",
-              message: "Component grant saved but session rotation failed; retry or refresh.",
-              details: {
-                reason: "session_rotation_failed",
-                message: error instanceof Error ? error.message : String(error),
-              },
+              code: "forbidden",
+              message: error instanceof Error ? error.message : "Component grant rejected.",
             },
           };
         }
-      }
 
-      return {
-        ok: true,
-        value: {
-          grant_id: result.grantId,
-          action: result.action,
-          component: disclosed,
-          session_rotations: applied.sessionRotations,
-        },
-      };
+        const result = applied.grant;
+
+        if (result.changed && applied.sessionRotations.length > 0 && rotateGrantSessions) {
+          try {
+            await rotateGrantSessions({
+              workspaceId,
+              coworkerId,
+              sessionIds: applied.sessionRotations,
+              createdBy: session.user.id,
+              granted: command.granted,
+            });
+          } catch (error) {
+            return {
+              ok: false,
+              error: {
+                code: "provider_unavailable",
+                message: "Component grant saved but session rotation failed; retry or refresh.",
+                details: {
+                  reason: "session_rotation_failed",
+                  message: error instanceof Error ? error.message : String(error),
+                },
+              },
+            };
+          }
+        }
+
+        return {
+          ok: true,
+          value: {
+            grant_id: result.grantId,
+            action: result.action,
+            component: disclosed,
+            session_rotations: applied.sessionRotations,
+          },
+        };
+      } finally {
+        await sql`SELECT pg_advisory_unlock(hashtext(${keyHash}))`;
+      }
     },
   };
 }
