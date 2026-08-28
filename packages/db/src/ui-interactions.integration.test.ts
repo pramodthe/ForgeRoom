@@ -12,7 +12,11 @@ function sha256(value: unknown): string {
   return `sha256:${createHash("sha256").update(canonicalizeJson(value), "utf8").digest("hex")}`;
 }
 
-async function prepareReadySurface(sql: Parameters<typeof seedRuntime>[0]): Promise<void> {
+async function prepareReadySurface(
+  sql: Parameters<typeof seedRuntime>[0],
+  options?: { actionGrantExpiresAt?: string },
+): Promise<void> {
+  const actionGrantExpiresAt = options?.actionGrantExpiresAt ?? NOW;
   const inputSchema = { type: "object", additionalProperties: false, enum: [{}] };
   const actionBody = actionGrantSchema.parse({
     schemaVersion: 1,
@@ -22,7 +26,7 @@ async function prepareReadySurface(sql: Parameters<typeof seedRuntime>[0]): Prom
     surface_id: "ui_1",
     policy_revision: 1,
     issued_by: "application_policy",
-    expires_at: NOW,
+    expires_at: actionGrantExpiresAt,
     revoked_at: null,
     grant_scope_hash: HASH,
     created_at: NOW,
@@ -69,7 +73,8 @@ async function prepareReadySurface(sql: Parameters<typeof seedRuntime>[0]): Prom
     ) VALUES (
       'ag_test', 'ui_1', 'action', 1, 0, ${HASH}, 'select_row', 'select_row', 'local_state',
       ${JSON.stringify(inputSchema)}::jsonb, ${sha256(inputSchema)}, '["node_1"]'::jsonb,
-      ${JSON.stringify(actionBody)}::jsonb, ${HASH}, 3, 0, 'application_policy', ${NOW}, ${NOW}
+      ${JSON.stringify(actionBody)}::jsonb, ${HASH}, 3, 0, 'application_policy',
+      ${actionGrantExpiresAt}, ${NOW}
     )
   `;
 }
@@ -611,12 +616,7 @@ describe("UI interaction gateway", () => {
   it("rejects token issue when the ActionGrant is expired", async () => {
     await withMigratedDatabase(async (sql) => {
       await seedRuntime(sql);
-      await prepareReadySurface(sql);
-      await sql`
-        UPDATE ui_surface_grants
-        SET expires_at = '2019-01-01T00:00:00.000Z'
-        WHERE id = 'ag_test'
-      `;
+      await prepareReadySurface(sql, { actionGrantExpiresAt: "2019-01-01T00:00:00.000Z" });
       const issued = await issueUiInteractionToken(sql, {
         instanceId: "ui_1",
         workspaceId: "ws_1",
@@ -687,7 +687,7 @@ describe("UI interaction gateway", () => {
   it("marks commit stale when the ActionGrant expires before commit", async () => {
     await withMigratedDatabase(async (sql) => {
       await seedRuntime(sql);
-      await prepareReadySurface(sql);
+      await prepareReadySurface(sql, { actionGrantExpiresAt: "2020-06-01T00:00:00.000Z" });
       const issued = await issueUiInteractionToken(sql, {
         instanceId: "ui_1",
         workspaceId: "ws_1",
@@ -708,11 +708,6 @@ describe("UI interaction gateway", () => {
         now: TEST_NOW,
       });
       if (!issued.ok) throw new Error(`${issued.error.code}: ${issued.error.message}`);
-      await sql`
-        UPDATE ui_surface_grants
-        SET expires_at = '2019-01-01T00:00:00.000Z'
-        WHERE id = 'ag_test'
-      `;
       const committed = await commitUiInteraction(sql, {
         instanceId: "ui_1",
         workspaceId: "ws_1",
