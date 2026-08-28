@@ -179,14 +179,14 @@ describe("agent turn create context", () => {
       });
       expect(marked).toEqual({ ok: true });
 
-      const [continued] = await sql<{ state: string; continued_at: string | null }[]>`
+      const [continued] = await sql<{ state: string; continued_at: string | Date | null }[]>`
         SELECT state, continued_at
         FROM ui_component_interrupts
         WHERE id = ${interruptId}
       `;
       expect(continued).toMatchObject({
         state: "continued",
-        continued_at: TEST_NOW,
+        continued_at: new Date(TEST_NOW),
       });
     });
   }, 60_000);
