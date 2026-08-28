@@ -2,6 +2,24 @@ import type postgres from "postgres";
 
 type SqlClient = postgres.Sql;
 
+function parseJson(value: unknown): unknown {
+  if (typeof value !== "string") {
+    return value;
+  }
+  try {
+    return JSON.parse(value);
+  } catch {
+    return value;
+  }
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  const parsed = parseJson(value);
+  return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)
+    ? (parsed as Record<string, unknown>)
+    : {};
+}
+
 export type AgentTurnCreateContext =
   | {
       kind: "normal";
@@ -58,7 +76,7 @@ export async function loadAgentTurnCreateContext(
   }
 
   if (row.input_type === "component_interaction_response") {
-    const payload = row.input_payload_redacted_json ?? {};
+    const payload = asRecord(row.input_payload_redacted_json);
     const interruptId =
       typeof payload.component_interrupt_id === "string" ? payload.component_interrupt_id : null;
     if (!interruptId) {
@@ -107,7 +125,7 @@ export async function loadAgentTurnCreateContext(
       interruptId: interrupt.id,
       toolCallId: interrupt.tool_call_id,
       threadId: interrupt.logical_thread_id,
-      resultRedacted: interrupt.result_redacted_json,
+      resultRedacted: parseJson(interrupt.result_redacted_json),
     };
   }
 
@@ -115,7 +133,7 @@ export async function loadAgentTurnCreateContext(
     return null;
   }
 
-  const payload = row.input_payload_redacted_json ?? {};
+  const payload = asRecord(row.input_payload_redacted_json);
   const content = typeof payload.content === "string" ? payload.content : null;
   if (!content) {
     return null;
