@@ -453,6 +453,18 @@ describe("session rotation", () => {
       await sql`UPDATE agent_turns SET state = 'completed', completed_at = ${NOW} WHERE id = 'turn_1'`;
 
       expect(await listDrainableRetiredSessionGenerationIds(sql, "cas_1")).toEqual(["gen_1"]);
+
+      await sql`
+        INSERT INTO agent_turns (
+          id, run_step_id, channel_agent_session_id, session_generation_id, queue_item_id,
+          application_run_token, agui_run_id, input_type, state, started_at
+        ) VALUES (
+          'turn_uncertain', 'step_1', 'cas_1', 'gen_1', 'q_1', 'token_uncertain', 'agui_run_uncertain',
+          'normal', 'uncertain', ${NOW}
+        )
+      `;
+
+      expect(await listDrainableRetiredSessionGenerationIds(sql, "cas_1")).toEqual([]);
     });
   }, 60_000);
 });

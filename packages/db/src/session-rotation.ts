@@ -630,7 +630,8 @@ export async function listDrainableRetiredSessionGenerationIds(
             'creating',
             'streaming',
             'resuming',
-            'required_actions'
+            'required_actions',
+            'uncertain'
           )
       )
   `;
