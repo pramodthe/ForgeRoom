@@ -75,6 +75,20 @@ function idempotencyKeyHash(key: string): string {
   return `sha256:${createHash("sha256").update(key).digest("hex")}`;
 }
 
+async function markSessionRotationsApplied(
+  sql: SqlClient,
+  input: { workspaceId: string; coworkerId: string; idempotencyKeyHash: string },
+): Promise<void> {
+  await sql`
+    UPDATE audit_events
+    SET redacted_payload_json = redacted_payload_json || ${sql.json({ session_rotations_applied: true })}
+    WHERE workspace_id = ${input.workspaceId}
+      AND action IN ('component.grant', 'component.revoke')
+      AND redacted_payload_json->>'coworker_id' = ${input.coworkerId}
+      AND redacted_payload_json->>'idempotency_key_hash' = ${input.idempotencyKeyHash}
+  `;
+}
+
 function parseAuditPayload(payload: unknown): Record<string, unknown> | null {
   if (!payload || typeof payload !== "object") {
     if (typeof payload === "string") {
@@ -320,6 +334,7 @@ export function createComponentService(options: {
             const grantId = payload.grant_id;
             const action = payload.action;
             const sessionRotations = payload.session_rotations;
+            const sessionRotationsApplied = payload.session_rotations_applied === true;
             if (
               typeof grantId === "string" &&
               (action === "granted" || action === "revoked" || action === "noop") &&
@@ -327,7 +342,7 @@ export function createComponentService(options: {
               Array.isArray(sessionRotations) &&
               sessionRotations.every((row) => typeof row === "string")
             ) {
-              if (sessionRotations.length > 0 && rotateGrantSessions) {
+              if (sessionRotations.length > 0 && rotateGrantSessions && !sessionRotationsApplied) {
                 try {
                   await rotateGrantSessions({
                     workspaceId,
@@ -335,6 +350,11 @@ export function createComponentService(options: {
                     sessionIds: sessionRotations,
                     createdBy: session.user.id,
                     granted: action === "granted",
+                  });
+                  await markSessionRotationsApplied(sql, {
+                    workspaceId,
+                    coworkerId,
+                    idempotencyKeyHash: keyHash,
                   });
                 } catch (error) {
                   return {
@@ -413,6 +433,11 @@ export function createComponentService(options: {
               sessionIds: applied.sessionRotations,
               createdBy: session.user.id,
               granted: command.granted,
+            });
+            await markSessionRotationsApplied(sql, {
+              workspaceId,
+              coworkerId,
+              idempotencyKeyHash: keyHash,
             });
           } catch (error) {
             return {

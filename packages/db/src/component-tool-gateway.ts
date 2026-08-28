@@ -947,6 +947,20 @@ export async function brokerComponentToolMcpCall(
           componentName,
         };
       }
+      if (
+        existing.status === "failed" ||
+        existing.status === "degraded" ||
+        existing.status === "revoked" ||
+        existing.status === "closed"
+      ) {
+        return {
+          status: "quarantined" as const,
+          instanceId: existing.id,
+          renderRevision: existing.current_render_revision,
+          textAlternative: existing.text_alternative,
+          componentName,
+        };
+      }
     }
 
     const offer = await loadComponentOfferContext(tx, {
