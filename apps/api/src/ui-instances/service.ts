@@ -1,6 +1,7 @@
 import type {
   ErrorCode,
   SessionResponse,
+  UiDataFunctionCommand,
   UiInstanceReplayResponse,
   UiInteractionResult,
   UiInteractionTokenRequest,
@@ -12,6 +13,7 @@ import {
 } from "@forgeroom/contracts";
 import {
   commitUiInteraction,
+  invokeUiDataFunction,
   issueUiInteractionToken,
   loadUiInstanceReplayBundle,
   toUiInstanceReplayResponse,
@@ -50,6 +52,12 @@ export type UiInstanceService = {
     instanceId: string,
     command: { interactionId: string; interactionToken: string },
   ): Promise<UiInstanceServiceResult<UiInteractionResult>>;
+  invokeDataFunction(
+    session: SessionResponse,
+    instanceId: string,
+    functionName: string,
+    command: UiDataFunctionCommand,
+  ): Promise<UiInstanceServiceResult<{ data: unknown }>>;
 };
 
 export function createUiInstanceService(options: {
@@ -340,6 +348,52 @@ export function createUiInstanceService(options: {
           error: {
             code: "provider_unavailable",
             message: "Interaction commit is temporarily unavailable.",
+          },
+        };
+      }
+    },
+
+    async invokeDataFunction(session, instanceId, functionName, command) {
+      const authorized = await authorizeInstance(session, instanceId);
+      if (!authorized.ok) {
+        return authorized;
+      }
+      if (!sql) {
+        return {
+          ok: false,
+          error: {
+            code: "provider_unavailable",
+            message: "UIInstance persistence requires SQL-backed storage.",
+          },
+        };
+      }
+      try {
+        const result = await invokeUiDataFunction(sql, {
+          instanceId,
+          workspaceId: session.workspace_id,
+          actorUserId: session.user.id,
+          functionName,
+          renderRevision: command.renderRevision,
+          dataGrantId: command.dataGrantId,
+          expectedManifestHash: command.expectedManifestHash,
+          arguments: command.arguments,
+          now: new Date().toISOString(),
+        });
+        if (!result.ok) {
+          return { ok: false, error: { code: result.code as ErrorCode, message: result.message } };
+        }
+        return { ok: true, value: { data: result.data } };
+      } catch (error) {
+        console.error("ui_data_function_invoke_failed", {
+          instanceId,
+          functionName,
+          error: error instanceof Error ? error.message : "unknown database error",
+        });
+        return {
+          ok: false,
+          error: {
+            code: "provider_unavailable",
+            message: "Data-function invocation is temporarily unavailable.",
           },
         };
       }

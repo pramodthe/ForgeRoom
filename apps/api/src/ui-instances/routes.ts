@@ -3,6 +3,7 @@ import type { ContentfulStatusCode } from "hono/utils/http-status";
 import {
   uiInteractionCommitCommandSchema,
   uiInteractionTokenRequestSchema,
+  uiDataFunctionCommandSchema,
   type ErrorCode,
 } from "@forgeroom/contracts";
 import type { AuthService } from "../auth/service";
@@ -113,5 +114,37 @@ export function mountUiInstanceRoutes(
       return fail(c, result.error);
     }
     return c.json(result.value, 200);
+  });
+
+  app.post("/api/ui-instances/:instanceId/data/:functionName", async (c) => {
+    const authed = await requireMutationSession(c, env, auth);
+    if (authed instanceof Response) {
+      return authed;
+    }
+    const instanceId = requireParam(c, "instanceId");
+    if (instanceId instanceof Response) {
+      return instanceId;
+    }
+    const functionName = requireParam(c, "functionName");
+    if (functionName instanceof Response) {
+      return functionName;
+    }
+    const parsed = uiDataFunctionCommandSchema.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) {
+      return fail(c, {
+        code: "validation_failed",
+        message: "Invalid data-function command.",
+      });
+    }
+    const result = await uiInstances.invokeDataFunction(
+      authed.session,
+      instanceId,
+      functionName,
+      parsed.data,
+    );
+    if (!result.ok) {
+      return fail(c, result.error);
+    }
+    return c.json({ data: result.value.data }, 200);
   });
 }

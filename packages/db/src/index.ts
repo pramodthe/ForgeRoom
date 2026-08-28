@@ -207,6 +207,8 @@ export {
   commitUiInteraction,
   validatePropsAgainstParameterSchema,
 } from "./ui-interactions";
+export { invokeUiDataFunction } from "./ui-data-functions";
+export type { InvokeUiDataFunctionInput, InvokeUiDataFunctionResult } from "./ui-data-functions";
 export type {
   IssueUiInteractionToken,
   IssueUiInteractionTokenInput,

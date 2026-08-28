@@ -63,6 +63,12 @@ implemented.
   channel timeline after MCP broker finalize.
 - [x] Universal render grants for every brokered instance; manifest render-node ids (`node_1`) replace
   hardcoded `"root"` in revisions and ActionGrants.
+- [x] Grant expiry/revocation integration tests for token issue and commit stale paths.
+- [x] Unsupported P1 ActionGrant modes fail typed at token issue; commit rejects unsupported modes
+  instead of silently marking interactions stale.
+- [x] `POST /api/ui-instances/:instanceId/data/:functionName` authorize shell with registry +
+  surface DataGrant checks; handlers return typed denial until registered.
+- [x] P0 route guard: no `/render-capabilities` or P1 confirmation endpoints in ui-instance routes.
 
 - `pnpm --filter @forgeroom/db typecheck`
 - `pnpm --filter @forgeroom/db exec vitest run src/ui-interactions.integration.test.ts`

@@ -934,10 +934,16 @@ export async function commitUiInteraction(
       return { ok: false, error: { code: "forbidden", message: "Interaction token is invalid." } };
     }
     const interpretedGrant = interpretP0ActionGrant(parseJson(row.grant_body_redacted_json));
-    const parsedGrant =
-      interpretedGrant.ok === true
-        ? actionGrantSchema.safeParse(interpretedGrant.grant)
-        : ({ success: false } as const);
+    if (!interpretedGrant.ok) {
+      return {
+        ok: false,
+        error: {
+          code: "ui_interaction_not_allowed",
+          message: "ActionGrant mode is unsupported in P0.",
+        },
+      };
+    }
+    const parsedGrant = actionGrantSchema.safeParse(interpretedGrant.grant);
     const persistedInputSchema = safeJsonObjectSchema.safeParse(parseJson(row.input_schema_json));
     const grantAuthorityValid =
       parsedGrant.success &&
