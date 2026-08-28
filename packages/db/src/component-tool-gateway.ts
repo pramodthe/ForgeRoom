@@ -7,6 +7,7 @@ import {
   getRegistryDefinition,
   hashGrantScope,
 } from "@forgeroom/domain";
+import { validatePropsAgainstParameterSchema } from "./ui-interactions";
 
 export type SqlConnection = postgres.Sql;
 export type SqlClient = postgres.Sql | postgres.TransactionSql;
@@ -705,16 +706,10 @@ function validateRegistryProps(
   if (!definition) {
     return { ok: false, message: "Unknown controlled component." };
   }
-  const schema = definition.parameterSchema;
-  const required = Array.isArray(schema.required)
-    ? schema.required.filter((value): value is string => typeof value === "string")
-    : [];
-  for (const key of required) {
-    if (!(key in props)) {
-      return { ok: false, message: `Missing required prop: ${key}` };
-    }
-  }
-  return { ok: true };
+  return validatePropsAgainstParameterSchema(
+    props,
+    definition.parameterSchema as Record<string, unknown>,
+  );
 }
 
 function isInteractiveComponent(stableName: string): boolean {

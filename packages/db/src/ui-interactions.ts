@@ -172,16 +172,26 @@ const SUPPORTED_SCHEMA_TYPES = new Set([
   "null",
 ]);
 
+function acceptsDeclaredSchemaType(type: unknown): boolean {
+  if (typeof type === "string") {
+    return SUPPORTED_SCHEMA_TYPES.has(type);
+  }
+  if (Array.isArray(type)) {
+    return (
+      type.length > 0 &&
+      type.every((entry) => typeof entry === "string" && SUPPORTED_SCHEMA_TYPES.has(entry))
+    );
+  }
+  return false;
+}
+
 function isSchemaShape(schema: unknown): schema is Record<string, unknown> {
   if (typeof schema !== "object" || schema === null || Array.isArray(schema)) {
     return false;
   }
   const record = schema as Record<string, unknown>;
   if (Object.keys(record).some((key) => !SUPPORTED_SCHEMA_KEYWORDS.has(key))) return false;
-  if (
-    record.type !== undefined &&
-    (typeof record.type !== "string" || !SUPPORTED_SCHEMA_TYPES.has(record.type))
-  ) {
+  if (record.type !== undefined && !acceptsDeclaredSchemaType(record.type)) {
     return false;
   }
   if (record.enum !== undefined && !Array.isArray(record.enum)) return false;
@@ -241,16 +251,16 @@ function matchesInputSchema(value: unknown, schema: Record<string, unknown>): bo
   }
 
   const type = schema.type;
-  if (typeof type === "string") {
-    const typeMatches =
-      (type === "object" && typeof value === "object" && value !== null && !Array.isArray(value)) ||
-      (type === "array" && Array.isArray(value)) ||
-      (type === "string" && typeof value === "string") ||
-      (type === "number" && typeof value === "number" && Number.isFinite(value)) ||
-      (type === "integer" && typeof value === "number" && Number.isInteger(value)) ||
-      (type === "boolean" && typeof value === "boolean") ||
-      (type === "null" && value === null);
-    if (!typeMatches) {
+  if (type !== undefined) {
+    const declaredTypes = Array.isArray(type)
+      ? type.filter((entry): entry is string => typeof entry === "string")
+      : typeof type === "string"
+        ? [type]
+        : [];
+    if (
+      declaredTypes.length > 0 &&
+      !declaredTypes.some((entry) => matchesDeclaredJsonType(value, entry))
+    ) {
       return false;
     }
   }
@@ -311,6 +321,31 @@ function matchesInputSchema(value: unknown, schema: Record<string, unknown>): bo
     }
   }
   return true;
+}
+
+function matchesDeclaredJsonType(value: unknown, type: string): boolean {
+  return (
+    (type === "object" && typeof value === "object" && value !== null && !Array.isArray(value)) ||
+    (type === "array" && Array.isArray(value)) ||
+    (type === "string" && typeof value === "string") ||
+    (type === "number" && typeof value === "number" && Number.isFinite(value)) ||
+    (type === "integer" && typeof value === "number" && Number.isInteger(value)) ||
+    (type === "boolean" && typeof value === "boolean") ||
+    (type === "null" && value === null)
+  );
+}
+
+export function validatePropsAgainstParameterSchema(
+  props: Record<string, unknown>,
+  schema: Record<string, unknown>,
+): { ok: true } | { ok: false; message: string } {
+  if (!isSchemaShape(schema)) {
+    return { ok: false, message: "Component parameter schema is invalid." };
+  }
+  if (!matchesInputSchema(props, schema)) {
+    return { ok: false, message: "Component tool arguments failed schema validation." };
+  }
+  return { ok: true };
 }
 
 function grantMatchesRow(
