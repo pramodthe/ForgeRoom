@@ -6,7 +6,7 @@
 | Current phase | Phase 1 — Foundation / M3 tools |
 | Active task | P0-315 (in_review — awaiting reviewer sign-off) |
 | Next task | Critical path: P0-316; also ready: P0-317, P0-318, UI wave (P0-404, P0-405) |
-| P0 blockers | Run-limit hard enforcement (P0-204/OD-008 evidence); P0-210 still in_review |
+| P0 blockers | Run-limit hard enforcement (P0-204/OD-008 evidence) |
 | Last updated | 2026-08-28 (P0-315 acceptance audit → in_review; P0-317 split out) |
 
 ## Milestones
@@ -21,6 +21,12 @@
 | M5 Verification | blocked | P0-501 through P0-506 done |
 
 ## Current decisions needed
+
+- P0-210 status is inconsistent and needs an owner to reconcile: `tasks.md` marks it `[x] done`
+  and both dependents (P0-211, P0-314) are `done`, but the task file front matter still says
+  `in_review` with owner `cursor-agent`. The index is authoritative for the checkbox, so the task
+  file is the likely stale side — but moving a task to `done` requires a reviewer to confirm its
+  acceptance criteria and evidence, so this is not resolved here.
 
 Still open for later owner tasks (see `decisions/OPEN.md` and `provider-fixtures/`):
 
