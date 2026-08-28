@@ -1,7 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 import { TrueForgeClient } from "@forgeroom/trueforge";
-import { setComponentGrant } from "@forgeroom/db";
-import { NOW, seedRuntime, withMigratedDatabase } from "@forgeroom/db/test-harness";
+import { createSql, migrate, setComponentGrant } from "@forgeroom/db";
+import {
+  NOW,
+  seedRuntime,
+  withMigratedDatabase,
+  withTemporaryDatabase,
+} from "@forgeroom/db/test-harness";
 import { createMemoryWorkspaceStore } from "./store";
 import { createPostgresWorkspaceStore } from "./postgres-store";
 import {
@@ -337,6 +342,123 @@ describe("ensureCoworkerChannelSession", () => {
         WHERE channel_agent_session_id = ${logicalSessionId}
       `;
       expect(Number(generations[0]?.count ?? 0)).toBe(1);
+    });
+  }, 60_000);
+
+  it("starts the recovery window after waiting for the cross-process provisioning lock", async () => {
+    await withTemporaryDatabase(async (url) => {
+      const sql = createSql(url);
+      const blocker = createSql(url);
+      let releaseBlocker = () => {};
+      let blockerRun: Promise<unknown> | undefined;
+      try {
+        await migrate(sql);
+        await seedRuntime(sql);
+        await sql`
+          INSERT INTO channels (
+            id, workspace_id, name, mission_brief, next_sequence, status, created_by, created_at, updated_at
+          ) VALUES ('ch_lock_wait', 'ws_1', 'Lock wait', 'Fresh recovery marker', 0, 'active', 'user_1', ${NOW}, ${NOW})
+        `;
+        const store = createPostgresWorkspaceStore(sql);
+        const coworker = await store.getCoworker("cw_1");
+        expect(coworker).toBeTruthy();
+        const lockKey = "initial-session:cw_1";
+        let blockerAcquired = () => {};
+        const acquired = new Promise<void>((resolve) => {
+          blockerAcquired = resolve;
+        });
+        const blocked = new Promise<void>((resolve) => {
+          releaseBlocker = resolve;
+        });
+        blockerRun = blocker.begin(async (transaction) => {
+          await transaction`
+            SELECT pg_advisory_xact_lock(
+              ('x' || substr(md5(${lockKey}), 1, 8))::bit(32)::int,
+              ('x' || substr(md5(${lockKey}), 9, 8))::bit(32)::int
+            )
+          `;
+          blockerAcquired();
+          await blocked;
+        });
+        await acquired;
+
+        vi.useFakeTimers({ toFake: ["Date"] });
+        vi.setSystemTime(new Date("2026-08-28T00:00:00.000Z"));
+        let reconciliationStart: string | null = null;
+        const fetchImpl = vi.fn(async (request: string | URL, init?: RequestInit) => {
+          const requestUrl = new URL(String(request));
+          if (init?.method === "GET" && requestUrl.pathname === "/api/v1/sessions") {
+            reconciliationStart = requestUrl.searchParams.get("start_timestamp");
+            return new Response(
+              JSON.stringify({ data: [], pagination: { next_page_token: null } }),
+              { status: 200, headers: { "Content-Type": "application/json" } },
+            );
+          }
+          if (init?.method === "POST" && requestUrl.pathname === "/api/v1/sessions") {
+            return new Response(
+              JSON.stringify({
+                data: {
+                  id: "tf_after_lock_wait",
+                  agent: {},
+                  title: null,
+                  created_by: "local",
+                  created_at: new Date().toISOString(),
+                  updated_at: new Date().toISOString(),
+                },
+              }),
+              { status: 201, headers: { "Content-Type": "application/json" } },
+            );
+          }
+          if (
+            init?.method === "GET" &&
+            requestUrl.pathname === "/api/v1/sessions/tf_after_lock_wait"
+          ) {
+            return new Response(
+              JSON.stringify({
+                data: {
+                  id: "tf_after_lock_wait",
+                  agent: {},
+                  title: null,
+                  created_by: "local",
+                  created_at: new Date().toISOString(),
+                  updated_at: new Date().toISOString(),
+                },
+              }),
+              { status: 200, headers: { "Content-Type": "application/json" } },
+            );
+          }
+          throw new Error(
+            `unexpected TrueForge request: ${init?.method ?? "GET"} ${requestUrl.toString()}`,
+          );
+        });
+        const client = new TrueForgeClient({
+          baseUrl: "http://trueforge.test",
+          fetchImpl: fetchImpl as unknown as typeof fetch,
+        });
+        const provisioning = ensureCoworkerChannelSession({
+          store,
+          workspaceId: "ws_1",
+          channelId: "ch_lock_wait",
+          coworker: coworker!,
+          createdBy: "user_1",
+          client,
+          sql,
+        });
+
+        await new Promise<void>((resolve) => setImmediate(resolve));
+        vi.setSystemTime(new Date("2026-08-28T00:06:00.000Z"));
+        releaseBlocker();
+        await blockerRun;
+        await provisioning;
+
+        expect(reconciliationStart).toBe("2026-08-28T00:05:30.000Z");
+      } finally {
+        releaseBlocker();
+        await blockerRun;
+        vi.useRealTimers();
+        await blocker.end({ timeout: 5 });
+        await sql.end({ timeout: 5 });
+      }
     });
   }, 60_000);
 

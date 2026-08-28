@@ -479,35 +479,89 @@ export async function ensureCoworkerChannelSession(
     if (!input.sql) {
       return ensureCoworkerChannelSessionUnlocked(input);
     }
-    const markerTime = new Date().toISOString();
     const markerSessionId = stableChannelAgentSessionId(input.channelId, input.coworker.id);
-    // Commit the stable attempt identity before any external side effect. A
-    // process crash can roll back the provisioning transaction, but cannot
-    // make its generation-scoped connector undiscoverable on retry.
-    await input.sql`
-      INSERT INTO channel_agent_sessions (
-        id, workspace_id, channel_id, agent_profile_id, logical_agui_thread_id,
-        current_generation_id, last_delivered_channel_sequence, state, created_at, updated_at
-      ) VALUES (
-        ${markerSessionId}, ${input.workspaceId}, ${input.channelId}, ${input.coworker.id},
-        ${`thread_${input.channelId}_${input.coworker.id}`}, NULL, 0, 'rotating',
-        ${markerTime}, ${markerTime}
-      )
-      ON CONFLICT (channel_id, agent_profile_id) DO NOTHING
-    `;
-    return input.sql.begin(async (transaction) => {
-      await transaction`
-        SELECT pg_advisory_xact_lock(
+    const connection = await input.sql.reserve();
+    try {
+      await connection`
+        SELECT pg_advisory_lock(
           ('x' || substr(md5(${lockKey}), 1, 8))::bit(32)::int,
           ('x' || substr(md5(${lockKey}), 9, 8))::bit(32)::int
         )
       `;
-      const transactionSql = transaction as unknown as SqlClient;
-      return ensureCoworkerChannelSessionUnlocked({
-        ...input,
-        sql: transactionSql,
-        store: createTransactionSessionProvisionStore(transactionSql),
-      });
-    }) as Promise<EnsuredCoworkerChannelSession>;
+      let provisioningError: unknown;
+      let unlockError: unknown;
+      let provisioned: EnsuredCoworkerChannelSession | undefined;
+      try {
+        const markerTime = new Date().toISOString();
+        // Commit the stable marker on the reserved connection before opening
+        // the provisioning transaction. The session-level lock remains held,
+        // so its recovery window starts after any lock wait and the marker
+        // survives a process crash or transaction rollback.
+        await connection`
+          INSERT INTO channel_agent_sessions (
+            id, workspace_id, channel_id, agent_profile_id, logical_agui_thread_id,
+            current_generation_id, last_delivered_channel_sequence, state, created_at, updated_at
+          ) VALUES (
+            ${markerSessionId}, ${input.workspaceId}, ${input.channelId}, ${input.coworker.id},
+            ${`thread_${input.channelId}_${input.coworker.id}`}, NULL, 0, 'rotating',
+            ${markerTime}, ${markerTime}
+          )
+          ON CONFLICT (channel_id, agent_profile_id) DO NOTHING
+        `;
+        const transactionSql = connection as unknown as SqlClient;
+        await connection`BEGIN`;
+        try {
+          const result = await ensureCoworkerChannelSessionUnlocked({
+            ...input,
+            sql: transactionSql,
+            store: createTransactionSessionProvisionStore(transactionSql),
+          });
+          await connection`COMMIT`;
+          provisioned = result;
+        } catch (error) {
+          try {
+            await connection`ROLLBACK`;
+          } catch (rollbackError) {
+            console.error("initial session provisioning rollback failed", {
+              channelId: input.channelId,
+              coworkerId: input.coworker.id,
+              error: rollbackError instanceof Error ? rollbackError.message : String(rollbackError),
+            });
+          }
+          throw error;
+        }
+      } catch (error) {
+        provisioningError = error;
+        throw error;
+      } finally {
+        try {
+          await connection`
+            SELECT pg_advisory_unlock(
+              ('x' || substr(md5(${lockKey}), 1, 8))::bit(32)::int,
+              ('x' || substr(md5(${lockKey}), 9, 8))::bit(32)::int
+            )
+          `;
+        } catch (error) {
+          if (!provisioningError) {
+            unlockError = error;
+          } else {
+            console.error("initial session provisioning advisory unlock failed", {
+              channelId: input.channelId,
+              coworkerId: input.coworker.id,
+              error: error instanceof Error ? error.message : String(error),
+            });
+          }
+        }
+      }
+      if (unlockError) {
+        throw unlockError;
+      }
+      if (!provisioned) {
+        throw new Error("Initial session provisioning completed without a result");
+      }
+      return provisioned;
+    } finally {
+      connection.release();
+    }
   });
 }
