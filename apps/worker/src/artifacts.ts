@@ -49,11 +49,13 @@ export function createWorkerArtifactPublishAdapter(input: {
     });
     if (!recordResult.ok) {
       if (typeof storage.delete === "function") {
-        await storage.delete({
-          storageKey: stored.storageKey,
-          workspaceId: publishInput.workspaceId,
-          channelId: publishInput.channelId,
-        }).catch(() => undefined);
+        await storage
+          .delete({
+            storageKey: stored.storageKey,
+            workspaceId: publishInput.workspaceId,
+            channelId: publishInput.channelId,
+          })
+          .catch(() => undefined);
       }
       return {
         ok: false,

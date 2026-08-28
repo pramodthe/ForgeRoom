@@ -10,6 +10,7 @@
   "scripts": {
     "dev": "pnpm --filter @forgeroom/api dev",
     "dev:web": "pnpm --filter @forgeroom/web dev",
+    "dev:web:prototype": "pnpm --filter @forgeroom/web dev:prototype",
     "dev:worker": "pnpm --filter @forgeroom/worker dev",
     "lint": "eslint . && prettier --check .",
     "format": "prettier --write .",

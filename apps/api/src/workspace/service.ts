@@ -18,6 +18,10 @@ import type {
   SafeJsonObject,
   SessionResponse,
   P0PersistedAguiEvent,
+  TaskCreateCommand,
+  TaskRecordV1,
+  TaskRevision,
+  TaskUpdateCommand,
 } from "@forgeroom/contracts";
 import {
   channelPinSchema,
@@ -25,7 +29,9 @@ import {
   channelSchema,
   coworkerProfileSchema,
   isReservedCoworkerHandle,
+  taskRecordV1Schema,
 } from "@forgeroom/contracts";
+import { canTransitionTask } from "@forgeroom/domain/transitions";
 import {
   buildChannelContextEnvelope,
   envelopeDeliveredThroughSequence,
@@ -66,6 +72,7 @@ import {
   parsePinReceiptResultId,
   pinCreateTargetId,
   type AgentVersionRecord,
+  type AuditEventRecord,
   type ChannelAgentSessionState,
   type ChannelEventInsert,
   type ChannelRecord,
@@ -73,7 +80,10 @@ import {
   type CoworkerRecord,
   type ParticipantRecord,
   type PinRecord,
+  type RunProvenanceRecord,
   type TaskGrantRecord,
+  type TaskRecord,
+  type TaskRevisionRecord,
   type WorkspaceCatalogStore,
 } from "./store";
 
@@ -83,7 +93,10 @@ export type WorkspaceServiceError =
   | { code: "validation_failed"; message: string; details?: SafeJsonObject }
   | { code: "conflict"; message: string; details?: SafeJsonObject }
   | { code: "recipient_required"; message: string; details?: SafeJsonObject }
-  | { code: "recipient_unavailable"; message: string; details?: SafeJsonObject };
+  | { code: "recipient_unavailable"; message: string; details?: SafeJsonObject }
+  | { code: "stale_task_revision"; message: string; details?: SafeJsonObject }
+  | { code: "task_transition_not_allowed"; message: string; details?: SafeJsonObject }
+  | { code: "provider_unavailable"; message: string; details?: SafeJsonObject };
 
 export type WorkspaceServiceResult<T> =
   { ok: true; value: T } | { ok: false; error: WorkspaceServiceError };
@@ -154,6 +167,32 @@ function toCoworker(row: CoworkerRecord): CoworkerProfile {
     current_version_id: row.currentVersionId,
     config_revision: row.configRevision,
   });
+}
+
+function toTask(row: TaskRecord): TaskRecordV1 {
+  return taskRecordV1Schema.parse(row);
+}
+
+function taskRevisionData(task: TaskRecord): TaskRevision["data"] {
+  return {
+    schemaVersion: task.schemaVersion,
+    id: task.id,
+    workspace_id: task.workspace_id,
+    channel_id: task.channel_id,
+    title: task.title,
+    description: task.description,
+    status: task.status,
+    assignee_type: task.assignee_type,
+    assignee_id: task.assignee_id,
+    source_message_id: task.source_message_id,
+    source_run_id: task.source_run_id,
+    due_at: task.due_at,
+    current_revision: task.current_revision,
+    created_by_type: task.created_by_type,
+    created_by_id: task.created_by_id,
+    created_at: task.created_at,
+    updated_at: task.updated_at,
+  };
 }
 
 function configFromUpdate(command: CoworkerUpdateCommand): CoworkerEditableConfig {
@@ -277,6 +316,25 @@ export type WorkspaceService = {
     workspaceId: string,
   ): Promise<WorkspaceServiceResult<Channel[]>>;
   getChannel(session: SessionResponse, channelId: string): Promise<WorkspaceServiceResult<Channel>>;
+  createTask(
+    session: SessionResponse,
+    channelId: string,
+    command: TaskCreateCommand,
+  ): Promise<WorkspaceServiceResult<TaskRecordV1>>;
+  listTasks(
+    session: SessionResponse,
+    channelId: string,
+  ): Promise<WorkspaceServiceResult<TaskRecordV1[]>>;
+  getTask(session: SessionResponse, taskId: string): Promise<WorkspaceServiceResult<TaskRecordV1>>;
+  updateTask(
+    session: SessionResponse,
+    taskId: string,
+    command: TaskUpdateCommand,
+  ): Promise<WorkspaceServiceResult<TaskRecordV1>>;
+  listTaskHistory(
+    session: SessionResponse,
+    taskId: string,
+  ): Promise<WorkspaceServiceResult<TaskRevision[]>>;
   listChannelRoster(
     session: SessionResponse,
     channelId: string,
@@ -471,6 +529,8 @@ export type WorkspaceService = {
     config?: Partial<CoworkerEditableConfig>;
     toolGrants?: string[];
   }): Promise<CoworkerRecord>;
+  /** Test/fixture helper for memory-backed run provenance. */
+  seedRunProvenance(input: RunProvenanceRecord): Promise<RunProvenanceRecord>;
   resolveAgUiCoworkerContext(
     session: SessionResponse,
     channelId: string,
@@ -506,7 +566,8 @@ export function createWorkspaceService(options?: {
 
   function systemCustomEvent(
     _channelId: string,
-    type: "channel.created" | "channel.renamed" | "channel.archived",
+    type:
+      "channel.created" | "channel.renamed" | "channel.archived" | "task.created" | "task.updated",
     actorId: string,
     createdAt: string,
   ): ChannelEventInsert {
@@ -590,6 +651,70 @@ export function createWorkspaceService(options?: {
       return { ok: false, error: denied };
     }
     return { ok: true, value: coworker };
+  }
+
+  async function loadOwnedTask(
+    session: SessionResponse,
+    taskId: string,
+  ): Promise<WorkspaceServiceResult<TaskRecord>> {
+    const task = await store.getTask(taskId);
+    if (!task) {
+      return { ok: false, error: { code: "not_found", message: "Task not found." } };
+    }
+    const denied = assertWorkspace(session, task.workspace_id);
+    if (denied) return { ok: false, error: denied };
+    return { ok: true, value: task };
+  }
+
+  function taskRevision(
+    task: TaskRecord,
+    actorId: string,
+    commandId: string,
+    changedFields: string[],
+  ): TaskRevisionRecord {
+    const data = taskRevisionData(task);
+    return {
+      schemaVersion: 1,
+      id: randomOpaqueId("trev"),
+      task_id: task.id,
+      revision: task.current_revision,
+      data,
+      data_hash: `sha256:${createHash("sha256").update(JSON.stringify(data)).digest("hex")}`,
+      changed_fields: changedFields,
+      actor_type: "human",
+      actor_id: actorId,
+      command_id: commandId,
+      created_at: task.updated_at,
+    };
+  }
+
+  function taskAuditEvent(input: {
+    task: TaskRecord;
+    actorId: string;
+    action: "task.created" | "task.updated";
+    commandId: string;
+    changedFields: string[];
+  }): AuditEventRecord {
+    const payload = {
+      task_id: input.task.id,
+      revision: input.task.current_revision,
+      command_id: input.commandId,
+      changed_fields: [...input.changedFields],
+      status: input.task.status,
+    } satisfies Record<string, unknown>;
+    return {
+      id: randomOpaqueId("audit"),
+      workspaceId: input.task.workspace_id,
+      channelId: input.task.channel_id,
+      actorType: "human",
+      actorId: input.actorId,
+      action: input.action,
+      targetType: "task",
+      targetId: input.task.id,
+      redactedPayloadJson: payload,
+      payloadHash: `sha256:${createHash("sha256").update(JSON.stringify(payload)).digest("hex")}`,
+      createdAt: input.task.updated_at,
+    };
   }
 
   async function reloadIdempotentResult<T>(
@@ -738,6 +863,24 @@ export function createWorkspaceService(options?: {
           );
         }
         return result;
+      }
+      const completed = await store.completeCommandReceipt(
+        input.workspaceId,
+        input.commandKind,
+        input.idempotencyKey,
+        leaseOwner,
+        result.value,
+      );
+      if (!completed) {
+        return {
+          ok: false,
+          error: {
+            code: "conflict",
+            message:
+              "Command succeeded but idempotency receipt could not be finalized; retry with the same key.",
+            details: { reason: "idempotency_rebind_failed" },
+          },
+        };
       }
       if (input.finalizeResultId) {
         const nextResultId = input.finalizeResultId(result.value);
@@ -954,6 +1097,339 @@ export function createWorkspaceService(options?: {
         return loaded;
       }
       return { ok: true, value: toChannel(loaded.value) };
+    },
+
+    async createTask(session, channelId, command) {
+      const loaded = await loadOwnedChannel(session, channelId);
+      if (!loaded.ok) return loaded;
+      const taskId = randomOpaqueId("task");
+      return withIdempotency({
+        workspaceId: loaded.value.workspaceId,
+        commandKind: "task.create",
+        idempotencyKey: command.idempotency_key,
+        resultId: taskId,
+        reload: async (id) => {
+          const row = await store.getTask(id);
+          return row && row.channel_id === channelId ? toTask(row) : null;
+        },
+        run: async () => {
+          const channel = await loadOwnedChannel(session, channelId);
+          if (!channel.ok) return channel;
+          if (channel.value.status === "archived") {
+            return {
+              ok: false,
+              error: { code: "conflict", message: "Archived channels cannot create tasks." },
+            };
+          }
+          if (command.source_message_id) {
+            const source = await store.getMessage(command.source_message_id);
+            if (!source || source.channelId !== channelId) {
+              return {
+                ok: false,
+                error: {
+                  code: "validation_failed",
+                  message: "source_message_id must belong to this channel.",
+                },
+              };
+            }
+          }
+          if (command.source_run_id) {
+            const sourceRun = await store.getRunProvenance(command.source_run_id);
+            if (
+              !sourceRun ||
+              sourceRun.workspaceId !== channel.value.workspaceId ||
+              sourceRun.channelId !== channelId
+            ) {
+              return {
+                ok: false,
+                error: {
+                  code: "validation_failed",
+                  message: "source_run_id must belong to this workspace and channel.",
+                },
+              };
+            }
+          }
+          if (command.assignee_type === "human" && command.assignee_id !== session.user.id) {
+            return {
+              ok: false,
+              error: {
+                code: "forbidden",
+                message: "Tasks may only be assigned to the authenticated workspace owner.",
+              },
+            };
+          }
+          if (command.assignee_type === "coworker") {
+            const assignee = command.assignee_id
+              ? await store.getCoworker(command.assignee_id)
+              : null;
+            if (
+              !assignee ||
+              assignee.workspaceId !== channel.value.workspaceId ||
+              assignee.status !== "active"
+            ) {
+              return {
+                ok: false,
+                error: {
+                  code: "validation_failed",
+                  message: "assignee_id must reference an active coworker in this workspace.",
+                },
+              };
+            }
+            const participant = await store.getParticipant(channelId, "coworker", assignee.id);
+            if (!participant || participant.removedAt !== null) {
+              return {
+                ok: false,
+                error: {
+                  code: "forbidden",
+                  message: "The assignee is not a member of this channel.",
+                },
+              };
+            }
+          }
+          const createdAt = now().toISOString();
+          const task = taskRecordV1Schema.parse({
+            schemaVersion: 1,
+            id: taskId,
+            workspace_id: loaded.value.workspaceId,
+            channel_id: channelId,
+            title: command.title,
+            description: command.description,
+            status: command.status,
+            assignee_type: command.assignee_type,
+            assignee_id: command.assignee_id,
+            source_message_id: command.source_message_id,
+            source_run_id: command.source_run_id,
+            due_at: command.due_at,
+            current_revision: 1,
+            created_by_type: "human",
+            created_by_id: session.user.id,
+            created_at: createdAt,
+            updated_at: createdAt,
+          });
+          const revision = taskRevision(task, session.user.id, command.idempotency_key, [
+            "created",
+          ]);
+          const written = await store.insertTaskWithRevision({
+            task,
+            revision,
+            event: systemCustomEvent(channelId, "task.created", session.user.id, createdAt),
+            audit: taskAuditEvent({
+              task,
+              actorId: session.user.id,
+              action: "task.created",
+              commandId: command.idempotency_key,
+              changedFields: ["created"],
+            }),
+          });
+          if (!written.ok) {
+            if (written.reason === "channel_archived") {
+              return {
+                ok: false,
+                error: { code: "conflict", message: "Archived channels cannot create tasks." },
+              };
+            }
+            if (written.reason === "invalid_assignee") {
+              return {
+                ok: false,
+                error: {
+                  code: "forbidden",
+                  message: "The assignee is not a member of this channel.",
+                },
+              };
+            }
+            if (written.reason === "invalid_provenance") {
+              return {
+                ok: false,
+                error: {
+                  code: "validation_failed",
+                  message: "Task provenance must belong to this workspace and channel.",
+                },
+              };
+            }
+            return { ok: false, error: { code: "conflict", message: "Task already exists." } };
+          }
+          publish(written.event);
+          return { ok: true, value: toTask(written.task) };
+        },
+      });
+    },
+
+    async listTasks(session, channelId) {
+      const loaded = await loadOwnedChannel(session, channelId);
+      if (!loaded.ok) return loaded;
+      return { ok: true, value: (await store.listTasks(channelId)).map(toTask) };
+    },
+
+    async getTask(session, taskId) {
+      const loaded = await loadOwnedTask(session, taskId);
+      if (!loaded.ok) return loaded;
+      return { ok: true, value: toTask(loaded.value) };
+    },
+
+    async updateTask(session, taskId, command) {
+      const loaded = await loadOwnedTask(session, taskId);
+      if (!loaded.ok) return loaded;
+      const initial = loaded.value;
+      return withIdempotency({
+        workspaceId: initial.workspace_id,
+        commandKind: "task.update",
+        idempotencyKey: command.idempotency_key,
+        resultId: taskId,
+        assertReceipt: (receipt) =>
+          receipt.resultId !== taskId
+            ? { code: "conflict", message: "Idempotency key is already bound to another task." }
+            : null,
+        reload: async (id) => {
+          const row = await store.getTask(id);
+          return row && row.current_revision >= command.expected_revision ? toTask(row) : null;
+        },
+        run: async () => {
+          const current = await store.getTask(taskId);
+          if (!current || current.workspace_id !== initial.workspace_id) {
+            return { ok: false, error: { code: "not_found", message: "Task not found." } };
+          }
+          const channel = await loadOwnedChannel(session, current.channel_id);
+          if (!channel.ok) return channel;
+          if (channel.value.status === "archived") {
+            return {
+              ok: false,
+              error: { code: "conflict", message: "Archived channels cannot update tasks." },
+            };
+          }
+          if (command.status && !canTransitionTask(current.status, command.status)) {
+            return {
+              ok: false,
+              error: {
+                code: "task_transition_not_allowed",
+                message: `Task cannot transition from ${current.status} to ${command.status}.`,
+                details: { from: current.status, to: command.status },
+              },
+            };
+          }
+          if (command.assignee_type === "human" && command.assignee_id !== session.user.id) {
+            return { ok: false, error: { code: "forbidden", message: "Invalid task assignee." } };
+          }
+          if (command.assignee_type === "coworker") {
+            const assignee = command.assignee_id
+              ? await store.getCoworker(command.assignee_id)
+              : null;
+            if (
+              !assignee ||
+              assignee.workspaceId !== current.workspace_id ||
+              assignee.status !== "active"
+            ) {
+              return {
+                ok: false,
+                error: { code: "validation_failed", message: "Invalid task assignee." },
+              };
+            }
+            const participant = await store.getParticipant(
+              current.channel_id,
+              "coworker",
+              assignee.id,
+            );
+            if (!participant || participant.removedAt !== null) {
+              return {
+                ok: false,
+                error: {
+                  code: "forbidden",
+                  message: "The assignee is not a member of this channel.",
+                },
+              };
+            }
+          }
+          const changedFields = (Object.keys(command) as Array<keyof TaskUpdateCommand>).filter(
+            (key) =>
+              key !== "schemaVersion" && key !== "expected_revision" && key !== "idempotency_key",
+          );
+          const next = taskRecordV1Schema.parse({
+            ...current,
+            ...(command.title !== undefined ? { title: command.title } : {}),
+            ...(command.description !== undefined ? { description: command.description } : {}),
+            ...(command.status !== undefined ? { status: command.status } : {}),
+            ...(command.assignee_type !== undefined
+              ? { assignee_type: command.assignee_type }
+              : {}),
+            ...(command.assignee_id !== undefined ? { assignee_id: command.assignee_id } : {}),
+            ...(command.due_at !== undefined ? { due_at: command.due_at } : {}),
+            current_revision: current.current_revision + 1,
+            updated_at: now().toISOString(),
+          });
+          const revision = taskRevision(
+            next,
+            session.user.id,
+            command.idempotency_key,
+            changedFields,
+          );
+          const written = await store.updateTaskWithRevision({
+            task: next,
+            revision,
+            expectedRevision: command.expected_revision,
+            event: systemCustomEvent(
+              current.channel_id,
+              "task.updated",
+              session.user.id,
+              next.updated_at,
+            ),
+            audit: taskAuditEvent({
+              task: next,
+              actorId: session.user.id,
+              action: "task.updated",
+              commandId: command.idempotency_key,
+              changedFields,
+            }),
+          });
+          if (!written.ok) {
+            if (written.reason === "not_found")
+              return { ok: false, error: { code: "not_found", message: "Task not found." } };
+            if (written.reason === "channel_archived") {
+              return {
+                ok: false,
+                error: { code: "conflict", message: "Archived channels cannot update tasks." },
+              };
+            }
+            if (written.reason === "invalid_assignee") {
+              return {
+                ok: false,
+                error: {
+                  code: "forbidden",
+                  message: "The assignee is not a member of this channel.",
+                },
+              };
+            }
+            if (written.reason === "invalid_provenance") {
+              return {
+                ok: false,
+                error: {
+                  code: "validation_failed",
+                  message: "Task provenance must belong to this workspace and channel.",
+                },
+              };
+            }
+            return {
+              ok: false,
+              error: {
+                code: "stale_task_revision",
+                message: "Task changed concurrently; refresh and retry.",
+                details: {
+                  expected_revision: command.expected_revision,
+                  ...(written.actualRevision !== undefined
+                    ? { actual_revision: written.actualRevision }
+                    : {}),
+                },
+              },
+            };
+          }
+          publish(written.event);
+          return { ok: true, value: toTask(written.task) };
+        },
+      });
+    },
+
+    async listTaskHistory(session, taskId) {
+      const loaded = await loadOwnedTask(session, taskId);
+      if (!loaded.ok) return loaded;
+      return { ok: true, value: await store.listTaskHistory(taskId) };
     },
 
     async listChannelRoster(session, channelId) {
@@ -2524,6 +3000,18 @@ export function createWorkspaceService(options?: {
 
     async appendCoworkerAgUiEvent(input) {
       try {
+        const channel = await store.getChannel(input.channelId);
+        if (!channel) {
+          return { ok: false, error: { code: "not_found", message: "Channel not found." } };
+        }
+        // The durable Postgres run is created by orchestration. Memory-backed
+        // execution has no runs table, so register the same scope before the
+        // event is appended to make source_run_id usable in task commands.
+        await store.recordRunProvenance?.({
+          id: input.applicationRunId,
+          workspaceId: channel.workspaceId,
+          channelId: input.channelId,
+        });
         const appended = await store.appendChannelEvent({
           channelId: input.channelId,
           allowArchived: true,
@@ -3002,6 +3490,14 @@ export function createWorkspaceService(options?: {
       };
       await store.insertCoworker(coworker, version);
       return coworker;
+    },
+
+    async seedRunProvenance(input) {
+      if (!store.recordRunProvenance) {
+        throw new Error("run provenance seeding requires a memory-backed workspace store");
+      }
+      await store.recordRunProvenance(input);
+      return { ...input };
     },
 
     async cancelRunStep(session, runId, runStepId) {

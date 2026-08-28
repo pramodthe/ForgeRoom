@@ -107,8 +107,12 @@ export const githubGetAnIssuePolicy: ToolPolicyDefinition = {
   extractTarget: extractGithubIssueTarget,
   redactArguments: (args) => redactGithubIssueArguments(args, GET_ALLOWLIST),
   renderPreview: (args) =>
-    previewBase("GITHUB_GET_AN_ISSUE", "read", args, GET_ALLOWLIST, (display) =>
-      `Read GitHub issue ${display}`,
+    previewBase(
+      "GITHUB_GET_AN_ISSUE",
+      "read",
+      args,
+      GET_ALLOWLIST,
+      (display) => `Read GitHub issue ${display}`,
     ),
   verifyReceipt: (result, args) => {
     const ok = composioSuccessful(result);
@@ -210,8 +214,7 @@ export function evaluateReconciliation(
     return { matched: false, observedLabels: null };
   }
   const present = labels.includes(query.expect.label);
-  const matched =
-    query.expect.kind === "label_present" ? present : !present;
+  const matched = query.expect.kind === "label_present" ? present : !present;
   return { matched, observedLabels: labels };
 }
 

@@ -86,10 +86,7 @@ export class ToolPolicyError extends Error {
     | "policy_coverage"
     | "descriptor_hash_mismatch";
 
-  constructor(
-    code: ToolPolicyError["code"],
-    message: string,
-  ) {
+  constructor(code: ToolPolicyError["code"], message: string) {
     super(message);
     this.name = "ToolPolicyError";
     this.code = code;

@@ -50,8 +50,7 @@ import type { ApiEnv } from "../env";
 type SqlClient = ReturnType<typeof createSql>;
 
 export type ConnectionServiceResult<T> =
-  | { ok: true; value: T }
-  | { ok: false; error: { code: ErrorCode; message: string } };
+  { ok: true; value: T } | { ok: false; error: { code: ErrorCode; message: string } };
 
 export function parseConnectionTestCommand(
   input: unknown,
@@ -246,7 +245,7 @@ export function createConnectionService(options: ConnectionServiceOptions): Conn
     }
     try {
       const account = await composio.getConnectedAccountDetails();
-      if (!account.id) {
+      if (!account) {
         return {
           ok: false,
           error: {
@@ -429,7 +428,7 @@ export function createConnectionService(options: ConnectionServiceOptions): Conn
       }
       try {
         const account = await composio.getConnectedAccountDetails();
-        if (!account.id) {
+        if (!account) {
           return {
             ok: false,
             error: {
@@ -534,9 +533,7 @@ export function createConnectionService(options: ConnectionServiceOptions): Conn
 
         const link = await composio.createConnectLink({
           authConfigId: options.env.composioAuthConfigId,
-          ...(options.reconnectCallbackUrl
-            ? { callbackUrl: options.reconnectCallbackUrl }
-            : {}),
+          ...(options.reconnectCallbackUrl ? { callbackUrl: options.reconnectCallbackUrl } : {}),
         });
         const intentId = randomOpaqueId("crec");
         const binding = await persistReconnectIntent({
@@ -589,13 +586,11 @@ export function createConnectionService(options: ConnectionServiceOptions): Conn
           connectionId,
           actorUserId: session.user.id,
         });
-        const activeIntent =
-          intentStatus.kind === "active" ? intentStatus.binding : null;
-        const expiredIntent =
-          intentStatus.kind === "expired" ? intentStatus.binding : null;
+        const activeIntent = intentStatus.kind === "active" ? intentStatus.binding : null;
+        const expiredIntent = intentStatus.kind === "expired" ? intentStatus.binding : null;
 
         const account = await composio.getConnectedAccountDetails();
-        if (!account.id) {
+        if (!account) {
           return {
             ok: false,
             error: {
@@ -630,7 +625,7 @@ export function createConnectionService(options: ConnectionServiceOptions): Conn
                 activeIntent.provisionalConnectedAccountId,
               );
               if (
-                provisional.id === activeIntent.provisionalConnectedAccountId &&
+                provisional?.id === activeIntent.provisionalConnectedAccountId &&
                 provisional.status.trim().toUpperCase() === "ACTIVE" &&
                 !provisional.isDisabled
               ) {
@@ -651,11 +646,8 @@ export function createConnectionService(options: ConnectionServiceOptions): Conn
 
         // Expired reconnect must not advertise a dispatchable active connection status.
         const connectionStatus =
-          reconnectState === "expired" && gate.status === "active"
-            ? "unconfigured"
-            : gate.status;
-        const blocksDispatch =
-          reconnectState === "expired" ? true : gate.blocksDispatch;
+          reconnectState === "expired" && gate.status === "active" ? "unconfigured" : gate.status;
+        const blocksDispatch = reconnectState === "expired" ? true : gate.blocksDispatch;
         const runStepState =
           reconnectState === "expired" ? "blocked_connection" : gate.runStepState;
         const now = connectionStatus === "active" ? new Date().toISOString() : null;

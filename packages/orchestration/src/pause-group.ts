@@ -102,7 +102,9 @@ function sortKeys(value: unknown): unknown {
 
 /** Canonical hash for binding fields (arguments, targets, payloads). */
 export function hashCanonical(value: unknown): string {
-  return `sha256:${createHash("sha256").update(JSON.stringify(sortKeys(value))).digest("hex")}`;
+  return `sha256:${createHash("sha256")
+    .update(JSON.stringify(sortKeys(value)))
+    .digest("hex")}`;
 }
 
 export function mapToolRiskToProposalRisk(
@@ -298,12 +300,10 @@ export function buildPauseGroupCapturePlan(input: {
         arguments: redacted.redactedArguments,
         expectedEffect: redacted.expectedEffect,
         riskClass: redacted.riskClass,
-        ...(readSafeString(raw.thread_id) ?? readSafeString(raw.threadId) ?? persistentThreadId
+        ...((readSafeString(raw.thread_id) ?? readSafeString(raw.threadId) ?? persistentThreadId)
           ? {
               threadId:
-                readSafeString(raw.thread_id) ??
-                readSafeString(raw.threadId) ??
-                persistentThreadId,
+                readSafeString(raw.thread_id) ?? readSafeString(raw.threadId) ?? persistentThreadId,
             }
           : {}),
       };
@@ -324,25 +324,22 @@ export function buildPauseGroupCapturePlan(input: {
           argumentsHash: redacted.argumentsHash,
           targetRedacted: redacted.redactedTarget,
           targetHash: redacted.targetHash,
-          artifactRevisionHash: readSafeString(raw.artifact_revision_hash) ??
+          artifactRevisionHash:
+            readSafeString(raw.artifact_revision_hash) ??
             readSafeString(raw.artifactRevisionHash) ??
             null,
           providerIdempotencyKey:
-            readSafeString(raw.idempotency_key) ??
-            readSafeString(raw.idempotencyKey) ??
-            null,
+            readSafeString(raw.idempotency_key) ?? readSafeString(raw.idempotencyKey) ?? null,
         },
       });
       continue;
     }
 
     if (classified === "question") {
-      const prompt =
-        raw.prompt ??
+      const prompt = raw.prompt ??
         raw.question ??
         raw.message ??
-        raw.text ??
-        { prompt: "Additional input is required." };
+        raw.text ?? { prompt: "Additional input is required." };
       const promptRedacted =
         typeof prompt === "string"
           ? { prompt }
@@ -351,9 +348,7 @@ export function buildPauseGroupCapturePlan(input: {
             : { prompt: "Additional input is required." };
       const toolCallId = toolCallIdOf(raw) ?? providerActionId;
       const threadId =
-        readSafeString(raw.thread_id) ??
-        readSafeString(raw.threadId) ??
-        persistentThreadId;
+        readSafeString(raw.thread_id) ?? readSafeString(raw.threadId) ?? persistentThreadId;
       const payloadRedacted = {
         type: "question",
         prompt: promptRedacted,

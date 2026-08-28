@@ -400,11 +400,7 @@ export const approvalDecisionCommandSchema = z
     if (command.decision === "request_changes") {
       const reason = command.reason?.trim() ?? "";
       if (reason.length < 1) {
-        addRequiredIssue(
-          ctx,
-          "reason",
-          "request_changes requires a non-empty correction reason",
-        );
+        addRequiredIssue(ctx, "reason", "request_changes requires a non-empty correction reason");
       }
     }
   });

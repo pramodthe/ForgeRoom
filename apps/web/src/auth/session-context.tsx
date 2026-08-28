@@ -71,12 +71,19 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       void clearSession();
       return;
     }
-    const delay = Math.max(0, Date.parse(session.expires_at) - Date.now());
+    const expiresAt = Date.parse(session.expires_at);
+    // Browsers clamp/overflow timeouts beyond roughly 24.8 days. Wake at the maximum safe
+    // interval and re-read the session instead of accidentally expiring long-lived fixtures.
+    const delay = Math.min(2_147_000_000, Math.max(0, expiresAt - Date.now()));
     const timer = window.setTimeout(() => {
-      void clearSession();
+      if (Date.now() >= expiresAt) {
+        void clearSession();
+      } else {
+        void refreshSession();
+      }
     }, delay);
     return () => window.clearTimeout(timer);
-  }, [clearSession, sessionQuery.data]);
+  }, [clearSession, refreshSession, sessionQuery.data]);
 
   const session = liveSession(sessionQuery.data);
 

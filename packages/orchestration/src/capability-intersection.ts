@@ -121,11 +121,7 @@ export function intersectEffectiveTools(
       });
       continue;
     }
-    const enabled = intersectSets(
-      base,
-      slice.connectorAllowedTools,
-      slice.agentSpecEnabledTools,
-    );
+    const enabled = intersectSets(base, slice.connectorAllowedTools, slice.agentSpecEnabledTools);
     const approvalRequired = sortedUnique(
       (slice.approvalRequiredTools ?? []).filter((tool) => enabled.includes(tool)),
     );
@@ -217,9 +213,10 @@ export function decideSkillAttach(input: {
     return {
       ok: false,
       skillName: input.skill.skillName,
-      reason: missingTools.length > 0 || missingComponents.length > 0 || missingDataGrants.length > 0
-        ? "missing_capability"
-        : "expands_authority",
+      reason:
+        missingTools.length > 0 || missingComponents.length > 0 || missingDataGrants.length > 0
+          ? "missing_capability"
+          : "expands_authority",
       ...(missingTools.length > 0 ? { missingTools } : {}),
       ...(missingComponents.length > 0 ? { missingComponents } : {}),
       ...(missingDataGrants.length > 0 ? { missingDataGrants } : {}),

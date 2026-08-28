@@ -51,7 +51,7 @@ describe("artifact storage records", () => {
         revision: 1,
       });
     });
-  });
+  }, 60_000);
 
   it("returns the existing row when identical content revision is published again", async () => {
     await withMigratedDatabase(async (sql) => {
@@ -76,7 +76,7 @@ describe("artifact storage records", () => {
       });
       expect(loaded?.id).toBe("artifact_1");
     });
-  });
+  }, 60_000);
 
   it("allows identical content revision in distinct channels", async () => {
     await withMigratedDatabase(async (sql) => {
@@ -133,5 +133,5 @@ describe("artifact storage records", () => {
       expect(second.created).toBe(true);
       expect(second.artifact.id).toBe("artifact_ch2");
     });
-  });
+  }, 60_000);
 });

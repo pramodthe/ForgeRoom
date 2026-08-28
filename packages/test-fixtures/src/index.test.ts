@@ -188,7 +188,10 @@ describe("P0-000 provider fixtures", () => {
     const deterministicWrite = readProviderFixtureJson<{
       status: string;
       ownerTask: string;
-      approvalRequiredSet: { literalWriteTool: string; inTrueForgeRequireApprovalForTools: boolean };
+      approvalRequiredSet: {
+        literalWriteTool: string;
+        inTrueForgeRequireApprovalForTools: boolean;
+      };
       denial: { providerCalls: number; fixtureUnchanged: boolean };
       approval: { createsResumeIntent: boolean; resumeIntentCount: number };
       timeout: { proposalState: string; automaticRetry: boolean };

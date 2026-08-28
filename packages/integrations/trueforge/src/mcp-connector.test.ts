@@ -71,10 +71,7 @@ describe("registerHeaderAuthMcpServer", () => {
       fetchImpl: fetchImpl as unknown as typeof fetch,
     });
     const tools = await client.listMcpServerTools("composio_github");
-    expect(mcpToolNames(tools)).toEqual([
-      "GITHUB_GET_AN_ISSUE",
-      "GITHUB_ADD_LABELS_TO_AN_ISSUE",
-    ]);
+    expect(mcpToolNames(tools)).toEqual(["GITHUB_GET_AN_ISSUE", "GITHUB_ADD_LABELS_TO_AN_ISSUE"]);
   });
 
   it("rejects empty header maps via the standalone helper", async () => {
@@ -102,10 +99,7 @@ describe("verifyCompiledAgentSpecPolicy", () => {
     "GITHUB_ADD_LABELS_TO_AN_ISSUE",
     "GITHUB_REMOVE_A_LABEL_FROM_AN_ISSUE",
   ];
-  const approval = [
-    "GITHUB_ADD_LABELS_TO_AN_ISSUE",
-    "GITHUB_REMOVE_A_LABEL_FROM_AN_ISSUE",
-  ];
+  const approval = ["GITHUB_ADD_LABELS_TO_AN_ISSUE", "GITHUB_REMOVE_A_LABEL_FROM_AN_ISSUE"];
 
   it("accepts a compiled P0 AgentSpec matching frozen enable/approval sets", () => {
     const spec = compileP0AgentSpec({

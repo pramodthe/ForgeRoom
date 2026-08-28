@@ -45,8 +45,7 @@ function parseAssistantSandboxFiles(
     return [];
   }
   const trueforgeEventId = readString(raw.id) ?? "missing_assistant_event";
-  const sandboxId =
-    readString((parsed as { sandbox_id?: unknown }).sandbox_id) ?? activeSandboxId;
+  const sandboxId = readString((parsed as { sandbox_id?: unknown }).sandbox_id) ?? activeSandboxId;
   if (!sandboxId) {
     return [];
   }
@@ -57,11 +56,9 @@ function parseAssistantSandboxFiles(
       continue;
     }
     const row = item as Record<string, unknown>;
-    const path =
-      readString(row.path) ?? readString(row.sandbox_path) ?? readString(row.file_path);
+    const path = readString(row.path) ?? readString(row.sandbox_path) ?? readString(row.file_path);
     const mimeType = readString(row.mime_type) ?? readString(row.mimeType);
-    const declaredByteSize =
-      readNonNegativeInt(row.byte_size) ?? readNonNegativeInt(row.byteSize);
+    const declaredByteSize = readNonNegativeInt(row.byte_size) ?? readNonNegativeInt(row.byteSize);
     if (!path || !mimeType || declaredByteSize === null) {
       continue;
     }

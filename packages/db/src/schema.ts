@@ -256,6 +256,7 @@ export const workspaceCommandReceipts = pgTable("workspace_command_receipts", {
   commandKind: text("command_kind").notNull(),
   idempotencyKey: text("idempotency_key").notNull(),
   resultId: text("result_id").notNull(),
+  resultJson: jsonb("result_json"),
   createdAt: timestamptz("created_at").notNull(),
 });
 

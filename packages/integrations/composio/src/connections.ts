@@ -1,13 +1,7 @@
 import { createHash } from "node:crypto";
 import { P0_COMPOSIO_DESCRIPTOR_HASHES } from "./descriptors";
-import {
-  compareAccountHealth,
-  type ConnectedAccountHealth,
-} from "./manifest-verification";
-import {
-  P0_COMPOSIO_DIRECT_TOOLS,
-  P0_COMPOSIO_TOOLKIT,
-} from "./p0-contract";
+import { compareAccountHealth, type ConnectedAccountHealth } from "./manifest-verification";
+import { P0_COMPOSIO_DIRECT_TOOLS, P0_COMPOSIO_TOOLKIT } from "./p0-contract";
 import { P0_COMPOSIO_TRUEFORGE_CONNECTOR_NAME } from "./policy";
 import { P0_COMPOSIO_READ_TOOL, p0DemoReadArguments } from "./real-read";
 import { redactConnectedAccountId } from "./redact";
@@ -16,20 +10,10 @@ import { redactConnectedAccountId } from "./redact";
 export const P0_COMPOSIO_CONNECTION_ID = "connection_composio_github" as const;
 
 export type ConnectionStatusValue =
-  | "unconfigured"
-  | "connecting"
-  | "active"
-  | "expired"
-  | "revoked"
-  | "drifted";
+  "unconfigured" | "connecting" | "active" | "expired" | "revoked" | "drifted";
 
 export type ConnectionToolkitHealth =
-  | "healthy"
-  | "expired"
-  | "disabled"
-  | "inactive"
-  | "drifted"
-  | "unconfigured";
+  "healthy" | "expired" | "disabled" | "inactive" | "drifted" | "unconfigured";
 
 export type ConnectionActingIdentity = {
   service: string;
@@ -127,7 +111,9 @@ export function parseGrantedScopes(raw: unknown): string[] {
   }
   const record = raw as Record<string, unknown>;
   if (Array.isArray(record.requested_scopes)) {
-    return record.requested_scopes.filter((s): s is string => typeof s === "string" && s.length > 0);
+    return record.requested_scopes.filter(
+      (s): s is string => typeof s === "string" && s.length > 0,
+    );
   }
   const data = record.data;
   if (data && typeof data === "object" && !Array.isArray(data)) {
@@ -254,7 +240,9 @@ function normalizeDescriptorHash(hash: string): string {
   return trimmed.startsWith("sha256:") ? trimmed.slice("sha256:".length) : trimmed;
 }
 
-export function buildConnectionStatusView(input: BuildConnectionStatusInput): ConnectionStatusSnapshot {
+export function buildConnectionStatusView(
+  input: BuildConnectionStatusInput,
+): ConnectionStatusSnapshot {
   const connectionId = input.connectionId ?? P0_COMPOSIO_CONNECTION_ID;
   const gate = evaluatePinnedConnectionGate({
     account: input.account,
@@ -312,7 +300,9 @@ export function evaluateConnectionTest(input: SafeConnectionTestInput): Connecti
   });
   const expectedHash = `sha256:${P0_COMPOSIO_DESCRIPTOR_HASHES[P0_COMPOSIO_READ_TOOL]}`;
 
-  if (normalizeDescriptorHash(input.expectedDescriptorHash) !== normalizeDescriptorHash(expectedHash)) {
+  if (
+    normalizeDescriptorHash(input.expectedDescriptorHash) !== normalizeDescriptorHash(expectedHash)
+  ) {
     return {
       schemaVersion: 1,
       connection_id: input.connectionId,

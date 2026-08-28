@@ -1,8 +1,7 @@
 import { ArtifactStorageKeyError } from "./types";
 import { sha256Hex } from "./hash";
 
-const STORAGE_KEY_PATTERN =
-  /^ws\/[^/]+\/ch\/[^/]+\/sha\/[0-9a-f]{64}\/r[1-9][0-9]*$/i;
+const STORAGE_KEY_PATTERN = /^ws\/[^/]+\/ch\/[^/]+\/sha\/[0-9a-f]{64}\/r[1-9][0-9]*$/i;
 
 export function buildArtifactStorageKey(input: {
   workspaceId: string;
@@ -15,7 +14,10 @@ export function buildArtifactStorageKey(input: {
   }
   const hex = sha256Hex(input.sha256);
   if (!/^[0-9a-f]{64}$/i.test(hex)) {
-    throw new ArtifactStorageKeyError("invalid_storage_key", "sha256 must be a 64-character hex digest");
+    throw new ArtifactStorageKeyError(
+      "invalid_storage_key",
+      "sha256 must be a 64-character hex digest",
+    );
   }
   return `ws/${input.workspaceId}/ch/${input.channelId}/sha/${hex.toLowerCase()}/r${input.revision}`;
 }

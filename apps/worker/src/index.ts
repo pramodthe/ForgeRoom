@@ -59,8 +59,7 @@ export type WorkerDispatchResult = {
   pauseResumeClaim?: ClaimPauseGroupResumeResult;
   createOrReconcile?: CreateOrReconcileTurnResult | { ok: false; reason: "unavailable" };
   createOrReconcileResponse?:
-    | CreateOrReconcileResponseTurnResult
-    | { ok: false; reason: "unavailable" };
+    CreateOrReconcileResponseTurnResult | { ok: false; reason: "unavailable" };
   ingest?: IngestRunEventResult | { ok: false; reason: "unavailable" };
   publishSandboxArtifact?: Awaited<ReturnType<typeof executePublishSandboxArtifactCommand>>;
 };
@@ -284,7 +283,9 @@ export async function executeClaimPauseGroupResume(
     return { claim: { ok: false, reason: "missing_binding" } };
   }
 
-  const creating = await markPauseResumeCreating(options.sql, { pauseResumeId: claim.pauseResumeId });
+  const creating = await markPauseResumeCreating(options.sql, {
+    pauseResumeId: claim.pauseResumeId,
+  });
   if (!creating.ok) {
     return {
       claim: {
@@ -319,8 +320,7 @@ export async function executeClaimPauseGroupResume(
         previousTrueforgeTurnId: claim.previousTrueforgeTurnId,
         responses: loaded.plaintext.responses,
         localTrueforgeResumeTurnId: loaded.trueforgeResumeTurnId,
-        forceReconcile:
-          !loaded.trueforgeResumeTurnId || loaded.state === "uncertain",
+        forceReconcile: !loaded.trueforgeResumeTurnId || loaded.state === "uncertain",
       },
     );
   } finally {
@@ -416,7 +416,8 @@ export function startWorkerProcess(options: WorkerProcessOptions | WorkerCommand
         sql ??= createSql(resolved.databaseUrl);
         const encryptionKey = derivePausePayloadKey(
           (() => {
-            const secret = resolved.pausePayloadEncryptionSecret ??
+            const secret =
+              resolved.pausePayloadEncryptionSecret ??
               process.env.PAUSE_PAYLOAD_ENCRYPTION_SECRET?.trim() ??
               null;
             if (!secret) {
@@ -424,8 +425,7 @@ export function startWorkerProcess(options: WorkerProcessOptions | WorkerCommand
                 throw new Error("PAUSE_PAYLOAD_ENCRYPTION_SECRET is required in production");
               }
               return (
-                process.env.OWNER_PASSWORD_HASH?.trim() ||
-                "forgeroom-dev-pause-payload-secret"
+                process.env.OWNER_PASSWORD_HASH?.trim() || "forgeroom-dev-pause-payload-secret"
               );
             }
             return secret;

@@ -46,10 +46,7 @@ describe("P0-305 real read event projection", () => {
       runId: "run_1",
       agentTurnId: "turn_1",
     });
-    expect(events.map((event) => event.normalizedType)).toEqual([
-      "tool.started",
-      "tool.succeeded",
-    ]);
+    expect(events.map((event) => event.normalizedType)).toEqual(["tool.started", "tool.succeeded"]);
     const succeeded = events[1]!.payloadRedacted;
     expect(succeeded.coworker_id).toBe("cw_operator");
     expect(succeeded.tool_name).toBe("GITHUB_GET_AN_ISSUE");

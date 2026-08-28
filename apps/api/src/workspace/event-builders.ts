@@ -8,7 +8,9 @@ export type CustomSourceEventName =
   | "participant.removed"
   | "message.created"
   | "pin.created"
-  | "pin.removed";
+  | "pin.removed"
+  | "task.created"
+  | "task.updated";
 
 export function customAguiEvent(name: CustomSourceEventName): P0PersistedAguiEvent {
   if (name === "message.created") {

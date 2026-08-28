@@ -1,5 +1,8 @@
 import type { RoutingResolution } from "@forgeroom/contracts";
-import { resolveMessageRecipients, type MentionRouterCoworker } from "@forgeroom/orchestration";
+import {
+  resolveMessageRecipients,
+  type MentionRouterCoworker,
+} from "@forgeroom/orchestration/router";
 import type { ChannelRosterCoworker } from "../api/workspace-api";
 
 export type ComposerMessageCommand = {

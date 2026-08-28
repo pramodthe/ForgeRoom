@@ -1,9 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { claimTurnQueueItem, enqueueTurnQueueItem } from "./turn-queue";
-import {
-  persistPauseGroupCapture,
-  type PersistPauseGroupAction,
-} from "./pause-group";
+import { persistPauseGroupCapture, type PersistPauseGroupAction } from "./pause-group";
 import {
   atomicSwapSessionGeneration,
   beginSessionRotation,

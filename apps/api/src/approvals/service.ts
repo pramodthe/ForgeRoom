@@ -9,11 +9,7 @@ import {
   type ErrorCode,
   type SessionResponse,
 } from "@forgeroom/contracts";
-import {
-  buildApprovalCard,
-  isOwnerRole,
-  type ProposalDecisionSnapshot,
-} from "@forgeroom/domain";
+import { buildApprovalCard, isOwnerRole, type ProposalDecisionSnapshot } from "@forgeroom/domain";
 import {
   derivePausePayloadKey,
   loadApprovalProposalForCard,
@@ -26,8 +22,7 @@ import type { ApiEnv } from "../env";
 type SqlClient = ReturnType<typeof createSql>;
 
 export type ApprovalServiceResult<T> =
-  | { ok: true; value: T }
-  | { ok: false; error: { code: ErrorCode; message: string } };
+  { ok: true; value: T } | { ok: false; error: { code: ErrorCode; message: string } };
 
 function snapshotToDomain(snapshot: ApprovalProposalCardSnapshot): ProposalDecisionSnapshot {
   const acting = actingIdentitySchema.parse(snapshot.actingIdentity);
@@ -90,10 +85,7 @@ export type ApprovalService = {
   ): Promise<ApprovalServiceResult<ApprovalDecisionResult>>;
 };
 
-export function createApprovalService(options: {
-  env: ApiEnv;
-  sql: SqlClient;
-}): ApprovalService {
+export function createApprovalService(options: { env: ApiEnv; sql: SqlClient }): ApprovalService {
   const encryptionKey = derivePausePayloadKey(options.env.pausePayloadEncryptionSecret);
 
   return {

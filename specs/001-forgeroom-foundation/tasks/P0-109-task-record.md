@@ -1,7 +1,7 @@
 ---
 id: P0-109
 title: Implement the application-owned TaskRecord vertical slice
-status: ready
+status: in_progress
 owner: unassigned
 depends_on: [P0-103, P0-104, P0-107, P0-203, P0-208]
 requirements: [TR-001, TR-002, TR-003, REC-001, REC-002, REC-003, REC-004]
@@ -52,3 +52,7 @@ Run schema, transition, authorization, cross-channel, optimistic-concurrency, id
 - Outcome:
 - Open risks:
 - Follow-up tasks: P1 generic record schemas/views
+
+## Work log
+
+- 2026-08-27 — Started the TaskRecord vertical slice. Added typed store methods for memory and PostgreSQL, atomic task + revision + channel-event writes, authenticated create/list/get/update/history routes, closed transition validation, optimistic revision conflicts and idempotency handling. Added API coverage for create, list, update, stale revision and history. Remaining acceptance work includes exact coworker grant enforcement, dedicated PostgreSQL integration/concurrency fixtures and internal agent-tool exposure.

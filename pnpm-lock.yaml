@@ -111,6 +111,9 @@ importers:
       '@forgeroom/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
+      '@forgeroom/domain':
+        specifier: workspace:*
+        version: link:../../packages/domain
       '@forgeroom/orchestration':
         specifier: workspace:*
         version: link:../../packages/orchestration
