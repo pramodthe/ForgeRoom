@@ -418,6 +418,7 @@ export type WorkspaceCatalogStore = {
    */
   recordRunProvenance?(run: RunProvenanceRecord): Promise<void>;
   listAuditEvents(workspaceId: string, targetId?: string): Promise<AuditEventRecord[]>;
+  appendAuditEvent(audit: AuditEventRecord): Promise<void>;
   listTasks(channelId: string): Promise<TaskRecord[]>;
   listTaskHistory(taskId: string): Promise<TaskRevisionRecord[]>;
   insertTaskWithRevision(input: {
@@ -945,6 +946,12 @@ export function createMemoryWorkspaceStore(): WorkspaceCatalogStore {
         )
         .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
         .map((row) => structuredClone(row));
+    },
+    async appendAuditEvent(audit) {
+      if (auditEvents.has(audit.id)) {
+        throw new Error("audit event id already exists");
+      }
+      auditEvents.set(audit.id, structuredClone(audit));
     },
     async listTasks(channelId) {
       return [...tasks.values()]

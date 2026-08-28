@@ -896,6 +896,22 @@ export function mountWorkspaceRoutes(
     return okJson(c, { revisions: result.value }, 200);
   });
 
+  app.get("/api/runs/:runId/receipt", async (c) => {
+    const authed = await requireSession(c, env, auth);
+    if (authed instanceof Response) {
+      return authed;
+    }
+    const runId = requireParam(c, "runId");
+    if (runId instanceof Response) {
+      return runId;
+    }
+    const result = await workspace.getRunReceipt(authed.session, runId);
+    if (!result.ok) {
+      return fail(c, result.error);
+    }
+    return okJson(c, result.value, 200);
+  });
+
   app.post("/api/runs/:runId/cancel", async (c) => {
     const authed = await requireMutationSession(c, env, auth);
     if (authed instanceof Response) {

@@ -1,7 +1,7 @@
 ---
 id: P0-403
 title: Build live Run and activity cards
-status: ready
+status: done
 owner: unassigned
 depends_on: [P0-109, P0-203, P0-206, P0-401]
 requirements: [CH-006, RUN-005, RUN-006, TR-002, AGUI-004]

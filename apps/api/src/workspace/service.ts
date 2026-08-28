@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import type {
   AgentChannelEnvelope,
+  AuditReceipt,
   Channel,
   ChannelArchiveCommand,
   ChannelContextEnvelope,
@@ -64,6 +65,7 @@ import {
   createSql,
 } from "@forgeroom/db";
 import { randomOpaqueId } from "../auth/crypto";
+import { getRunReceiptForSession } from "../runs/receipt";
 import { customAguiEvent, messageCreatedAguiEvent, pinAguiEvent } from "./event-builders";
 import { ChannelEventPersistenceError } from "./event-guard";
 import { createChannelEventHub, type ChannelEventHub } from "./event-hub";
@@ -566,6 +568,16 @@ export type WorkspaceService = {
       run_step_id: string;
       state: "cancelling" | "cancelled";
       cancel_called: boolean;
+    }>
+  >;
+  getRunReceipt(
+    session: SessionResponse,
+    runId: string,
+  ): Promise<
+    WorkspaceServiceResult<{
+      receipt: AuditReceipt;
+      receipt_hash: string;
+      disclaimer: string;
     }>
   >;
   steerCorrection(
@@ -4140,6 +4152,10 @@ export function createWorkspaceService(options?: {
           cancel_called: cancelCalled,
         },
       };
+    },
+
+    async getRunReceipt(session, runId) {
+      return getRunReceiptForSession({ store, sql, now }, session, runId);
     },
 
     async steerCorrection(session, runId, input) {

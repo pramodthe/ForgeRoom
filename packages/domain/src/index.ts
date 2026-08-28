@@ -91,6 +91,12 @@ export {
 } from "./components/registry";
 export { componentToolName, stableNameFromComponentToolName } from "./components/tool-name";
 export {
+  auditReceiptBodyHash,
+  buildAuditReceipt,
+  type RunReceiptApprovalLink,
+  type RunReceiptSnapshot,
+} from "./audit/receipt";
+export {
   buildApprovalCard,
   evaluateApprovalDecisionGate,
   hashActingIdentity,

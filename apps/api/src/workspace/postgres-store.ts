@@ -623,6 +623,9 @@ export function createPostgresWorkspaceStore(sql: SqlClient): WorkspaceCatalogSt
         createdAt: asIso(row.created_at),
       }));
     },
+    async appendAuditEvent(audit) {
+      await insertAuditEventSql(sql, audit);
+    },
     async listTasks(channelId) {
       const rows = await db.select().from(tasks).where(eq(tasks.channelId, channelId));
       return rows.map(mapTask).sort((a, b) => a.created_at.localeCompare(b.created_at));
