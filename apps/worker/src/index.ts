@@ -16,6 +16,9 @@ import {
   markPauseResumeUncertain,
   requestRunStepStop,
   settleCancelledStep,
+  loadAgentTurnCreateContext,
+  markComponentInterruptContinued,
+  type AgentTurnCreateContext,
   type ClaimPauseGroupResumeResult,
   type ClaimTurnQueueItemResult,
   type IngestRunEventResult,
@@ -30,6 +33,10 @@ import {
   createOrReconcileTurn,
   type CreateOrReconcileTurnResult,
 } from "@forgeroom/orchestration/create-or-reconcile-turn";
+import {
+  createOrReconcileComponentContinuationTurn,
+  type CreateOrReconcileComponentContinuationTurnResult,
+} from "@forgeroom/orchestration/create-or-reconcile-component-continuation-turn";
 import {
   createOrReconcileResponseTurn,
   type CreateOrReconcileResponseTurnResult,
@@ -63,7 +70,10 @@ export type WorkerDispatchResult = {
   command: InternalWorkerCommand;
   claim?: ClaimTurnQueueItemResult;
   pauseResumeClaim?: ClaimPauseGroupResumeResult;
-  createOrReconcile?: CreateOrReconcileTurnResult | { ok: false; reason: "unavailable" };
+  createOrReconcile?:
+    | CreateOrReconcileTurnResult
+    | CreateOrReconcileComponentContinuationTurnResult
+    | { ok: false; reason: "unavailable" };
   createOrReconcileResponse?:
     CreateOrReconcileResponseTurnResult | { ok: false; reason: "unavailable" };
   ingest?: IngestRunEventResult | { ok: false; reason: "unavailable" };
@@ -87,13 +97,7 @@ export type WorkerProcessOptions = {
     | "deleteHeaderAuthMcpServer"
   >;
   pausePayloadEncryptionSecret?: string;
-  loadTurnCreateContext?: (agentTurnId: string) => Promise<{
-    applicationRunToken: string;
-    content: string;
-    previousTrueforgeTurnId: string | null;
-    localTrueforgeTurnId: string | null;
-    trueforgeSessionId: string;
-  } | null>;
+  loadTurnCreateContext?: (agentTurnId: string) => Promise<AgentTurnCreateContext | null>;
   loadArtifactDiscovery?: (
     command: PublishSandboxArtifactCommand,
   ) => Promise<SandboxArtifactPublishInput | null>;
@@ -122,7 +126,7 @@ export async function executeCreateOrReconcileTurn(
     loadContext: NonNullable<WorkerProcessOptions["loadTurnCreateContext"]>;
   },
   command: Extract<InternalWorkerCommand, { name: "create_or_reconcile_turn" }>,
-): Promise<CreateOrReconcileTurnResult> {
+): Promise<CreateOrReconcileTurnResult | CreateOrReconcileComponentContinuationTurnResult> {
   const context = await options.loadContext(command.payload.agent_turn_id);
   if (!context) {
     return { ok: false, reason: "create_failed" };
@@ -141,6 +145,51 @@ export async function executeCreateOrReconcileTurn(
     )
   `;
   try {
+    if (context.kind === "component_continuation") {
+      return await createOrReconcileComponentContinuationTurn(
+        {
+          client: options.client,
+          lockForCreate: async () =>
+            lockAgentTurnForCreate(options.sql, {
+              agentTurnId: command.payload.agent_turn_id,
+              expectedStates: ["intended", "acquiring", "creating", "uncertain"],
+            }),
+          bindTurn: async (input) => {
+            await bindTrueForgeTurnId(options.sql, {
+              agentTurnId: input.agentTurnId,
+              trueforgeTurnId: input.trueforgeTurnId,
+              previousTrueforgeTurnId: input.previousTrueforgeTurnId,
+              expectedStates: ["creating", "uncertain"],
+              nextState: "streaming",
+            });
+          },
+          markUncertain: async (input) => {
+            await markAgentTurnUncertain(options.sql, {
+              ...input,
+              expectedStates: ["intended", "acquiring", "creating", "uncertain"],
+            });
+          },
+          onContinued: async ({ interruptId, agentTurnId }) => {
+            await markComponentInterruptContinued(options.sql, { interruptId, agentTurnId });
+          },
+        },
+        {
+          agentTurnId: command.payload.agent_turn_id,
+          trueforgeSessionId: context.trueforgeSessionId,
+          applicationRunToken: context.applicationRunToken,
+          previousTrueforgeTurnId: context.previousTrueforgeTurnId,
+          response: {
+            interruptId: context.interruptId,
+            toolCallId: context.toolCallId,
+            threadId: context.threadId,
+            resultRedacted: context.resultRedacted,
+          },
+          localTrueforgeTurnId: context.localTrueforgeTurnId,
+          forceReconcile,
+        },
+      );
+    }
+
     return await createOrReconcileTurn(
       {
         client: options.client,
@@ -391,6 +440,14 @@ export function startWorkerProcess(options: WorkerProcessOptions | WorkerCommand
   const worker = startWorker({ embedded: false });
   let sql = resolved.sql;
   const canUseDb = Boolean(resolved.sql || resolved.databaseUrl);
+  const loadTurnCreateContext =
+    resolved.loadTurnCreateContext ??
+    (canUseDb
+      ? async (agentTurnId: string) => {
+          sql ??= createSql(resolved.databaseUrl);
+          return loadAgentTurnCreateContext(sql, agentTurnId);
+        }
+      : undefined);
   const trueforge =
     resolved.trueforge ??
     (canUseDb
@@ -427,12 +484,12 @@ export function startWorkerProcess(options: WorkerProcessOptions | WorkerCommand
       }
 
       if (command.name === "create_or_reconcile_turn") {
-        if (!canUseDb || !trueforge || !resolved.loadTurnCreateContext) {
+        if (!canUseDb || !trueforge || !loadTurnCreateContext) {
           return { command, createOrReconcile: { ok: false, reason: "unavailable" } };
         }
         sql ??= createSql(resolved.databaseUrl);
         const createOrReconcile = await executeCreateOrReconcileTurn(
-          { sql, client: trueforge, loadContext: resolved.loadTurnCreateContext },
+          { sql, client: trueforge, loadContext: loadTurnCreateContext },
           command,
         );
         if (createOrReconcile.ok) {

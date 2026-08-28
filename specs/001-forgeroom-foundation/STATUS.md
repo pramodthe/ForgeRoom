@@ -7,7 +7,7 @@
 | Active task | — |
 | Next task | Critical path: P0-315 tail; then P0-316, P0-318, UI wave (P0-404+) |
 | P0 blockers | Run-limit hard enforcement |
-| Last updated | 2026-08-28 |
+| Last updated | 2026-08-28 (P0-315 component continuation processor) |
 
 ## Milestones
 

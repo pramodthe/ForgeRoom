@@ -374,6 +374,9 @@ importers:
       '@forgeroom/contracts':
         specifier: workspace:*
         version: link:../contracts
+      '@forgeroom/domain':
+        specifier: workspace:*
+        version: link:../domain
       '@forgeroom/trueforge':
         specifier: workspace:*
         version: link:../integrations/trueforge

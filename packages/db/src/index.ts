@@ -69,6 +69,11 @@ export {
   aggregateRunFromStepsLocal,
   applyRunLifecycleProjection,
 } from "./multi-agent-run";
+export {
+  loadAgentTurnCreateContext,
+  markComponentInterruptContinued,
+  type AgentTurnCreateContext,
+} from "./agent-turn-create-context";
 export type {
   CreateDirectMultiAgentRunInput,
   CreateDirectMultiAgentRunResult,
