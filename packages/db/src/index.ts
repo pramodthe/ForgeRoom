@@ -182,6 +182,8 @@ export {
   loadArtifactById,
   publishArtifactRecord,
 } from "./artifact-storage";
+export { loadUiInstanceReplayBundle, toUiInstanceReplayResponse } from "./ui-instances";
+export type { UiInstanceReplayBundle } from "./ui-instances";
 export { loadSandboxArtifactDiscoveryBinding } from "./artifact-discovery-binding";
 export type { ArtifactDiscoveryBinding } from "./artifact-discovery-binding";
 export type {

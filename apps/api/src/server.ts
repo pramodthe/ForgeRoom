@@ -14,6 +14,8 @@ import { createConnectionService, type ConnectionService } from "./connections/s
 import { mountConnectionRoutes } from "./connections/routes";
 import { createArtifactServiceFromEnv, type ArtifactService } from "./artifacts/service";
 import { mountArtifactRoutes } from "./artifacts/routes";
+import { createUiInstanceService, type UiInstanceService } from "./ui-instances/service";
+import { mountUiInstanceRoutes } from "./ui-instances/routes";
 import type { createSql } from "@forgeroom/db";
 import type { TrueForgeClient } from "@forgeroom/trueforge";
 
@@ -25,6 +27,7 @@ export function createApiApp(options?: {
   approvals?: ApprovalService;
   connections?: ConnectionService;
   artifacts?: ArtifactService;
+  uiInstances?: UiInstanceService;
   trueforgeClient?: TrueForgeClient;
   sql?: ReturnType<typeof createSql>;
 }) {
@@ -56,6 +59,14 @@ export function createApiApp(options?: {
     (env && workspace
       ? createArtifactServiceFromEnv({
           env,
+          workspace,
+          ...(options?.sql ? { sql: options.sql } : {}),
+        })
+      : undefined);
+  const uiInstances =
+    options?.uiInstances ??
+    (workspace
+      ? createUiInstanceService({
           workspace,
           ...(options?.sql ? { sql: options.sql } : {}),
         })
@@ -102,6 +113,9 @@ export function createApiApp(options?: {
     }
     if (artifacts) {
       mountArtifactRoutes(app, { env, auth, artifacts });
+    }
+    if (uiInstances) {
+      mountUiInstanceRoutes(app, { env, auth, uiInstances });
     }
     mountAgUiRoutes(app, {
       env,
