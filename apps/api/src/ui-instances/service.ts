@@ -40,7 +40,11 @@ export function createUiInstanceService(options: {
       let bundle: Awaited<ReturnType<typeof loadUiInstanceReplayBundle>>;
       try {
         bundle = await loadUiInstanceReplayBundle(sql, instanceId);
-      } catch {
+      } catch (error) {
+        console.error("ui_instance_replay_load_failed", {
+          instanceId,
+          error: error instanceof Error ? error.message : "unknown database error",
+        });
         return {
           ok: false,
           error: {
