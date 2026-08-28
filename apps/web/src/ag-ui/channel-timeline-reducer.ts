@@ -25,7 +25,7 @@ export type TimelineRun = {
   runStepId: string;
   coworkerId: string;
   sequence: number;
-  status: "running" | "complete" | "needs_input" | "failed";
+  status: "running" | "complete" | "partial" | "needs_input" | "failed";
   message?: string;
   lifecycle?: RunLifecycle;
   counters?: RunActivityCounters;
@@ -74,6 +74,10 @@ export type ChannelTimelineAction =
   | { type: "reset"; channelId: string }
   | { type: "merge_messages"; messages: ChannelTimelineMessage[] }
   | { type: "event"; envelope: AgentChannelEnvelope };
+
+function isTerminalRunStatus(status: TimelineRun["status"]): boolean {
+  return status === "complete" || status === "partial" || status === "failed";
+}
 
 export function initialChannelTimelineState(channelId: string): ChannelTimelineState {
   return {
@@ -133,13 +137,29 @@ function applyRunProjection(
 ): Record<string, TimelineRun> {
   if (!envelope.runStepId || !envelope.coworkerId) return runs;
   const prior = runs[envelope.runStepId];
+  if (prior && envelope.channelSequence <= prior.sequence) return runs;
+  if (
+    prior &&
+    isTerminalRunStatus(prior.status) &&
+    (lifecycle === "queued" || lifecycle === "active")
+  ) {
+    return runs;
+  }
+  const projectedStatus =
+    lifecycle === "completed"
+      ? "complete"
+      : lifecycle === "partial"
+        ? "partial"
+        : lifecycle === "failed" || lifecycle === "cancelled"
+          ? "failed"
+          : (prior?.status ?? "running");
   return {
     ...runs,
     [envelope.runStepId]: {
       runStepId: envelope.runStepId,
       coworkerId: envelope.coworkerId,
-      sequence: prior?.sequence ?? envelope.channelSequence,
-      status: prior?.status ?? "running",
+      sequence: envelope.channelSequence,
+      status: projectedStatus,
       ...(prior?.message ? { message: prior.message } : {}),
       ...(lifecycle ? { lifecycle } : prior?.lifecycle ? { lifecycle: prior.lifecycle } : {}),
       ...(counters ? { counters } : prior?.counters ? { counters: prior.counters } : {}),
@@ -214,6 +234,13 @@ export function channelTimelineReducer(
   const runStepId = envelope.runStepId;
 
   if (event.type === "RUN_STARTED" && runStepId && envelope.coworkerId) {
+    const prior = state.runs[runStepId];
+    if (
+      prior &&
+      (envelope.channelSequence <= prior.sequence || isTerminalRunStatus(prior.status))
+    ) {
+      return { ...state, seenSequences };
+    }
     return {
       ...state,
       seenSequences,
@@ -243,6 +270,9 @@ export function channelTimelineReducer(
           ? (event.outcome.interrupts[0]?.message ?? "Human input is required.")
           : undefined;
     const prior = state.runs[runStepId];
+    if (prior && envelope.channelSequence <= prior.sequence) {
+      return { ...state, seenSequences };
+    }
     return {
       ...state,
       seenSequences,
@@ -251,7 +281,7 @@ export function channelTimelineReducer(
         [runStepId]: {
           runStepId,
           coworkerId: envelope.coworkerId,
-          sequence: prior?.sequence ?? envelope.channelSequence,
+          sequence: envelope.channelSequence,
           status: event.type === "RUN_ERROR" ? "failed" : interrupted ? "needs_input" : "complete",
           lifecycle: event.type === "RUN_ERROR" ? "failed" : interrupted ? "active" : "completed",
           ...(prior?.counters ? { counters: prior.counters } : {}),

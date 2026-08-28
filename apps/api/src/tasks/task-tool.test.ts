@@ -37,6 +37,36 @@ describe("TaskRecord internal tool", () => {
     ).toThrow();
   });
 
+  it("rejects malformed optional values instead of silently changing their meaning", () => {
+    for (const invalid of [
+      { status: "started" },
+      { description: 42 },
+      { assignee_type: "robot" },
+      { due_at: false },
+      { unexpected: true },
+    ]) {
+      expect(
+        taskRecordUpsertToolArgsSchema.safeParse({
+          channel_id: "ch_1",
+          idempotency_key: "cmd_invalid",
+          title: "Inspect",
+          ...invalid,
+        }).success,
+      ).toBe(false);
+    }
+  });
+
+  it("rejects create-only provenance fields on updates", () => {
+    const parsed = taskRecordUpsertToolArgsSchema.safeParse({
+      channel_id: "ch_1",
+      task_id: "task_1",
+      expected_revision: 1,
+      idempotency_key: "cmd_update_provenance",
+      source_run_id: "run_other",
+    });
+    expect(parsed.success).toBe(false);
+  });
+
   it("exposes a reviewed descriptor and ToolPolicyDefinition", () => {
     expect(TASK_RECORD_UPSERT_TOOL_DESCRIPTOR.name).toBe("records.task.upsert.v1");
     expect(taskRecordUpsertPolicy.toolName).toBe("records.task.upsert.v1");

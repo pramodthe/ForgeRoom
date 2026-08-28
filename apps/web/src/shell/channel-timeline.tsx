@@ -160,7 +160,10 @@ export function ChannelTimeline(props: {
 }) {
   const bottomRef = useRef<HTMLDivElement>(null);
   const coworkerById = new Map(props.roster.map((coworker) => [coworker.coworker_id, coworker]));
-  const activeRuns = Object.values(props.runs).filter((run) => run.status !== "complete");
+  const visibleRunCards = Object.values(props.runs).filter((run) => run.status !== "complete");
+  const activeRuns = visibleRunCards.filter(
+    (run) => run.status === "running" || run.status === "needs_input",
+  );
   const connectionLabel = CONNECTION_LABEL[props.connection];
   const connectionLive = props.connection === "live";
 
@@ -267,7 +270,7 @@ export function ChannelTimeline(props: {
           })
         )}
 
-        {activeRuns.map((run) => {
+        {visibleRunCards.map((run) => {
           const coworker = coworkerById.get(run.coworkerId);
           return (
             <div
@@ -275,7 +278,7 @@ export function ChannelTimeline(props: {
               className={`rounded-lg border px-3 py-2 text-sm ${
                 run.status === "failed"
                   ? "border-red-200 bg-red-50 text-red-800"
-                  : run.status === "needs_input"
+                  : run.status === "needs_input" || run.status === "partial"
                     ? "border-amber-200 bg-amber-50 text-amber-900"
                     : "border-violet-200 bg-violet-50 text-violet-900"
               }`}
@@ -283,7 +286,11 @@ export function ChannelTimeline(props: {
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
                   <span className="font-medium">{coworker?.name ?? "Coworker"}</span>{" "}
-                  {run.status === "running" ? "is working…" : run.message}
+                  {run.status === "running"
+                    ? "is working…"
+                    : run.status === "partial"
+                      ? (run.message ?? "completed partially.")
+                      : run.message}
                 </div>
                 {run.lifecycle ? (
                   <span className="rounded-full bg-white/70 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide">

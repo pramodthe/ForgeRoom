@@ -299,6 +299,47 @@ describe("channelTimelineReducer", () => {
     });
   });
 
+  it("projects terminal custom run lifecycles out of running state", () => {
+    let state = initialChannelTimelineState("channel_demo");
+    state = channelTimelineReducer(state, {
+      type: "event",
+      envelope: coworkerEnvelope(20, {
+        type: "CUSTOM",
+        name: "run.completed",
+        payload: { schemaVersion: 1, lifecycle: "completed" },
+      }),
+    });
+
+    expect(state.runs.step_coworker_research?.status).toBe("complete");
+    expect(state.runs.step_coworker_research?.lifecycle).toBe("completed");
+
+    state = channelTimelineReducer(state, {
+      type: "event",
+      envelope: coworkerEnvelope(
+        21,
+        {
+          type: "CUSTOM",
+          name: "run.partial",
+          payload: { schemaVersion: 1, lifecycle: "partial" },
+        },
+        "coworker_operator",
+      ),
+    });
+    expect(state.runs.step_coworker_operator?.status).toBe("partial");
+    expect(state.runs.step_coworker_operator?.lifecycle).toBe("partial");
+
+    state = channelTimelineReducer(state, {
+      type: "event",
+      envelope: coworkerEnvelope(19, {
+        type: "RUN_STARTED",
+        threadId: "thread_coworker_research",
+        runId: "agui_step_replayed",
+      }),
+    });
+    expect(state.runs.step_coworker_research?.status).toBe("complete");
+    expect(state.runs.step_coworker_research?.sequence).toBe(20);
+  });
+
   it("renders unsupported capability snapshots as inert activities", () => {
     let state = initialChannelTimelineState("channel_demo");
     state = channelTimelineReducer(state, {

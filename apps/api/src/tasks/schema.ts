@@ -57,11 +57,45 @@ function readString(value: unknown): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
+const TASK_TOOL_KEYS = new Set([
+  "channel_id",
+  "task_id",
+  "expected_revision",
+  "idempotency_key",
+  "title",
+  "description",
+  "status",
+  "assignee_type",
+  "assignee_id",
+  "source_message_id",
+  "source_run_id",
+  "due_at",
+]);
+
+function parseFailure(message: string) {
+  return { success: false as const, error: { issues: [{ message }] } };
+}
+
+function optionalNullableString(
+  raw: Record<string, unknown>,
+  key: string,
+): { present: false } | { present: true; value: string | null } | { error: string } {
+  if (!Object.prototype.hasOwnProperty.call(raw, key)) return { present: false };
+  const value = raw[key];
+  if (value === null) return { present: true, value: null };
+  const parsed = readString(value);
+  return parsed
+    ? { present: true, value: parsed }
+    : { error: `${key} must be a non-empty string or null` };
+}
+
 export const taskRecordUpsertToolArgsSchema = {
   safeParse(raw: unknown) {
     if (!isRecord(raw)) {
       return { success: false as const, error: { issues: [{ message: "expected object" }] } };
     }
+    const unknownKey = Object.keys(raw).find((key) => !TASK_TOOL_KEYS.has(key));
+    if (unknownKey) return parseFailure(`unknown field: ${unknownKey}`);
     const channelId = readString(raw.channel_id);
     const idempotencyKey = readString(raw.idempotency_key);
     if (!channelId || !idempotencyKey) {
@@ -71,54 +105,60 @@ export const taskRecordUpsertToolArgsSchema = {
       };
     }
 
+    const taskIdPresent = Object.prototype.hasOwnProperty.call(raw, "task_id");
     const taskId = readString(raw.task_id);
+    if (taskIdPresent && !taskId) return parseFailure("task_id must be a non-empty string");
+    const expectedRevisionPresent = Object.prototype.hasOwnProperty.call(raw, "expected_revision");
     const expectedRevision =
-      typeof raw.expected_revision === "number" && Number.isInteger(raw.expected_revision)
+      typeof raw.expected_revision === "number" &&
+      Number.isInteger(raw.expected_revision) &&
+      raw.expected_revision >= 1
         ? raw.expected_revision
         : undefined;
+    if (expectedRevisionPresent && expectedRevision === undefined) {
+      return parseFailure("expected_revision must be a positive integer");
+    }
+    const titlePresent = Object.prototype.hasOwnProperty.call(raw, "title");
+    const title = readString(raw.title);
+    if (titlePresent && !title) return parseFailure("title must be a non-empty string");
+    const description = optionalNullableString(raw, "description");
+    if ("error" in description) return parseFailure(description.error);
+    const assigneeId = optionalNullableString(raw, "assignee_id");
+    if ("error" in assigneeId) return parseFailure(assigneeId.error);
+    const sourceMessageId = optionalNullableString(raw, "source_message_id");
+    if ("error" in sourceMessageId) return parseFailure(sourceMessageId.error);
+    const sourceRunId = optionalNullableString(raw, "source_run_id");
+    if ("error" in sourceRunId) return parseFailure(sourceRunId.error);
+    const dueAt = optionalNullableString(raw, "due_at");
+    if ("error" in dueAt) return parseFailure(dueAt.error);
+    const statusPresent = Object.prototype.hasOwnProperty.call(raw, "status");
+    const parsedStatus = taskStatusSchema.safeParse(raw.status);
+    if (statusPresent && !parsedStatus.success) return parseFailure("status is invalid");
+    const assigneeTypePresent = Object.prototype.hasOwnProperty.call(raw, "assignee_type");
+    if (
+      assigneeTypePresent &&
+      raw.assignee_type !== null &&
+      raw.assignee_type !== "human" &&
+      raw.assignee_type !== "coworker"
+    ) {
+      return parseFailure("assignee_type must be human, coworker, or null");
+    }
 
     const value: TaskRecordUpsertToolArgs = {
       channel_id: channelId,
       idempotency_key: idempotencyKey,
       ...(taskId ? { task_id: taskId } : {}),
       ...(expectedRevision !== undefined ? { expected_revision: expectedRevision } : {}),
-      ...(readString(raw.title) ? { title: readString(raw.title) } : {}),
-      ...(Object.prototype.hasOwnProperty.call(raw, "description")
-        ? { description: raw.description === null ? null : (readString(raw.description) ?? null) }
+      ...(title ? { title } : {}),
+      ...(description.present ? { description: description.value } : {}),
+      ...(parsedStatus.success ? { status: parsedStatus.data } : {}),
+      ...(assigneeTypePresent
+        ? { assignee_type: raw.assignee_type as "human" | "coworker" | null }
         : {}),
-      ...(taskStatusSchema.safeParse(raw.status).success
-        ? { status: taskStatusSchema.parse(raw.status) }
-        : {}),
-      ...(Object.prototype.hasOwnProperty.call(raw, "assignee_type")
-        ? {
-            assignee_type:
-              raw.assignee_type === null
-                ? null
-                : raw.assignee_type === "human" || raw.assignee_type === "coworker"
-                  ? raw.assignee_type
-                  : undefined,
-          }
-        : {}),
-      ...(Object.prototype.hasOwnProperty.call(raw, "assignee_id")
-        ? {
-            assignee_id: raw.assignee_id === null ? null : (readString(raw.assignee_id) ?? null),
-          }
-        : {}),
-      ...(Object.prototype.hasOwnProperty.call(raw, "source_message_id")
-        ? {
-            source_message_id:
-              raw.source_message_id === null ? null : (readString(raw.source_message_id) ?? null),
-          }
-        : {}),
-      ...(Object.prototype.hasOwnProperty.call(raw, "source_run_id")
-        ? {
-            source_run_id:
-              raw.source_run_id === null ? null : (readString(raw.source_run_id) ?? null),
-          }
-        : {}),
-      ...(Object.prototype.hasOwnProperty.call(raw, "due_at")
-        ? { due_at: raw.due_at === null ? null : (readString(raw.due_at) ?? null) }
-        : {}),
+      ...(assigneeId.present ? { assignee_id: assigneeId.value } : {}),
+      ...(sourceMessageId.present ? { source_message_id: sourceMessageId.value } : {}),
+      ...(sourceRunId.present ? { source_run_id: sourceRunId.value } : {}),
+      ...(dueAt.present ? { due_at: dueAt.value } : {}),
     };
 
     if (!taskId) {
@@ -144,6 +184,10 @@ export const taskRecordUpsertToolArgsSchema = {
         };
       }
       return { success: true as const, data: value };
+    }
+
+    if (sourceMessageId.present || sourceRunId.present) {
+      return parseFailure("updates must not include source_message_id or source_run_id");
     }
 
     const updateFields: Record<string, unknown> = {
