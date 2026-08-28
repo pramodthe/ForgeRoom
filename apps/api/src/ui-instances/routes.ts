@@ -8,7 +8,12 @@ import {
 import type { AuthService } from "../auth/service";
 import type { ApiEnv } from "../env";
 import { errorResponse } from "../http";
-import { requireMutationSession, requireParam, requireSession } from "../http-guards";
+import {
+  readSessionCookie,
+  requireMutationSession,
+  requireParam,
+  requireSession,
+} from "../http-guards";
 import type { UiInstanceService } from "./service";
 
 function fail(
@@ -75,7 +80,12 @@ export function mountUiInstanceRoutes(
         message: "Invalid interaction token request.",
       });
     }
-    const result = await uiInstances.issueInteractionToken(authed.session, instanceId, parsed.data);
+    const result = await uiInstances.issueInteractionToken(
+      authed.session,
+      instanceId,
+      parsed.data,
+      readSessionCookie(c, env),
+    );
     if (!result.ok) {
       return fail(c, result.error);
     }

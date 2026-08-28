@@ -65,9 +65,10 @@ export function createApiApp(options?: {
       : undefined);
   const uiInstances =
     options?.uiInstances ??
-    (workspace
+    (workspace && auth
       ? createUiInstanceService({
           workspace,
+          auth,
           ...(options?.sql ? { sql: options.sql } : {}),
         })
       : undefined);

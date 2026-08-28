@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { sessionResponseSchema, uiInstanceReplayResponseSchema } from "@forgeroom/contracts";
+import {
+  errorEnvelopeSchema,
+  sessionResponseSchema,
+  uiInstanceReplayResponseSchema,
+} from "@forgeroom/contracts";
 import { seedRuntime, withMigratedDatabase } from "@forgeroom/db/test-harness";
 import { createMemoryAuthStore } from "../auth/store";
 import { createAuthService } from "../auth/service";
@@ -197,7 +201,8 @@ describe("ui instance routes", () => {
         body: JSON.stringify({}),
       });
       expect(invalid.status).toBe(400);
-      expect((await invalid.json()).error.code).toBe("validation_failed");
+      const failure = errorEnvelopeSchema.parse(await invalid.json());
+      expect(failure.error.code).toBe("validation_failed");
     });
   }, 60_000);
 });

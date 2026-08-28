@@ -5,7 +5,11 @@ import type {
   UiInteractionResult,
   UiInteractionTokenRequest,
 } from "@forgeroom/contracts";
-import { uiInteractionResultSchema, uiInteractionTokenResponseSchema } from "@forgeroom/contracts";
+import {
+  actionGrantSchema,
+  uiInteractionResultSchema,
+  uiInteractionTokenResponseSchema,
+} from "@forgeroom/contracts";
 import {
   commitUiInteraction,
   issueUiInteractionToken,
@@ -14,6 +18,7 @@ import {
   type createSql,
 } from "@forgeroom/db";
 import { randomOpaqueId } from "../auth/crypto";
+import type { AuthService } from "../auth/service";
 import type { WorkspaceService } from "../workspace/service";
 
 type SqlClient = ReturnType<typeof createSql>;
@@ -30,6 +35,7 @@ export type UiInstanceService = {
     session: SessionResponse,
     instanceId: string,
     request: UiInteractionTokenRequest,
+    cookieValue?: string,
   ): Promise<
     UiInstanceServiceResult<{
       request_id: string;
@@ -48,9 +54,10 @@ export type UiInstanceService = {
 
 export function createUiInstanceService(options: {
   workspace: WorkspaceService;
+  auth: AuthService;
   sql?: SqlClient;
 }): UiInstanceService {
-  const { workspace, sql } = options;
+  const { workspace, auth, sql } = options;
 
   async function authorizeInstance(session: SessionResponse, instanceId: string) {
     if (!sql) {
@@ -210,10 +217,34 @@ export function createUiInstanceService(options: {
       return { ok: true, value: { replay } };
     },
 
-    async issueInteractionToken(session, instanceId, request) {
+    async issueInteractionToken(session, instanceId, request, cookieValue) {
       const authorized = await authorizeInstance(session, instanceId);
       if (!authorized.ok) {
         return authorized;
+      }
+      const disclosedGrant = authorized.bundle.actionGrants.find(
+        (grant) => grant.id === request.actionGrantId,
+      );
+      let parsedGrant: ReturnType<typeof actionGrantSchema.safeParse> | null = null;
+      if (disclosedGrant) {
+        let grantBody: unknown = disclosedGrant.grant_body_redacted_json;
+        if (typeof grantBody === "string") {
+          try {
+            grantBody = JSON.parse(grantBody);
+          } catch {
+            grantBody = null;
+          }
+        }
+        parsedGrant = actionGrantSchema.safeParse(grantBody);
+      }
+      if (parsedGrant?.success && parsedGrant.data.requires_recent_auth) {
+        const recent = await auth.assertRecentAuth(cookieValue);
+        if (!recent.ok) {
+          return {
+            ok: false,
+            error: { code: "forbidden", message: "Recent authentication required." },
+          };
+        }
       }
       if (!sql) {
         return {

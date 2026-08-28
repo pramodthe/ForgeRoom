@@ -130,6 +130,21 @@ function isSchemaShape(schema: unknown): schema is Record<string, unknown> {
   ) {
     return false;
   }
+  for (const key of ["minLength", "maxLength", "minItems", "maxItems"]) {
+    const bound = record[key];
+    if (
+      bound !== undefined &&
+      (typeof bound !== "number" || !Number.isSafeInteger(bound) || bound < 0)
+    ) {
+      return false;
+    }
+  }
+  for (const key of ["minimum", "maximum"]) {
+    const bound = record[key];
+    if (bound !== undefined && (typeof bound !== "number" || !Number.isFinite(bound))) {
+      return false;
+    }
+  }
   if (
     record.additionalProperties !== undefined &&
     typeof record.additionalProperties !== "boolean" &&
@@ -511,7 +526,7 @@ export async function issueUiInteractionToken(
         error: { code: "ui_interaction_not_allowed", message: "ActionGrant is inactive." },
       };
     }
-    if (grant.max_uses === null || grant.use_count >= grant.max_uses) {
+    if (grant.max_uses !== null && grant.use_count >= grant.max_uses) {
       return {
         ok: false,
         error: { code: "ui_interaction_not_allowed", message: "ActionGrant usage limit reached." },
@@ -565,6 +580,7 @@ export async function commitUiInteraction(
         interaction_id: string;
         ui_instance_id: string;
         workspace_id: string;
+        channel_id: string;
         channel_status: string;
         actor_user_id: string;
         render_revision: number;
@@ -576,6 +592,16 @@ export async function commitUiInteraction(
         payload_redacted_json: unknown;
         interaction_token_hash: string | null;
         token_expires_at: string | Date | null;
+        bound_render_revision: number | null;
+        bound_manifest_hash: string | null;
+        action_ref: string | null;
+        input_schema_hash: string | null;
+        input_schema_json: unknown;
+        allowed_render_node_ids_json: unknown;
+        grant_body_redacted_json: unknown;
+        grant_policy_revision: number;
+        grant_scope_hash: string;
+        grant_issued_by: string;
         action_mode: string | null;
         action_expires_at: string | Date;
         action_revoked_at: string | Date | null;
@@ -583,6 +609,7 @@ export async function commitUiInteraction(
         action_use_count: number;
         current_render_revision: number | null;
         current_state_revision: number | null;
+        current_manifest_hash: string | null;
         status: string;
         state: string;
         result_redacted_json: unknown;
@@ -591,14 +618,30 @@ export async function commitUiInteraction(
       }[]
     >`
       SELECT
-        i.id AS interaction_id, i.ui_instance_id, ui.workspace_id, ch.status AS channel_status,
+        i.id AS interaction_id, i.ui_instance_id, ui.workspace_id, ui.channel_id,
+        ch.status AS channel_status,
         i.actor_user_id,
         i.render_revision, i.expected_state_revision, i.action_grant_id, i.render_node_id,
         i.handler_key, i.intent_name, i.payload_redacted_json, i.interaction_token_hash,
         i.token_expires_at,
+        g.bound_render_revision, g.bound_manifest_hash, g.action_ref, g.input_schema_hash,
+        g.input_schema_json, g.allowed_render_node_ids_json, g.grant_body_redacted_json,
+        g.policy_revision AS grant_policy_revision, g.grant_scope_hash,
+        g.issued_by AS grant_issued_by,
         g.action_mode, g.expires_at AS action_expires_at, g.revoked_at AS action_revoked_at,
         g.max_uses AS action_max_uses, g.use_count AS action_use_count,
-        ui.current_render_revision, ui.current_state_revision, ui.status, i.state,
+        ui.current_render_revision, ui.current_state_revision,
+        (
+          SELECT r.manifest_hash
+          FROM ui_instance_revisions AS r
+          WHERE r.ui_instance_id = ui.id
+            AND r.revision_kind = 'render'
+            AND r.revision = ui.current_render_revision
+            AND r.validation_state = 'valid'
+            AND r.promoted_at IS NOT NULL
+          LIMIT 1
+        ) AS current_manifest_hash,
+        ui.status, i.state,
         i.result_redacted_json, i.result_ref, i.expected_state_revision AS interaction_state_revision
       FROM ui_interactions AS i
       JOIN ui_instances AS ui ON ui.id = i.ui_instance_id
@@ -621,6 +664,37 @@ export async function commitUiInteraction(
     if (row.interaction_token_hash !== tokenHash) {
       return { ok: false, error: { code: "forbidden", message: "Interaction token is invalid." } };
     }
+    const parsedGrant = actionGrantSchema.safeParse(parseJson(row.grant_body_redacted_json));
+    const persistedInputSchema = safeJsonObjectSchema.safeParse(parseJson(row.input_schema_json));
+    const grantAuthorityValid =
+      parsedGrant.success &&
+      persistedInputSchema.success &&
+      parsedGrant.data.workspace_id === input.workspaceId &&
+      parsedGrant.data.channel_id === row.channel_id &&
+      parsedGrant.data.surface_id === row.ui_instance_id &&
+      parsedGrant.data.policy_revision === row.grant_policy_revision &&
+      parsedGrant.data.issued_by === row.grant_issued_by &&
+      parsedGrant.data.grant_scope_hash === row.grant_scope_hash &&
+      grantMatchesRow(parsedGrant.data, {
+        id: row.action_grant_id,
+        boundRenderRevision: row.bound_render_revision,
+        boundManifestHash: row.bound_manifest_hash,
+        actionRef: row.action_ref,
+        handlerKey: row.handler_key,
+        actionMode: row.action_mode,
+        inputSchemaHash: row.input_schema_hash,
+        allowedRenderNodeIds: row.allowed_render_node_ids_json,
+        maxUses: row.action_max_uses,
+        expiresAt: row.action_expires_at,
+        revokedAt: row.action_revoked_at,
+      }) &&
+      canonicalizeJson(parsedGrant.data.input_schema) ===
+        canonicalizeJson(persistedInputSchema.data) &&
+      row.bound_render_revision === row.render_revision &&
+      row.bound_manifest_hash === row.current_manifest_hash &&
+      parsedGrant.data.action_ref === row.intent_name &&
+      parsedGrant.data.handler_key === row.handler_key &&
+      parsedGrant.data.allowed_render_node_ids.includes(row.render_node_id);
     const prior = terminalResult({
       interaction_id: row.interaction_id,
       state: row.state,
@@ -636,10 +710,10 @@ export async function commitUiInteraction(
       row.state !== "token_issued" ||
       !row.token_expires_at ||
       new Date(row.token_expires_at).getTime() <= Date.parse(now) ||
+      !grantAuthorityValid ||
       row.action_revoked_at !== null ||
       new Date(row.action_expires_at).getTime() <= Date.parse(now) ||
-      row.action_max_uses === null ||
-      row.action_use_count >= row.action_max_uses ||
+      (row.action_max_uses !== null && row.action_use_count >= row.action_max_uses) ||
       row.status !== "ready" ||
       row.current_render_revision !== row.render_revision ||
       row.current_state_revision !== row.expected_state_revision ||
@@ -704,7 +778,7 @@ export async function commitUiInteraction(
       UPDATE ui_surface_grants
       SET use_count = use_count + 1
       WHERE id = ${row.action_grant_id}
-        AND use_count < max_uses
+        AND (max_uses IS NULL OR use_count < max_uses)
     `;
     const result = { stateRevision: nextStateRevision };
     await tx`
