@@ -269,7 +269,7 @@ describe("channel and coworker API", () => {
   });
 
   it("creates, lists, updates and replays TaskRecord revisions", async () => {
-    const { app, env } = await createTestApp();
+    const { app, env, workspaceStore } = await createTestApp();
     const { session, cookie } = await login(app, env);
     const channelRes = await app.request(`/api/workspaces/${env.workspaceId}/channels`, {
       method: "POST",
@@ -327,6 +327,21 @@ describe("channel and coworker API", () => {
       taskRecordV1Schema.parse((withoutRequestId(await updated.json()) as { task: unknown }).task),
     ).toMatchObject({ status: "in_progress", current_revision: 2 });
 
+    const replayed = await app.request(`/api/tasks/${task.id}`, {
+      method: "PATCH",
+      headers: mutationHeaders(env, cookie, session.csrf_token),
+      body: JSON.stringify({
+        schemaVersion: 1,
+        expected_revision: 1,
+        status: "in_progress",
+        idempotency_key: "idem_task_update",
+      }),
+    });
+    expect(replayed.status).toBe(200);
+    expect(
+      taskRecordV1Schema.parse((withoutRequestId(await replayed.json()) as { task: unknown }).task),
+    ).toMatchObject({ status: "in_progress", current_revision: 2 });
+
     const stale = await app.request(`/api/tasks/${task.id}`, {
       method: "PATCH",
       headers: mutationHeaders(env, cookie, session.csrf_token),
@@ -345,6 +360,9 @@ describe("channel and coworker API", () => {
     });
     expect(history.status).toBe(200);
     expect(((await history.json()) as { revisions: unknown[] }).revisions).toHaveLength(2);
+
+    const audit = await workspaceStore.listAuditEvents(env.workspaceId, task.id);
+    expect(audit.map((event) => event.action)).toEqual(["task.created", "task.updated"]);
   });
 
   it("validates membership, rejects coordinator role, and isolates grant edits", async () => {
@@ -1868,6 +1886,59 @@ describe("channel and coworker postgres integration", () => {
           AND removed_at IS NULL
       `;
       expect(rows.map((row) => row.participant_id)).toContain(coworker.id);
+
+      const taskResponse = await app.request(`/api/channels/${channel.id}/tasks`, {
+        method: "POST",
+        headers: mutationHeaders(env, cookie, session.csrf_token),
+        body: JSON.stringify({
+          schemaVersion: 1,
+          title: "DB task",
+          description: "Validate durable task writes",
+          status: "todo",
+          assignee_type: "coworker",
+          assignee_id: coworker.id,
+          source_message_id: null,
+          source_run_id: null,
+          due_at: null,
+          idempotency_key: "idem_db_task_create",
+        }),
+      });
+      expect(taskResponse.status).toBe(201);
+      const dbTask = taskRecordV1Schema.parse(
+        (withoutRequestId(await taskResponse.json()) as { task: unknown }).task,
+      );
+      const dbTaskUpdate = await app.request(`/api/tasks/${dbTask.id}`, {
+        method: "PATCH",
+        headers: mutationHeaders(env, cookie, session.csrf_token),
+        body: JSON.stringify({
+          schemaVersion: 1,
+          expected_revision: 1,
+          status: "in_progress",
+          idempotency_key: "idem_db_task_update",
+        }),
+      });
+      expect(dbTaskUpdate.status).toBe(200);
+      const dbTaskReplay = await app.request(`/api/tasks/${dbTask.id}`, {
+        method: "PATCH",
+        headers: mutationHeaders(env, cookie, session.csrf_token),
+        body: JSON.stringify({
+          schemaVersion: 1,
+          expected_revision: 1,
+          status: "in_progress",
+          idempotency_key: "idem_db_task_update",
+        }),
+      });
+      expect(dbTaskReplay.status).toBe(200);
+      expect(
+        taskRecordV1Schema.parse(
+          (withoutRequestId(await dbTaskReplay.json()) as { task: unknown }).task,
+        ),
+      ).toMatchObject({ id: dbTask.id, status: "in_progress", current_revision: 2 });
+      const taskAuditRows = await sql<{ action: string }[]>`
+        SELECT action FROM audit_events WHERE target_type = 'task' AND target_id = ${dbTask.id}
+        ORDER BY created_at ASC, id ASC
+      `;
+      expect(taskAuditRows.map((row) => row.action)).toEqual(["task.created", "task.updated"]);
 
       await app.request(`/api/channels/${channel.id}/archive`, {
         method: "POST",

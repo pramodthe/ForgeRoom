@@ -11,7 +11,6 @@ import {
   listTasks,
   updateFixtureTaskStatus,
 } from "../api/workspace-api";
-import { isFixtureMode } from "../api/mode";
 import { workspaceTaskDetailPath, workspaceTasksPath } from "../routes/paths";
 import { Avatar } from "../ui/avatar";
 import { useSession } from "../auth/session-context";
@@ -392,11 +391,6 @@ function TaskTransitionPanel({ workspaceId, task }: { workspaceId: string; task:
 
   return (
     <div className="mt-3 space-y-2">
-      {!isFixtureMode ? (
-        <p className="rounded-lg bg-zinc-100 p-3 text-[11px] text-zinc-600">
-          Task transitions are unavailable until the live Task API is connected.
-        </p>
-      ) : null}
       {mutation.error ? (
         <p className="rounded-lg bg-red-50 p-3 text-[11px] text-red-800" role="alert">
           {mutation.error.message}
@@ -407,7 +401,7 @@ function TaskTransitionPanel({ workspaceId, task }: { workspaceId: string; task:
           key={status}
           type="button"
           onClick={() => mutation.mutate(status)}
-          disabled={!isFixtureMode || mutation.isPending}
+          disabled={mutation.isPending}
           className={`${index === 0 ? "bg-zinc-950 font-semibold text-white disabled:bg-zinc-300" : "border border-zinc-200 font-medium text-zinc-700 disabled:text-zinc-400"} w-full rounded-lg px-3 py-2 text-xs disabled:cursor-not-allowed`}
         >
           {mutation.isPending && mutation.variables === status

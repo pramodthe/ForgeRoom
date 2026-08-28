@@ -101,9 +101,41 @@ export type TaskGrantRecord = {
 export type TaskRecord = TaskRecordV1;
 export type TaskRevisionRecord = TaskRevision;
 
+export type RunProvenanceRecord = {
+  id: string;
+  workspaceId: string;
+  channelId: string;
+};
+
+export type AuditEventRecord = {
+  id: string;
+  workspaceId: string;
+  channelId: string | null;
+  actorType: "human" | "coworker" | "system";
+  actorId: string;
+  action: string;
+  targetType: string;
+  targetId: string;
+  redactedPayloadJson: Record<string, unknown>;
+  payloadHash: string;
+  createdAt: string;
+};
+
+export type TaskWriteFailureReason =
+  "not_found" | "conflict" | "channel_archived" | "invalid_provenance" | "invalid_assignee";
+
 export type TaskWriteResult =
-  | { ok: true; task: TaskRecord; revision: TaskRevisionRecord; event: AppendChannelEventResult }
-  | { ok: false; reason: "not_found" | "conflict"; actualRevision?: number };
+  | {
+      ok: true;
+      task: TaskRecord;
+      revision: TaskRevisionRecord;
+      event: AppendChannelEventResult;
+    }
+  | {
+      ok: false;
+      reason: TaskWriteFailureReason;
+      actualRevision?: number;
+    };
 
 export type ChannelEventRecord = {
   id: string;
@@ -329,18 +361,22 @@ export type WorkspaceCatalogStore = {
   patchChannel(id: string, patch: ChannelPatch): Promise<ChannelRecord | null>;
 
   getTask(id: string): Promise<TaskRecord | null>;
+  getRunProvenance(id: string): Promise<RunProvenanceRecord | null>;
+  listAuditEvents(workspaceId: string, targetId?: string): Promise<AuditEventRecord[]>;
   listTasks(channelId: string): Promise<TaskRecord[]>;
   listTaskHistory(taskId: string): Promise<TaskRevisionRecord[]>;
   insertTaskWithRevision(input: {
     task: TaskRecord;
     revision: TaskRevisionRecord;
     event: ChannelEventInsert;
+    audit: AuditEventRecord;
   }): Promise<TaskWriteResult>;
   updateTaskWithRevision(input: {
     task: TaskRecord;
     revision: TaskRevisionRecord;
     expectedRevision: number;
     event: ChannelEventInsert;
+    audit: AuditEventRecord;
   }): Promise<TaskWriteResult>;
 
   listParticipants(channelId: string): Promise<ParticipantRecord[]>;
@@ -518,6 +554,14 @@ export type WorkspaceCatalogStore = {
     leaseOwner: string,
     nextResultId: string,
   ): Promise<boolean>;
+  /** Persist the exact successful command response while the lease owner holds the claim. */
+  completeCommandReceipt(
+    workspaceId: string,
+    commandKind: string,
+    idempotencyKey: string,
+    leaseOwner: string,
+    resultJson: unknown,
+  ): Promise<boolean>;
 
   /**
    * Insert channel + owner + channel.created event (sequence 0) atomically.
@@ -590,6 +634,8 @@ export function createMemoryWorkspaceStore(): WorkspaceCatalogStore {
   const pins = new Map<string, PinRecord>();
   const tasks = new Map<string, TaskRecord>();
   const taskRevisions = new Map<string, TaskRevisionRecord[]>();
+  const runs = new Map<string, RunProvenanceRecord>();
+  const auditEvents = new Map<string, AuditEventRecord>();
   const artifacts = new Map<string, SafeArtifactRecord>();
   const agentSessions = new Map<string, ChannelAgentSessionRecord>();
   const sessionRevisions = new Map<
@@ -684,6 +730,38 @@ export function createMemoryWorkspaceStore(): WorkspaceCatalogStore {
     return current.filter((id) => id !== op.channelId);
   }
 
+  function validateTaskWrite(task: TaskRecord): TaskWriteFailureReason | null {
+    const channel = channels.get(task.channel_id);
+    if (!channel || channel.workspaceId !== task.workspace_id) {
+      return "invalid_provenance";
+    }
+    if (channel.status === "archived") {
+      return "channel_archived";
+    }
+    if (task.source_run_id) {
+      const run = runs.get(task.source_run_id);
+      if (!run || run.workspaceId !== task.workspace_id || run.channelId !== task.channel_id) {
+        return "invalid_provenance";
+      }
+    }
+    if (task.assignee_type === "coworker") {
+      const coworker = task.assignee_id ? coworkers.get(task.assignee_id) : null;
+      const participant = task.assignee_id
+        ? participants.get(participantKey(task.channel_id, "coworker", task.assignee_id))
+        : null;
+      if (
+        !coworker ||
+        coworker.workspaceId !== task.workspace_id ||
+        coworker.status !== "active" ||
+        !participant ||
+        participant.removedAt !== null
+      ) {
+        return "invalid_assignee";
+      }
+    }
+    return null;
+  }
+
   function appendEventLocked(input: {
     channelId: string;
     event: ChannelEventInsert;
@@ -767,6 +845,18 @@ export function createMemoryWorkspaceStore(): WorkspaceCatalogStore {
       const row = tasks.get(id);
       return row ? structuredClone(row) : null;
     },
+    async getRunProvenance(id) {
+      const row = runs.get(id);
+      return row ? structuredClone(row) : null;
+    },
+    async listAuditEvents(workspaceId, targetId) {
+      return [...auditEvents.values()]
+        .filter(
+          (row) => row.workspaceId === workspaceId && (!targetId || row.targetId === targetId),
+        )
+        .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+        .map((row) => structuredClone(row));
+    },
     async listTasks(channelId) {
       return [...tasks.values()]
         .filter((row) => row.channel_id === channelId)
@@ -782,9 +872,12 @@ export function createMemoryWorkspaceStore(): WorkspaceCatalogStore {
     async insertTaskWithRevision(input) {
       return withChannelLock(input.task.channel_id, () => {
         if (tasks.has(input.task.id)) return { ok: false, reason: "conflict" };
+        const invalid = validateTaskWrite(input.task);
+        if (invalid) return { ok: false, reason: invalid };
         const event = appendEventLocked({ channelId: input.task.channel_id, event: input.event });
         tasks.set(input.task.id, structuredClone(input.task));
         taskRevisions.set(input.task.id, [structuredClone(input.revision)]);
+        auditEvents.set(input.audit.id, structuredClone(input.audit));
         return {
           ok: true,
           task: structuredClone(input.task),
@@ -804,12 +897,15 @@ export function createMemoryWorkspaceStore(): WorkspaceCatalogStore {
             actualRevision: current.current_revision,
           };
         }
+        const invalid = validateTaskWrite(input.task);
+        if (invalid) return { ok: false, reason: invalid };
         const event = appendEventLocked({ channelId: input.task.channel_id, event: input.event });
         tasks.set(input.task.id, structuredClone(input.task));
         taskRevisions.set(input.task.id, [
           ...(taskRevisions.get(input.task.id) ?? []),
           structuredClone(input.revision),
         ]);
+        auditEvents.set(input.audit.id, structuredClone(input.audit));
         return {
           ok: true,
           task: structuredClone(input.task),
@@ -1182,6 +1278,15 @@ export function createMemoryWorkspaceStore(): WorkspaceCatalogStore {
         return false;
       }
       receipts.set(key, { ...existing, resultId: nextResultId });
+      return true;
+    },
+    async completeCommandReceipt(workspaceId, commandKind, idempotencyKey, leaseOwner, resultJson) {
+      const key = receiptKey(workspaceId, commandKind, idempotencyKey);
+      const existing = receipts.get(key);
+      if (!existing || existing.leaseOwner !== leaseOwner) {
+        return false;
+      }
+      receipts.set(key, { ...existing, resultJson: structuredClone(resultJson) });
       return true;
     },
     async insertChannelWithOwner(channel, owner, createdEvent) {

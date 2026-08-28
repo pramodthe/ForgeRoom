@@ -25,6 +25,7 @@ import {
 } from "./event-persist";
 import type {
   AppendChannelEventResult,
+  AuditEventRecord,
   ChannelAgentSessionRecord,
   ChannelAgentSessionUpsertInput,
   ChannelEventInsert,
@@ -46,6 +47,8 @@ import type {
   TaskRecord,
   TaskRevisionRecord,
   TaskWriteResult,
+  RunProvenanceRecord,
+  TaskWriteFailureReason,
   WorkspaceCatalogStore,
 } from "./store";
 import {
@@ -221,12 +224,12 @@ function mapTask(row: typeof tasks.$inferSelect): TaskRecord {
     assignee_id: row.assigneeId,
     source_message_id: row.sourceMessageId,
     source_run_id: row.sourceRunId,
-    due_at: row.dueAt,
+    due_at: row.dueAt ? asIso(row.dueAt) : null,
     current_revision: row.currentRevision,
     created_by_type: row.createdByType as TaskRecord["created_by_type"],
     created_by_id: row.createdById,
-    created_at: row.createdAt,
-    updated_at: row.updatedAt,
+    created_at: asIso(row.createdAt),
+    updated_at: asIso(row.updatedAt),
   };
 }
 
@@ -242,8 +245,89 @@ function mapTaskRevision(row: typeof taskRevisions.$inferSelect): TaskRevisionRe
     actor_type: row.actorType as TaskRevisionRecord["actor_type"],
     actor_id: row.actorId,
     command_id: row.commandId,
-    created_at: row.createdAt,
+    created_at: asIso(row.createdAt),
   };
+}
+
+function mapRunProvenance(row: {
+  id: string;
+  workspace_id: string;
+  channel_id: string;
+}): RunProvenanceRecord {
+  return { id: row.id, workspaceId: row.workspace_id, channelId: row.channel_id };
+}
+
+async function insertAuditEventSql(tx: SqlClient, audit: AuditEventRecord): Promise<void> {
+  await tx.unsafe(
+    `INSERT INTO audit_events (
+      id, workspace_id, channel_id, actor_type, actor_id, action, target_type, target_id,
+      redacted_payload_json, payload_hash, created_at
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10, $11)`,
+    [
+      audit.id,
+      audit.workspaceId,
+      audit.channelId,
+      audit.actorType,
+      audit.actorId,
+      audit.action,
+      audit.targetType,
+      audit.targetId,
+      JSON.stringify(audit.redactedPayloadJson),
+      audit.payloadHash,
+      audit.createdAt,
+    ],
+  );
+}
+
+async function validateTaskWriteSql(
+  tx: SqlClient,
+  task: TaskRecord,
+): Promise<TaskWriteFailureReason | null> {
+  const channelRows = await tx<{ workspace_id: string; status: string }[]>`
+    SELECT workspace_id, status FROM channels WHERE id = ${task.channel_id} FOR SHARE
+  `;
+  const channel = channelRows[0];
+  if (!channel || channel.workspace_id !== task.workspace_id) {
+    return "invalid_provenance";
+  }
+  if (channel.status === "archived") {
+    return "channel_archived";
+  }
+  if (task.source_run_id) {
+    const runRows = await tx<{ channel_id: string; workspace_id: string }[]>`
+      SELECT r.channel_id, c.workspace_id
+      FROM runs AS r
+      JOIN channels AS c ON c.id = r.channel_id
+      WHERE r.id = ${task.source_run_id}
+      FOR SHARE
+    `;
+    const run = runRows[0];
+    if (!run || run.workspace_id !== task.workspace_id || run.channel_id !== task.channel_id) {
+      return "invalid_provenance";
+    }
+  }
+  if (task.assignee_type === "coworker") {
+    const coworkerRows = await tx<{ workspace_id: string; status: string }[]>`
+      SELECT workspace_id, status FROM agent_profiles WHERE id = ${task.assignee_id} FOR SHARE
+    `;
+    const coworker = coworkerRows[0];
+    if (!coworker || coworker.workspace_id !== task.workspace_id || coworker.status !== "active") {
+      return "invalid_assignee";
+    }
+    const participantRows = await tx<{ participant_id: string }[]>`
+      SELECT participant_id
+      FROM channel_participants
+      WHERE channel_id = ${task.channel_id}
+        AND participant_type = 'coworker'
+        AND participant_id = ${task.assignee_id}
+        AND removed_at IS NULL
+      FOR SHARE
+    `;
+    if (participantRows.length === 0) {
+      return "invalid_assignee";
+    }
+  }
+  return null;
 }
 
 function mapAgentSession(row: typeof channelAgentSessions.$inferSelect): ChannelAgentSessionRecord {
@@ -453,6 +537,53 @@ export function createPostgresWorkspaceStore(sql: SqlClient): WorkspaceCatalogSt
       const rows = await db.select().from(tasks).where(eq(tasks.id, id)).limit(1);
       return rows[0] ? mapTask(rows[0]) : null;
     },
+    async getRunProvenance(id) {
+      const rows = await sql<{ id: string; workspace_id: string; channel_id: string }[]>`
+        SELECT r.id, r.channel_id, c.workspace_id
+        FROM runs AS r
+        JOIN channels AS c ON c.id = r.channel_id
+        WHERE r.id = ${id}
+        LIMIT 1
+      `;
+      return rows[0] ? mapRunProvenance(rows[0]) : null;
+    },
+    async listAuditEvents(workspaceId, targetId) {
+      const rows = await sql<
+        {
+          id: string;
+          workspace_id: string;
+          channel_id: string | null;
+          actor_type: string;
+          actor_id: string;
+          action: string;
+          target_type: string;
+          target_id: string;
+          redacted_payload_json: Record<string, unknown>;
+          payload_hash: string;
+          created_at: string | Date;
+        }[]
+      >`
+        SELECT id, workspace_id, channel_id, actor_type, actor_id, action,
+               target_type, target_id, redacted_payload_json, payload_hash, created_at
+        FROM audit_events
+        WHERE workspace_id = ${workspaceId}
+          ${targetId ? sql`AND target_id = ${targetId}` : sql``}
+        ORDER BY created_at ASC, id ASC
+      `;
+      return rows.map((row) => ({
+        id: row.id,
+        workspaceId: row.workspace_id,
+        channelId: row.channel_id,
+        actorType: row.actor_type as AuditEventRecord["actorType"],
+        actorId: row.actor_id,
+        action: row.action,
+        targetType: row.target_type,
+        targetId: row.target_id,
+        redactedPayloadJson: row.redacted_payload_json,
+        payloadHash: row.payload_hash,
+        createdAt: asIso(row.created_at),
+      }));
+    },
     async listTasks(channelId) {
       const rows = await db.select().from(tasks).where(eq(tasks.channelId, channelId));
       return rows.map(mapTask).sort((a, b) => a.created_at.localeCompare(b.created_at));
@@ -462,9 +593,9 @@ export function createPostgresWorkspaceStore(sql: SqlClient): WorkspaceCatalogSt
       return rows.map(mapTaskRevision).sort((a, b) => a.revision - b.revision);
     },
     async insertTaskWithRevision(input): Promise<TaskWriteResult> {
-      let event: AppendChannelEventResult;
+      let result: AppendChannelEventResult | TaskWriteResult;
       try {
-        event = await sql.begin(async (tx) => {
+        result = await sql.begin(async (tx) => {
           const channelRows = await tx<
             {
               id: string;
@@ -482,6 +613,11 @@ export function createPostgresWorkspaceStore(sql: SqlClient): WorkspaceCatalogSt
           >`SELECT * FROM channels WHERE id = ${input.task.channel_id} FOR UPDATE`;
           const channel = channelRows[0];
           if (!channel) throw new Error("channel_not_found");
+          if (channel.status === "archived") {
+            return { ok: false, reason: "channel_archived" } satisfies TaskWriteResult;
+          }
+          const invalid = await validateTaskWriteSql(tx as unknown as SqlClient, input.task);
+          if (invalid) return { ok: false, reason: invalid } satisfies TaskWriteResult;
           await tx`
             INSERT INTO tasks (
               id, workspace_id, channel_id, title, description, status,
@@ -509,6 +645,7 @@ export function createPostgresWorkspaceStore(sql: SqlClient): WorkspaceCatalogSt
               ${input.revision.command_id}, ${input.revision.created_at}
             )
           `;
+          await insertAuditEventSql(tx as unknown as SqlClient, input.audit);
           const sequence = channel.next_sequence;
           const written = await insertDurableEventSql(
             tx as unknown as SqlClient,
@@ -550,7 +687,8 @@ export function createPostgresWorkspaceStore(sql: SqlClient): WorkspaceCatalogSt
         }
         throw error;
       }
-      return { ok: true, task: input.task, revision: input.revision, event };
+      if ("ok" in result) return result;
+      return { ok: true, task: input.task, revision: input.revision, event: result };
     },
     async updateTaskWithRevision(input): Promise<TaskWriteResult> {
       return sql.begin(async (tx) => {
@@ -579,6 +717,11 @@ export function createPostgresWorkspaceStore(sql: SqlClient): WorkspaceCatalogSt
         >`SELECT * FROM channels WHERE id = ${current.channel_id} FOR UPDATE`;
         const channel = channelRows[0];
         if (!channel) return { ok: false, reason: "not_found" };
+        if (channel.status === "archived") {
+          return { ok: false, reason: "channel_archived" };
+        }
+        const invalid = await validateTaskWriteSql(tx as unknown as SqlClient, input.task);
+        if (invalid) return { ok: false, reason: invalid };
         await tx`
           UPDATE tasks SET
             title = ${input.task.title}, description = ${input.task.description},
@@ -600,6 +743,7 @@ export function createPostgresWorkspaceStore(sql: SqlClient): WorkspaceCatalogSt
             ${input.revision.command_id}, ${input.revision.created_at}
           )
         `;
+        await insertAuditEventSql(tx as unknown as SqlClient, input.audit);
         const sequence = channel.next_sequence;
         const written = await insertDurableEventSql(
           tx as unknown as SqlClient,
@@ -1552,7 +1696,7 @@ export function createPostgresWorkspaceStore(sql: SqlClient): WorkspaceCatalogSt
         idempotencyKey: row.idempotencyKey,
         resultId: decoded.resultId,
         leaseOwner: decoded.leaseOwner,
-        resultJson: null,
+        resultJson: row.resultJson ?? null,
         createdAt: asIso(row.createdAt),
       } satisfies CommandReceipt;
     },
@@ -1615,6 +1759,18 @@ export function createPostgresWorkspaceStore(sql: SqlClient): WorkspaceCatalogSt
       const updated = await sql`
         UPDATE workspace_command_receipts
         SET result_id = ${encodeReceiptResultId(nextResultId, leaseOwner)}
+        WHERE workspace_id = ${workspaceId}
+          AND command_kind = ${commandKind}
+          AND idempotency_key = ${idempotencyKey}
+          AND result_id LIKE ${"%\u001f" + leaseOwner}
+        RETURNING result_id
+      `;
+      return updated.length > 0;
+    },
+    async completeCommandReceipt(workspaceId, commandKind, idempotencyKey, leaseOwner, resultJson) {
+      const updated = await sql`
+        UPDATE workspace_command_receipts
+        SET result_json = ${JSON.stringify(resultJson ?? null)}::jsonb
         WHERE workspace_id = ${workspaceId}
           AND command_kind = ${commandKind}
           AND idempotency_key = ${idempotencyKey}
