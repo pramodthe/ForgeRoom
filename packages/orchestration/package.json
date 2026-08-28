@@ -32,7 +32,8 @@
   "dependencies": {
     "@forgeroom/artifacts": "workspace:*",
     "@forgeroom/contracts": "workspace:*",
-    "@forgeroom/trueforge": "workspace:*"
+    "@forgeroom/trueforge": "workspace:*",
+    "@forgeroom/ui-components-mcp": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "catalog:",

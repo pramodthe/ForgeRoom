@@ -26,6 +26,7 @@ export async function startApiProcess(env: NodeJS.ProcessEnv = process.env) {
     store: workspaceStore,
     ...(trueforgeClient ? { trueforgeClient } : {}),
     ...(sql ? { sql } : {}),
+    apiEnv: config,
   });
   const app = createApiApp({
     env: config,

@@ -6,6 +6,7 @@ import {
   type CompiledSessionRevision,
   type SessionRevisionSnapshotInput,
 } from "./session-revision";
+import { buildUiComponentsMcpConnectorName } from "@forgeroom/ui-components-mcp";
 
 export type ProvisionChannelCoworkerSessionInput = SessionRevisionSnapshotInput & {
   channelAgentSessionId: string;
@@ -44,7 +45,17 @@ export async function provisionChannelCoworkerSession(
   input: ProvisionChannelCoworkerSessionInput,
 ): Promise<ProvisionedChannelCoworkerSession> {
   const createdAt = new Date().toISOString();
-  const revision = compileSessionRevision(input, createdAt);
+  const generationId = opaqueId("casg");
+  const componentToolNames = input.componentToolNames ?? [];
+  const revision = compileSessionRevision(
+    {
+      ...input,
+      ...(componentToolNames.length > 0
+        ? { uiComponentsMcpConnectorName: buildUiComponentsMcpConnectorName(generationId) }
+        : {}),
+    },
+    createdAt,
+  );
   const trueforgeSession = await client.createSession({ spec: revision.agentSpec });
   const fetched = await client.getSession(trueforgeSession.id);
   if (fetched.id !== trueforgeSession.id) {
@@ -65,7 +76,7 @@ export async function provisionChannelCoworkerSession(
     revision,
     trueforgeSession: fetched,
     generation: {
-      id: opaqueId("casg"),
+      id: generationId,
       channelAgentSessionId: input.channelAgentSessionId,
       generation: input.generation,
       agentVersionId: input.agentVersionId ?? null,

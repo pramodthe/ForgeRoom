@@ -74,6 +74,20 @@ export async function registerHeaderAuthMcpServer(
   return unwrapConfiguredMcpServer(payload);
 }
 
+/** Remove a configured header-auth MCP connector (`DELETE /api/v1/settings/mcp-servers/{name}`). */
+export async function deleteHeaderAuthMcpServer(
+  client: TrueForgeJsonRequester,
+  name: string,
+): Promise<void> {
+  if (!name.trim()) {
+    throw new Error("MCP server name is required");
+  }
+  await client.requestJson<unknown>(
+    "DELETE",
+    `/api/v1/settings/mcp-servers/${encodeURIComponent(name.trim())}`,
+  );
+}
+
 /** List tools exposed by a configured MCP connector (`GET /api/v1/mcp-servers/{name}/tools`). */
 export async function listMcpServerTools(
   client: TrueForgeJsonRequester,

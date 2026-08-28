@@ -154,6 +154,7 @@ export {
   completeSessionRotation,
   nextSessionRevisionOrdinal,
   recordMcpRotationOutcome,
+  listDrainableRetiredSessionGenerationIds,
   listCoworkerChannelSessions,
 } from "./session-rotation";
 export type {

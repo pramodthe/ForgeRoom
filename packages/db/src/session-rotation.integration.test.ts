@@ -5,6 +5,7 @@ import {
   atomicSwapSessionGeneration,
   beginSessionRotation,
   completeSessionRotation,
+  listDrainableRetiredSessionGenerationIds,
   recordMcpRotationOutcome,
 } from "./session-rotation";
 import { HASH, NOW, seedRuntime, withMigratedDatabase } from "./test-harness";
@@ -421,6 +422,49 @@ describe("session rotation", () => {
       expect(swap.staleProposalIds).toEqual([]);
       expect(swap.newGenerationId).toBe("gen_add");
       await completeSessionRotation(sql, { channelAgentSessionId: "cas_1", now: NOW });
+    });
+  }, 60_000);
+
+  it("lists retired generations only when no turn still blocks MCP teardown", async () => {
+    await withMigratedDatabase(async (sql) => {
+      await seedRuntime(sql);
+
+      await sql`
+        INSERT INTO channel_agent_session_generations (
+          id, channel_agent_session_id, generation, agent_version_id, session_revision_id,
+          trueforge_session_id, effective_spec_hash, approval_policy_hash, state, created_at, retired_at
+        ) VALUES (
+          'gen_2', 'cas_1', 2, 'av_1', 'sr_1', 'tf_sess_2', ${HASH}, ${HASH}, 'ready', ${NOW}, NULL
+        )
+      `;
+      await sql`
+        UPDATE channel_agent_sessions
+        SET current_generation_id = 'gen_2'
+        WHERE id = 'cas_1'
+      `;
+      await sql`
+        UPDATE channel_agent_session_generations
+        SET state = 'retired', retired_at = ${NOW}
+        WHERE id = 'gen_1'
+      `;
+
+      expect(await listDrainableRetiredSessionGenerationIds(sql, "cas_1")).toEqual([]);
+
+      await sql`UPDATE agent_turns SET state = 'completed', completed_at = ${NOW} WHERE id = 'turn_1'`;
+
+      expect(await listDrainableRetiredSessionGenerationIds(sql, "cas_1")).toEqual(["gen_1"]);
+
+      await sql`
+        INSERT INTO agent_turns (
+          id, run_step_id, channel_agent_session_id, session_generation_id, queue_item_id,
+          application_run_token, agui_run_id, input_type, state, started_at
+        ) VALUES (
+          'turn_uncertain', 'step_1', 'cas_1', 'gen_1', 'q_1', 'token_uncertain', 'agui_run_uncertain',
+          'normal', 'uncertain', ${NOW}
+        )
+      `;
+
+      expect(await listDrainableRetiredSessionGenerationIds(sql, "cas_1")).toEqual([]);
     });
   }, 60_000);
 });

@@ -13,6 +13,7 @@ import type {
 } from "./mcp-connector";
 import {
   listMcpServerTools as listMcpServerToolsImpl,
+  deleteHeaderAuthMcpServer as deleteHeaderAuthMcpServerImpl,
   registerHeaderAuthMcpServer as registerHeaderAuthMcpServerImpl,
 } from "./mcp-connector";
 
@@ -174,6 +175,11 @@ export class TrueForgeClient {
   /** Query connector tools for startup manifest verification. */
   async listMcpServerTools(name: string): Promise<TrueForgeMcpTool[]> {
     return listMcpServerToolsImpl(this, name);
+  }
+
+  /** Remove a configured header-auth remote MCP connector. */
+  async deleteHeaderAuthMcpServer(name: string): Promise<void> {
+    return deleteHeaderAuthMcpServerImpl(this, name);
   }
 
   async requestJson<T>(method: string, path: string, body?: unknown): Promise<T> {

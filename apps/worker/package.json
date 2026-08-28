@@ -15,7 +15,8 @@
     "@forgeroom/contracts": "workspace:*",
     "@forgeroom/db": "workspace:*",
     "@forgeroom/orchestration": "workspace:*",
-    "@forgeroom/trueforge": "workspace:*"
+    "@forgeroom/trueforge": "workspace:*",
+    "@forgeroom/ui-components-mcp": "workspace:*"
   },
   "devDependencies": {
     "esbuild": "^0.25.9",
