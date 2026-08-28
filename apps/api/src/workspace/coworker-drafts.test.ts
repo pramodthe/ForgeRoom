@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { coworkerDraftSchema, coworkerProfileSchema } from "@forgeroom/contracts";
 import { GOLDEN_RESEARCH_PROMPT } from "@forgeroom/domain";
-import { withMigratedDatabase } from "@forgeroom/db/test-harness";
+import { withMigratedDatabase, seedRuntime } from "@forgeroom/db/test-harness";
 import { loadApiEnv } from "../env";
 import { createApiApp } from "../server";
 import { createAuthService } from "../auth/service";
@@ -12,16 +12,19 @@ import { createWorkspaceService } from "./service";
 
 const PASSWORD = "correct-horse-battery";
 
-async function createTestApp(store = createMemoryWorkspaceStore()) {
+async function createTestApp(
+  store = createMemoryWorkspaceStore(),
+  options?: { workspaceId?: string; ownerUserId?: string },
+) {
   const authStore = createMemoryAuthStore();
   const env = loadApiEnv({
     NODE_ENV: "test",
     APP_ORIGIN: "http://localhost:5173",
     OWNER_EMAIL: "owner@example.test",
     OWNER_PASSWORD: PASSWORD,
-    OWNER_USER_ID: "user_owner",
+    OWNER_USER_ID: options?.ownerUserId ?? "user_owner",
     OWNER_DISPLAY_NAME: "Owner",
-    WORKSPACE_ID: "workspace_1",
+    WORKSPACE_ID: options?.workspaceId ?? "workspace_1",
     LOGIN_RATE_LIMIT_MAX: "20",
     LOGIN_RATE_LIMIT_WINDOW_MS: "60000",
     RECENT_AUTH_WINDOW_SECONDS: "300",
@@ -186,8 +189,17 @@ describe("coworker drafts API", () => {
     "persists idempotent confirm through postgres",
     async () => {
       await withMigratedDatabase(async (sql) => {
+        await seedRuntime(sql);
+        await sql`
+          UPDATE agent_profiles
+          SET handle = 'seeded_research'
+          WHERE id = 'cw_1'
+        `;
         const store = createPostgresWorkspaceStore(sql);
-        const { app, env } = await createTestApp(store);
+        const { app, env } = await createTestApp(store, {
+          workspaceId: "ws_1",
+          ownerUserId: "user_1",
+        });
         const { cookie, csrf } = await login(app, env);
         const created = await app.request(`/api/workspaces/${env.workspaceId}/coworker-drafts`, {
           method: "POST",
@@ -198,6 +210,7 @@ describe("coworker drafts API", () => {
             idempotency_key: "idem_pg_confirm_draft",
           }),
         });
+        expect(created.status).toBe(201);
         const draft = coworkerDraftSchema.parse(
           ((await created.json()) as { draft: unknown }).draft,
         );
@@ -222,7 +235,7 @@ describe("coworker drafts API", () => {
         const listed = await app.request(`/api/workspaces/${env.workspaceId}/coworkers`, {
           headers: { cookie: `${env.sessionCookieName}=${cookie}` },
         });
-        expect(((await listed.json()) as { coworkers: unknown[] }).coworkers).toHaveLength(1);
+        expect(((await listed.json()) as { coworkers: unknown[] }).coworkers).toHaveLength(2);
       });
     },
     60_000,
