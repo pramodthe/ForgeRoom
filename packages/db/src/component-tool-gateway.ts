@@ -110,6 +110,9 @@ export async function loadComponentToolGenerationContext(
     JOIN channel_agent_sessions AS cas ON cas.id = g.channel_agent_session_id
     JOIN session_revisions AS sr ON sr.id = g.session_revision_id
     WHERE g.id = ${generationId}
+      AND g.id = cas.current_generation_id
+      AND g.state = 'ready'
+      AND cas.state = 'active'
     LIMIT 1
   `;
   const row = rows[0];
@@ -249,6 +252,7 @@ export async function loadComponentOfferContext(
   const sessions = await sql<
     {
       session_id: string;
+      session_state: string;
       generation_id: string;
       generation: number;
       effective_config: Record<string, unknown>;
@@ -256,6 +260,7 @@ export async function loadComponentOfferContext(
   >`
     SELECT
       cas.id AS session_id,
+      cas.state AS session_state,
       csg.id AS generation_id,
       csg.generation,
       sr.effective_config_redacted_json AS effective_config
@@ -264,11 +269,20 @@ export async function loadComponentOfferContext(
     JOIN session_revisions AS sr ON sr.id = csg.session_revision_id
     WHERE cas.channel_id = ${input.channelId}
       AND cas.agent_profile_id = ${input.coworkerId}
-      AND cas.state = 'active'
     LIMIT 1
   `;
   const session = sessions[0];
   if (!session) {
+    return { ok: false, code: "not_found", message: "Channel coworker session not found." };
+  }
+  if (session.session_state === "rotating") {
+    return {
+      ok: false,
+      code: "session_rotating",
+      message: "Session is rotating; queue claims and component offers are blocked.",
+    };
+  }
+  if (session.session_state !== "active") {
     return { ok: false, code: "not_found", message: "Channel coworker session not found." };
   }
   if (session.generation !== input.expectedSessionGeneration) {
