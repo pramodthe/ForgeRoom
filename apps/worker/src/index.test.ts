@@ -304,11 +304,15 @@ describe("standalone worker process", () => {
         WHERE id = 'q_1'
       `;
 
-      const inputSchema = { type: "object", additionalProperties: false, properties: {} };
+      const inputSchema = {
+        type: "object",
+        additionalProperties: false,
+        properties: { selectedRowId: { type: "string" } },
+      };
       const interruptId = "intr_worker";
       const actionBody = actionGrantSchema.parse({
         schemaVersion: 1,
-        id: "ag_complete",
+        id: "ag_complete_worker",
         workspace_id: "ws_1",
         channel_id: "ch_1",
         surface_id: "ui_1",
@@ -353,29 +357,31 @@ describe("standalone worker process", () => {
             ready_at = ${NOW}, updated_at = ${NOW}
         WHERE id = 'ui_1'
       `;
-      await sql`
-        INSERT INTO ui_surface_grants (
-          id, ui_instance_id, grant_kind, policy_revision, bound_render_revision, bound_manifest_hash,
-          action_ref, handler_key, action_mode, input_schema_json, input_schema_hash,
-          allowed_render_node_ids_json, component_interrupt_id, grant_body_redacted_json, grant_scope_hash,
-          max_uses, use_count, issued_by, expires_at, created_at
-        ) VALUES (
-          'ag_complete_worker', 'ui_1', 'action', 1, 0, ${HASH}, 'submit',
-          'controlled_ui.complete_component_interrupt.v1', 'complete_component_interrupt',
-          ${JSON.stringify(inputSchema)}::jsonb, ${sha256(inputSchema)}, '["node_1"]'::jsonb,
-          ${interruptId}, ${JSON.stringify(actionBody)}::jsonb, ${HASH}, 1, 0,
-          'application_policy', ${NOW}, ${NOW}
-        )
-      `;
-      await sql`
-        INSERT INTO ui_component_interrupts (
-          id, ui_instance_id, run_id, run_step_id, agent_turn_id, logical_thread_id,
-          tool_call_id, session_generation_id, action_grant_id, input_schema_hash, state, created_at
-        ) VALUES (
-          ${interruptId}, 'ui_1', 'run_1', 'step_1', 'turn_1', 'thread_1',
-          'tc_1', 'gen_1', 'ag_complete_worker', ${sha256(inputSchema)}, 'waiting', ${NOW}
-        )
-      `;
+      await sql.begin(async (tx) => {
+        await tx`
+          INSERT INTO ui_surface_grants (
+            id, ui_instance_id, grant_kind, policy_revision, bound_render_revision, bound_manifest_hash,
+            action_ref, handler_key, action_mode, input_schema_json, input_schema_hash,
+            allowed_render_node_ids_json, component_interrupt_id, grant_body_redacted_json, grant_scope_hash,
+            max_uses, use_count, issued_by, expires_at, created_at
+          ) VALUES (
+            'ag_complete_worker', 'ui_1', 'action', 1, 0, ${HASH}, 'submit',
+            'controlled_ui.complete_component_interrupt.v1', 'complete_component_interrupt',
+            ${JSON.stringify(inputSchema)}::jsonb, ${sha256(inputSchema)}, '["node_1"]'::jsonb,
+            ${interruptId}, ${JSON.stringify(actionBody)}::jsonb, ${HASH}, 1, 0,
+            'application_policy', ${NOW}, ${NOW}
+          )
+        `;
+        await tx`
+          INSERT INTO ui_component_interrupts (
+            id, ui_instance_id, run_id, run_step_id, agent_turn_id, logical_thread_id,
+            tool_call_id, session_generation_id, action_grant_id, input_schema_hash, state, created_at
+          ) VALUES (
+            ${interruptId}, 'ui_1', 'run_1', 'step_1', 'turn_1', 'thread_1',
+            'tc_1', 'gen_1', 'ag_complete_worker', ${sha256(inputSchema)}, 'waiting', ${NOW}
+          )
+        `;
+      });
 
       const issued = await issueUiInteractionToken(sql, {
         instanceId: "ui_1",
