@@ -1,7 +1,7 @@
 ---
 id: P0-404
 title: Build approval/question UI and Run drawer
-status: blocked
+status: ready
 owner: unassigned
 depends_on: [P0-307, P0-308, P0-403]
 requirements: [AP-003, AP-004, AP-008, AP-011, RUN-004, RUN-007, GUI-010]

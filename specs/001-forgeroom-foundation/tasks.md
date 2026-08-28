@@ -49,14 +49,15 @@ Each task file is authoritative for its status and evidence. Keep this index and
 | [x] | [P0-312](./tasks/P0-312-artifact-extraction.md) | Artifact extraction and preview | done | P0-310, P0-311 |
 | [x] | [P0-313](./tasks/P0-313-audit-receipt.md) | Audit timeline and JSON receipt | done | P0-203, P0-309, P0-312, P0-315 |
 | [x] | [P0-314](./tasks/P0-314-component-registry-grants.md) | Fixed governed component registry | done | P0-102, P0-103, P0-104, P0-210 |
-| [ ] | [P0-315](./tasks/P0-315-component-tool-interaction-gateway.md) | Component/interaction gateway | in_progress | P0-201, P0-208, P0-211, P0-212, P0-314 |
-| [ ] | [P0-316](./tasks/P0-316-controlled-component-library.md) | Small controlled component library | blocked | P0-312, P0-314, P0-401 |
-| [ ] | [P0-318](./tasks/P0-318-save-run-as-skill.md) | Save successful Run as skill | blocked | P0-104, P0-106, P0-206, P0-208, P0-403 |
+| [ ] | [P0-315](./tasks/P0-315-component-tool-interaction-gateway.md) | Component/interaction gateway | in_review | P0-201, P0-208, P0-211, P0-212, P0-314 |
+| [ ] | [P0-316](./tasks/P0-316-controlled-component-library.md) | Small controlled component library | ready | P0-312, P0-314, P0-401 |
+| [ ] | [P0-317](./tasks/P0-317-data-function-time-limits.md) | Data-function time limit | ready | P0-315 |
+| [ ] | [P0-318](./tasks/P0-318-save-run-as-skill.md) | Save successful Run as skill | ready | P0-104, P0-106, P0-206, P0-208, P0-403 |
 | [x] | [P0-401](./tasks/P0-401-app-shell.md) | Authenticated three-pane shell | done | P0-102, P0-104 |
 | [x] | [P0-402](./tasks/P0-402-composer-roster.md) | Channel composer and roster | done | P0-106, P0-107, P0-205, P0-401 |
 | [x] | [P0-403](./tasks/P0-403-activity-cards.md) | Run/Task activity cards | done | P0-109, P0-203, P0-206, P0-401 |
-| [ ] | [P0-404](./tasks/P0-404-approval-run-drawer.md) | Approval/question UI and Run drawer | blocked | P0-307, P0-308, P0-403 |
-| [ ] | [P0-405](./tasks/P0-405-work-tabs.md) | Tasks, Work, Artifacts and Context | blocked | P0-108, P0-109, P0-312, P0-403 |
+| [ ] | [P0-404](./tasks/P0-404-approval-run-drawer.md) | Approval/question UI and Run drawer | ready | P0-307, P0-308, P0-403 |
+| [ ] | [P0-405](./tasks/P0-405-work-tabs.md) | Tasks, Work, Artifacts and Context | ready | P0-108, P0-109, P0-312, P0-403 |
 | [ ] | [P0-406](./tasks/P0-406-settings-screens.md) | Coworker, Skills and Connections UI | blocked | P0-106, P0-304, P0-318, P0-401 |
 | [ ] | [P0-407](./tasks/P0-407-ux-accessibility.md) | Required states and accessibility | blocked | P0-402–P0-406, P0-316, P0-410 |
 | [ ] | [P0-408](./tasks/P0-408-agui-rich-timeline.md) | AG-UI reducers and controlled rich timeline | blocked | P0-212, P0-315, P0-316, P0-403 |
@@ -78,7 +79,7 @@ P0-203 + P0-208 → P0-109 → P0-403 → P0-318 → P0-406 → P0-410
 Parallel required gates:
 P0-000 + P0-101 → P0-210 → P0-211/P0-314
 P0-301 → P0-302 → P0-303 → P0-306 → P0-307 → P0-308 → P0-309
-P0-314 → P0-208 → P0-315 → P0-313/P0-408/P0-506
+P0-314 → P0-208 → P0-315 → P0-313/P0-317/P0-408/P0-506
 P0-208 → P0-213 → P0-410/P0-501/P0-502/P0-503/P0-504
 P0-310/P0-311 → P0-312 → P0-316/P0-313
 P0-501/P0-502/P0-503/P0-504/P0-506 → P0-505

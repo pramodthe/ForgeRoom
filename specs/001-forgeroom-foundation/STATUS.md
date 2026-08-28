@@ -2,12 +2,12 @@
 
 | Field | Current value |
 | --- | --- |
-| Overall | M0 Demo contract done; M1 Foundation done; P0-109/P0-213/P0-313/P0-403 done; P0-315 in progress; P0-301–P0-312 done |
+| Overall | M0 Demo contract done; M1 Foundation done; P0-109/P0-213/P0-313/P0-403 done; P0-315 in_review; P0-301–P0-314 done |
 | Current phase | Phase 1 — Foundation / M3 tools |
-| Active task | — |
-| Next task | Critical path: P0-315 tail; then P0-316, P0-318, UI wave (P0-404+) |
-| P0 blockers | Run-limit hard enforcement |
-| Last updated | 2026-08-28 (P0-315 broker channel projection + render grants) |
+| Active task | P0-315 (in_review — awaiting reviewer sign-off) |
+| Next task | Critical path: P0-316; also ready: P0-317, P0-318, UI wave (P0-404, P0-405) |
+| P0 blockers | Run-limit hard enforcement (P0-204/OD-008 evidence); P0-210 still in_review |
+| Last updated | 2026-08-28 (P0-315 acceptance audit → in_review; P0-317 split out) |
 
 ## Milestones
 
@@ -16,7 +16,7 @@
 | M0 Demo contract | done | P0-000 done |
 | M1 Foundation | done | P0-101 through P0-108 done |
 | M2 TrueForge + AG-UI runtime and Task integration | blocked | P0-109, P0-201–P0-206, P0-208, P0-210–P0-213 done |
-| M3 Tools, approvals and UI capabilities | blocked | P0-301–P0-316 and P0-318 done |
+| M3 Tools, approvals and UI capabilities | blocked | P0-301–P0-318 done |
 | M4 Product UI | blocked | P0-401–P0-408 and P0-410 done |
 | M5 Verification | blocked | P0-501 through P0-506 done |
 
@@ -54,6 +54,22 @@ Frozen without secrets:
 Never put credentials in this file.
 
 ## Recently completed
+
+- P0-315 → `in_review` (2026-08-28). Nine of eleven open acceptance criteria verified with
+  file/line evidence: grant-intersection offers, server broker render results over MCP, one-use
+  interaction tokens, manifest render-node binding, bounded interaction scope, absent P1 endpoints,
+  grant expiry/revocation, plus the two-checkpoint authority recheck and rotation staling that
+  merged with **PR #46**. #46 also closed a Qodo action-required security finding: checkpoint 2
+  took no row locks, so a concurrent revoke/rotate could commit between the recheck and the
+  instance/grant inserts. Fixed with `FOR SHARE` on the session, version and grant rows, plus a
+  regression test that waits on `pg_stat_activity` until the broker is provably blocked. Two deferred to named tasks rather than prose — client-side prop-schema
+  validation to **P0-316** (owns the renderers), and the data-function time bound to new task
+  **P0-317** (`DataGrant` has `max_rows`/`max_bytes` but no time limit).
+- Status re-triage (2026-08-28): P0-316, P0-318, P0-404 and P0-405 were marked `blocked` while
+  every listed dependency was already `done`; corrected to `ready`.
+- Local gate run at `34bf326`: `pnpm lint`, `typecheck`, `test` (23 files, 116 passed, 1 skipped)
+  and `build` all pass. `pnpm install` was needed first — a stale `packages/domain/node_modules`
+  link made `@forgeroom/composio` unresolvable.
 
 - P0-312 artifact extraction and safe preview (TrueForge sandbox-file discovery; path/MIME/size validation; durable hash publication; authenticated preview with CSP/script disabled; image re-encode via sharp; worker `publish_sandbox_artifact` wiring).
 - P0-310 durable artifact storage (local-directory adapter; workspace/channel-scoped keys; idempotent content-addressed publish; authenticated GET/download; persistence probe; preview deferred to P0-312).
