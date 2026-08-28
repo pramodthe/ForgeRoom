@@ -2,6 +2,8 @@ import type {
   AgentChannelEnvelope,
   P0PersistedAguiEvent,
   SessionResponse,
+  TaskRecordOperation,
+  TaskStatus,
 } from "@forgeroom/contracts";
 import type { TaskRecordV1, TaskRevision } from "@forgeroom/contracts";
 import { clampEventLimit } from "./event-read";
@@ -16,7 +18,7 @@ export type CoworkerEditableConfig = {
   model_preset: string;
   budget: { max_turn_tokens: number; max_tool_calls: number };
   channel_ids: string[];
-  task_record_grants: Array<{ channel_id: string; operations: string[] }>;
+  task_record_grants: Array<{ channel_id: string; operations: TaskRecordOperation[] }>;
   tool_grants: string[];
   skill_version_ids: string[];
   component_version_ids: string[];
@@ -91,7 +93,7 @@ export type TaskGrantRecord = {
   subjectId: string;
   allowedOperationsJson: string[];
   allowedFieldsJson: string[];
-  allowedTransitionsJson: string[];
+  allowedTransitionsJson: Array<{ from: TaskStatus; to: TaskStatus }>;
   policyRevision: number;
   grantedBy: string;
   createdAt: string;

@@ -48,6 +48,17 @@ export {
   TASK_TRANSITIONS,
 } from "./transitions";
 export { isOwnerRole, isRecentAuthentication, OWNER_ROLE, type WorkspaceRole } from "./auth";
+export {
+  authorizeCoworkerTaskCreate,
+  authorizeCoworkerTaskUpdate,
+  changedTaskUpdateFields,
+  materializeTaskGrantFromOperations,
+  TASK_CREATE_FIELDS,
+  TASK_UPDATE_FIELD_NAMES,
+  type TaskGrantDenial,
+  type TaskGrantMaterial,
+  type TaskGrantRow,
+} from "./tasks/grants";
 export { canonicalizeJson } from "./components/jcs";
 export {
   assertDescriptorMatches,
@@ -78,7 +89,7 @@ export {
   listServerOnlyDefinitions,
   P0_CONTROLLED_REGISTRY,
 } from "./components/registry";
-export { componentToolName } from "./components/tool-name";
+export { componentToolName, stableNameFromComponentToolName } from "./components/tool-name";
 export {
   buildApprovalCard,
   evaluateApprovalDecisionGate,

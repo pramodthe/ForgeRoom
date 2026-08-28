@@ -50,6 +50,14 @@ export type CreateSessionInput = {
   spec: TrueForgeAgentSpec;
 };
 
+export type ListSessionsInput = {
+  limit?: number;
+  order?: "asc" | "desc";
+  pageToken?: string;
+  startTimestamp?: string;
+  endTimestamp?: string;
+};
+
 /** Explicit predecessor: never pass TrueForge `"auto"` from ForgeRoom. */
 export type PreviousTurnIdInput = "none" | string;
 

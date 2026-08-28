@@ -493,20 +493,17 @@ export async function applyComponentGrantChange(
       sessionRotations = sessions.map((row) => row.id);
     }
 
-    let auditId: string | null = null;
-    if (grant.changed) {
-      const auditResult = await appendComponentAuditEvent(tx, {
-        ...input.audit,
-        targetId: grant.grantId,
-        payload: {
-          ...input.audit.payload,
-          grant_id: grant.grantId,
-          action: grant.action,
-          session_rotations: sessionRotations,
-        },
-      });
-      auditId = auditResult.id;
-    }
+    const auditResult = await appendComponentAuditEvent(tx, {
+      ...input.audit,
+      targetId: grant.grantId,
+      payload: {
+        ...input.audit.payload,
+        grant_id: grant.grantId,
+        action: grant.action,
+        session_rotations: sessionRotations,
+      },
+    });
+    const auditId = auditResult.id;
 
     return { grant, sessionRotations, auditId };
   });

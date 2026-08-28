@@ -93,7 +93,10 @@ export type {
   ApplyComponentGrantChangeInput,
   ApplyComponentGrantChangeResult,
 } from "./component-registry";
-export { loadControlledComponentCandidates } from "./component-candidates";
+export {
+  loadControlledComponentCandidates,
+  loadCurrentSessionComponentToolNames,
+} from "./component-candidates";
 export type { ControlledComponentCandidateRow } from "./component-candidates";
 export {
   loadComponentOfferContext,
@@ -154,6 +157,8 @@ export {
   completeSessionRotation,
   nextSessionRevisionOrdinal,
   recordMcpRotationOutcome,
+  listDrainableRetiredSessionGenerationIds,
+  recordSessionGenerationMcpConnectorDeleted,
   listCoworkerChannelSessions,
 } from "./session-rotation";
 export type {

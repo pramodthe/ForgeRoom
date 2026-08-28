@@ -18,6 +18,7 @@ import { createArtifactServiceFromEnv, type ArtifactService } from "./artifacts/
 import { mountArtifactRoutes } from "./artifacts/routes";
 import { createUiInstanceService, type UiInstanceService } from "./ui-instances/service";
 import { mountUiInstanceRoutes } from "./ui-instances/routes";
+import { mountUiComponentsMcpRoutes } from "./mcp/ui-components-routes";
 import type { createSql } from "@forgeroom/db";
 import type { TrueForgeClient } from "@forgeroom/trueforge";
 
@@ -57,6 +58,10 @@ export function createApiApp(options?: {
                     sessionIds: input.sessionIds,
                     createdBy: input.createdBy,
                     reason: input.granted ? "component_grant" : "component_revoke",
+                    operationId: input.operationId,
+                    operationStartedAt: input.operationStartedAt,
+                    reconcile: input.reconcile,
+                    ...(env ? { apiEnv: env } : {}),
                   });
                 },
               }
@@ -146,6 +151,9 @@ export function createApiApp(options?: {
       ...(options?.trueforgeClient ? { trueforgeClient: options.trueforgeClient } : {}),
       ...(options?.sql ? { sql: options.sql } : {}),
     });
+    if (options?.sql) {
+      mountUiComponentsMcpRoutes(app, { env, sql: options.sql });
+    }
   }
 
   return app;

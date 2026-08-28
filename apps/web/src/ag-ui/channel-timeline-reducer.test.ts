@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import {
   channelTimelineReducer,
   initialChannelTimelineState,
+  orderedTimelineItems,
   orderedTimelineMessages,
 } from "./channel-timeline-reducer";
 
@@ -254,5 +255,109 @@ describe("channelTimelineReducer", () => {
 
     expect(orderedTimelineMessages(compactedState)).toEqual(orderedTimelineMessages(fullState));
     expect(compactedState.runs).toEqual(fullState.runs);
+  });
+
+  it("records custom task events and forge room activities in timeline order", () => {
+    let state = initialChannelTimelineState("channel_demo");
+    state = channelTimelineReducer(state, {
+      type: "event",
+      envelope: {
+        schemaVersion: 1,
+        channelId: "channel_demo",
+        channelSequence: 10,
+        actorKind: "system",
+        aguiEvent: {
+          type: "CUSTOM",
+          name: "task.created",
+          payload: { schemaVersion: 1 },
+        },
+      },
+    });
+    state = channelTimelineReducer(state, {
+      type: "event",
+      envelope: coworkerEnvelope(11, {
+        type: "ACTIVITY_SNAPSHOT",
+        messageId: "act_task_1",
+        activityType: "forgeroom.task_record.v1",
+        replace: true,
+        content: {
+          schemaVersion: 1,
+          activityRevision: 1,
+          activityType: "forgeroom.task_record.v1",
+          taskId: "task_1",
+          revision: 1,
+          status: "todo",
+          title: "Inspect connector",
+        },
+      }),
+    });
+
+    const items = orderedTimelineItems(state);
+    expect(items.map((item) => item.kind)).toEqual(["custom", "activity"]);
+    expect(state.activityState.activities.act_task_1?.content).toMatchObject({
+      title: "Inspect connector",
+    });
+  });
+
+  it("projects terminal custom run lifecycles out of running state", () => {
+    let state = initialChannelTimelineState("channel_demo");
+    state = channelTimelineReducer(state, {
+      type: "event",
+      envelope: coworkerEnvelope(20, {
+        type: "CUSTOM",
+        name: "run.completed",
+        payload: { schemaVersion: 1, lifecycle: "completed" },
+      }),
+    });
+
+    expect(state.runs.step_coworker_research?.status).toBe("complete");
+    expect(state.runs.step_coworker_research?.lifecycle).toBe("completed");
+
+    state = channelTimelineReducer(state, {
+      type: "event",
+      envelope: coworkerEnvelope(
+        21,
+        {
+          type: "CUSTOM",
+          name: "run.partial",
+          payload: { schemaVersion: 1, lifecycle: "partial" },
+        },
+        "coworker_operator",
+      ),
+    });
+    expect(state.runs.step_coworker_operator?.status).toBe("partial");
+    expect(state.runs.step_coworker_operator?.lifecycle).toBe("partial");
+
+    state = channelTimelineReducer(state, {
+      type: "event",
+      envelope: coworkerEnvelope(19, {
+        type: "RUN_STARTED",
+        threadId: "thread_coworker_research",
+        runId: "agui_step_replayed",
+      }),
+    });
+    expect(state.runs.step_coworker_research?.status).toBe("complete");
+    expect(state.runs.step_coworker_research?.sequence).toBe(20);
+  });
+
+  it("renders unsupported capability snapshots as inert activities", () => {
+    let state = initialChannelTimelineState("channel_demo");
+    state = channelTimelineReducer(state, {
+      type: "event",
+      envelope: coworkerEnvelope(12, {
+        type: "ACTIVITY_SNAPSHOT",
+        messageId: "act_unsup",
+        activityType: "forgeroom.coworker_work.v1",
+        replace: true,
+        content: {
+          phase: "unsupported_capability",
+          summary: "Open generated UI is unavailable in P0",
+          capability: "open_generated_ui",
+        } as never,
+      }),
+    });
+    expect(orderedTimelineItems(state)).toEqual([
+      expect.objectContaining({ kind: "inert", key: "inert:act_unsup" }),
+    ]);
   });
 });

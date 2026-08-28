@@ -12,6 +12,7 @@ export {
 export {
   initialActivityPresentationState,
   reduceActivityPresentationState,
+  type ActivityLaneOwner,
   type ActivityPresentationState,
 } from "./activity-reducer";
 export { compactChannelEnvelopes, isMessagesSnapshotEvent } from "./messages-compaction";

@@ -21,7 +21,10 @@ import {
   type ControlledComponentCandidate,
   type SkillRequirementManifest,
 } from "@forgeroom/orchestration/capability-intersection";
-import { rotateChannelCoworkerSession } from "@forgeroom/orchestration/session";
+import {
+  createSessionGenerationId,
+  rotateChannelCoworkerSession,
+} from "@forgeroom/orchestration/session";
 import { loadTrueForgeClientFromEnv, type TrueForgeClient } from "@forgeroom/trueforge";
 import type { CoworkerRecord } from "./store";
 import {
@@ -29,6 +32,12 @@ import {
   sandboxEnabledFromCoworker,
   standingInstructionsFromCoworker,
 } from "./session-provision";
+import type { ApiEnv } from "../env";
+import {
+  drainRetiredUiComponentsMcpForSession,
+  registerUiComponentsMcpForGeneration,
+  unregisterUiComponentsMcpForGeneration,
+} from "../mcp/ui-components-registration";
 
 export type RotateOwnedSessionInput = {
   sql: SessionRotationSqlClient;
@@ -49,7 +58,11 @@ export type RotateOwnedSessionInput = {
   activeRunStepId?: string | null;
   client?: TrueForgeClient;
   env?: NodeJS.ProcessEnv;
+  apiEnv?: ApiEnv;
   now?: string;
+  operationId?: string;
+  operationStartedAt?: string;
+  reconcileProviderSession?: boolean;
 };
 
 export type RotateOwnedSessionResult = {
@@ -77,6 +90,7 @@ export async function rotateOwnedChannelCoworkerSession(
     effectiveTools: nextTools,
     effectiveComponentTools: components.map((row) => row.toolName),
   });
+  const generationId = createSessionGenerationId(input.operationId);
 
   const begun = await beginSessionRotation(input.sql, {
     channelAgentSessionId: input.channelAgentSessionId,
@@ -91,11 +105,12 @@ export async function rotateOwnedChannelCoworkerSession(
 
   let swapped = false;
   let newGenerationId: string | null = null;
+  let registeredMcpGenerationId: string | null = null;
+  const client = input.client ?? loadTrueForgeClientFromEnv(input.env ?? process.env);
   try {
     if (begun.requestActiveTurnCancellation && input.activeRunStepId) {
       const stop = await requestRunStepStop(input.sql, { runStepId: input.activeRunStepId, now });
       if (stop.ok && stop.decision.callCancel) {
-        const client = input.client ?? loadTrueForgeClientFromEnv(input.env ?? process.env);
         if (stop.trueforgeSessionId) {
           await client.cancelSession(stop.trueforgeSessionId);
         }
@@ -113,14 +128,37 @@ export async function rotateOwnedChannelCoworkerSession(
       });
     }
 
-    const client = input.client ?? loadTrueForgeClientFromEnv(input.env ?? process.env);
+    if (components.length > 0) {
+      if (!input.apiEnv) {
+        throw new Error("UI components MCP registration requires the API environment");
+      }
+      registeredMcpGenerationId = generationId;
+      await registerUiComponentsMcpForGeneration(client, {
+        env: input.apiEnv,
+        generationId,
+        componentToolNames: components.map((component) => component.toolName),
+      });
+    }
 
+    if (input.operationId && !input.operationStartedAt) {
+      throw new Error("provider reconciliation requires an operation start timestamp");
+    }
     const rotated = await rotateChannelCoworkerSession(client, {
       channelAgentSessionId: input.channelAgentSessionId,
       reason: input.reason,
       previousTools: input.previousTools,
       nextGeneration: begun.previousGeneration + 1,
       sourceConfigRevision: begun.sourceConfigRevision,
+      generationId,
+      ...(input.operationId && input.operationStartedAt
+        ? {
+            providerReconciliation: {
+              operationId: input.operationId,
+              startedAt: input.operationStartedAt,
+              reconcile: input.reconcileProviderSession ?? false,
+            },
+          }
+        : {}),
       agentVersionId: input.coworker.currentVersionId,
       capability: input.capability,
       componentCandidates: input.componentCandidates,
@@ -180,6 +218,10 @@ export async function rotateOwnedChannelCoworkerSession(
       now,
     });
 
+    if (input.apiEnv) {
+      await drainRetiredUiComponentsMcpForSession(client, input.sql, input.channelAgentSessionId);
+    }
+
     return {
       sessionId: input.channelAgentSessionId,
       newGenerationId: swap.newGenerationId,
@@ -193,6 +235,18 @@ export async function rotateOwnedChannelCoworkerSession(
       cancelRequested: begun.requestActiveTurnCancellation,
     };
   } catch (error) {
+    if (registeredMcpGenerationId) {
+      try {
+        await unregisterUiComponentsMcpForGeneration(client, {
+          generationId: registeredMcpGenerationId,
+        });
+      } catch (cleanupError) {
+        console.error("ui_components_mcp connector cleanup failed after rotation error", {
+          generationId: registeredMcpGenerationId,
+          error: cleanupError instanceof Error ? cleanupError.message : String(cleanupError),
+        });
+      }
+    }
     await abortSessionRotation(input.sql, {
       channelAgentSessionId: input.channelAgentSessionId,
       restoreGenerationId: begun.previousGenerationId,

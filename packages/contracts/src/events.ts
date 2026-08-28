@@ -1289,6 +1289,7 @@ export const agentChannelEnvelopeSchema = z
 
 export type AgentChannelEnvelope = z.infer<typeof agentChannelEnvelopeSchema>;
 export type P0PersistedAguiEvent = z.infer<typeof p0PersistedAguiEventSchema>;
+export type ApplicationSourceName = z.infer<typeof applicationSourceNameSchema>;
 
 export function parseUpstreamAgUiEvent(input: unknown) {
   const type =

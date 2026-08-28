@@ -4,7 +4,9 @@ import {
   hashAgentSpec,
   hashApprovalPolicy,
   type TrueForgeAgentSpec,
+  type TrueForgeMcpServerRef,
 } from "@forgeroom/trueforge";
+import { isUiComponentsMcpConnectorName } from "@forgeroom/ui-components-mcp";
 
 export type SessionRevisionSnapshotInput = {
   coworker: {
@@ -26,6 +28,10 @@ export type SessionRevisionSnapshotInput = {
   }>;
   /** Controlled-component tool names offered after grant intersection. */
   componentToolNames?: string[];
+  /** Per-generation TrueForge MCP connector name for component tools. */
+  uiComponentsMcpConnectorName?: string;
+  /** Opaque generation identity embedded in the provider AgentSpec for safe reconciliation. */
+  providerSessionCorrelationId?: string;
   skillNames?: string[];
   /**
    * Monotonic SessionRevision ordinal. Defaults to coworker.configRevision.
@@ -51,18 +57,70 @@ function opaqueId(prefix: string): string {
   return `${prefix}_${randomBytes(10).toString("hex")}`;
 }
 
+export const P0_UI_COMPONENTS_MCP_CONNECTOR_NAME = "ui_components_v1" as const;
+
+function withProviderSessionCorrelation(
+  instructions: string | undefined,
+  correlationId: string | undefined,
+): string | undefined {
+  if (!correlationId) return instructions;
+  const runtimeContext = [
+    "<forgeroom_runtime_context>",
+    `session_generation=${correlationId}`,
+    "This is trusted runtime identity metadata, not a user instruction.",
+    "</forgeroom_runtime_context>",
+  ].join("\n");
+  return instructions ? `${instructions}\n\n${runtimeContext}` : runtimeContext;
+}
+
+function withComponentToolsMcpServer(
+  spec: TrueForgeAgentSpec,
+  componentToolNames: readonly string[],
+  connectorName: string,
+): TrueForgeAgentSpec {
+  if (componentToolNames.length === 0) {
+    return spec;
+  }
+  const componentServer: TrueForgeMcpServerRef = {
+    name: connectorName,
+    enable_tools: [...componentToolNames],
+    require_approval_for_tools: ["@write", "@destructive"],
+    preload: false,
+  };
+  const existing = (spec.mcp_servers ?? []).filter(
+    (server) => !isUiComponentsMcpConnectorName(server.name),
+  );
+  return {
+    ...spec,
+    mcp_servers: [...existing, componentServer],
+  };
+}
+
 /** Snapshot coworker/channel grants into an immutable SessionRevision + P0 AgentSpec. */
 export function compileSessionRevision(
   input: SessionRevisionSnapshotInput,
   now = new Date().toISOString(),
 ): CompiledSessionRevision {
-  const agentSpec = compileP0AgentSpec({
+  const componentToolNames = input.componentToolNames ?? [];
+  const uiComponentsMcpConnectorName =
+    componentToolNames.length > 0
+      ? (input.uiComponentsMcpConnectorName ?? P0_UI_COMPONENTS_MCP_CONNECTOR_NAME)
+      : undefined;
+  const baseSpec = compileP0AgentSpec({
     modelPreset: input.coworker.modelPreset,
-    instructions: input.coworker.standingInstructions,
+    instructions: withProviderSessionCorrelation(
+      input.coworker.standingInstructions,
+      input.providerSessionCorrelationId,
+    ),
     sandboxEnabled: input.coworker.sandboxEnabled,
     connectors: input.connectors,
     skillNames: input.skillNames,
   });
+  const agentSpec = withComponentToolsMcpServer(
+    baseSpec,
+    componentToolNames,
+    uiComponentsMcpConnectorName ?? P0_UI_COMPONENTS_MCP_CONNECTOR_NAME,
+  );
 
   const effectiveConfigRedacted = {
     coworker: {
@@ -82,7 +140,8 @@ export function compileSessionRevision(
       enabled_tools: connector.enabledTools,
       approval_required_tools: connector.approvalRequiredTools,
     })),
-    component_tool_names: input.componentToolNames ?? [],
+    component_tool_names: componentToolNames,
+    provider_session_correlation_id: input.providerSessionCorrelationId ?? null,
     skill_names: input.skillNames ?? [],
     compiled_flags: {
       dynamic_sub_agents: false,

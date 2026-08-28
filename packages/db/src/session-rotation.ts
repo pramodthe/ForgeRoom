@@ -1,4 +1,4 @@
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import type postgres from "postgres";
 
 export type SqlClient = postgres.Sql;
@@ -609,6 +609,85 @@ export async function recordMcpRotationOutcome(
     WHERE s.id = ${input.channelAgentSessionId}
   `;
   return { outcome, denyByClaim: false };
+}
+
+/** Retired generations safe to tear down once no turn still holds the remote slot. */
+export async function listDrainableRetiredSessionGenerationIds(
+  sql: SqlClient,
+  channelAgentSessionId: string,
+): Promise<string[]> {
+  const rows = await sql<{ id: string }[]>`
+    SELECT g.id
+    FROM channel_agent_session_generations AS g
+    WHERE g.channel_agent_session_id = ${channelAgentSessionId}
+      AND g.state = 'retired'
+      AND NOT EXISTS (
+        SELECT 1
+        FROM audit_events AS cleanup
+        WHERE cleanup.action = 'session.mcp_connector_deleted'
+          AND cleanup.target_type = 'channel_agent_session_generation'
+          AND cleanup.target_id = g.id
+      )
+      AND NOT EXISTS (
+        SELECT 1
+        FROM agent_turns AS t
+        WHERE t.session_generation_id = g.id
+          AND t.state IN (
+            'acquiring',
+            'creating',
+            'streaming',
+            'resuming',
+            'required_actions',
+            'uncertain'
+          )
+      )
+  `;
+  return rows.map((row) => row.id);
+}
+
+/** Record successful remote MCP connector deletion without mutating immutable generation history. */
+export async function recordSessionGenerationMcpConnectorDeleted(
+  sql: SqlClient,
+  input: { generationId: string; now?: string },
+): Promise<boolean> {
+  const now = input.now ?? new Date().toISOString();
+  const payload = { generation_id: input.generationId, outcome: "deleted" };
+  const payloadJson = JSON.stringify(payload);
+  const payloadHash = `sha256:${createHash("sha256").update(payloadJson).digest("hex")}`;
+  return sql.begin(async (tx) => {
+    await tx`SELECT pg_advisory_xact_lock(hashtext(${`mcp-cleanup:${input.generationId}`}))`;
+    const rows = await tx<{ id: string }[]>`
+      INSERT INTO audit_events (
+        id, workspace_id, channel_id, actor_type, actor_id, action, target_type, target_id,
+        redacted_payload_json, payload_hash, created_at
+      )
+      SELECT
+        ${opaqueId("audit")},
+        s.workspace_id,
+        s.channel_id,
+        'system',
+        'mcp_cleanup',
+        'session.mcp_connector_deleted',
+        'channel_agent_session_generation',
+        g.id,
+        ${payloadJson}::jsonb,
+        ${payloadHash},
+        ${now}
+      FROM channel_agent_session_generations AS g
+      JOIN channel_agent_sessions AS s ON s.id = g.channel_agent_session_id
+      WHERE g.id = ${input.generationId}
+        AND g.state = 'retired'
+        AND NOT EXISTS (
+          SELECT 1
+          FROM audit_events AS existing
+          WHERE existing.action = 'session.mcp_connector_deleted'
+            AND existing.target_type = 'channel_agent_session_generation'
+            AND existing.target_id = g.id
+        )
+      RETURNING id
+    `;
+    return rows.length > 0;
+  });
 }
 
 export async function listCoworkerChannelSessions(

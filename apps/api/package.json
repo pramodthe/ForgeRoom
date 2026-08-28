@@ -19,6 +19,7 @@
     "@forgeroom/domain": "workspace:*",
     "@forgeroom/orchestration": "workspace:*",
     "@forgeroom/trueforge": "workspace:*",
+    "@forgeroom/ui-components-mcp": "workspace:*",
     "@hono/node-server": "^1.19.0",
     "drizzle-orm": "^0.44.5",
     "hono": "^4.9.6"
