@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from "node:crypto";
+import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
 import type postgres from "postgres";
 import { canonicalizeJson } from "@forgeroom/domain";
 import type {
@@ -37,6 +37,7 @@ export type IssueUiInteractionTokenInput = {
   workspaceId: string;
   actorUserId: string;
   request: UiInteractionTokenRequest;
+  interactionTokenSecret: string;
   now?: string;
 };
 
@@ -74,6 +75,44 @@ function hashText(value: string): string {
 
 function hashJson(value: unknown): string {
   return hashText(canonicalizeJson(value));
+}
+
+const TOKEN_CIPHERTEXT_PREFIX = "enc:ui-interaction:v1:";
+
+function deriveInteractionTokenKey(secret: string): Buffer {
+  return createHash("sha256")
+    .update(`forgeroom-ui-interaction-token-v1:${secret}`, "utf8")
+    .digest();
+}
+
+function sealInteractionToken(token: string, secret: string): string {
+  const iv = randomBytes(12);
+  const cipher = createCipheriv("aes-256-gcm", deriveInteractionTokenKey(secret), iv);
+  const encrypted = Buffer.concat([cipher.update(token, "utf8"), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  return `${TOKEN_CIPHERTEXT_PREFIX}${iv.toString("base64url")}.${tag.toString("base64url")}.${encrypted.toString("base64url")}`;
+}
+
+function openInteractionToken(ciphertext: unknown, secret: string): string | null {
+  if (typeof ciphertext !== "string" || !ciphertext.startsWith(TOKEN_CIPHERTEXT_PREFIX)) {
+    return null;
+  }
+  const [ivB64, tagB64, dataB64] = ciphertext.slice(TOKEN_CIPHERTEXT_PREFIX.length).split(".");
+  if (!ivB64 || !tagB64 || !dataB64) return null;
+  try {
+    const decipher = createDecipheriv(
+      "aes-256-gcm",
+      deriveInteractionTokenKey(secret),
+      Buffer.from(ivB64, "base64url"),
+    );
+    decipher.setAuthTag(Buffer.from(tagB64, "base64url"));
+    return Buffer.concat([
+      decipher.update(Buffer.from(dataB64, "base64url")),
+      decipher.final(),
+    ]).toString("utf8");
+  } catch {
+    return null;
+  }
 }
 
 function parseStringArray(value: unknown): string[] {
@@ -115,6 +154,15 @@ const SUPPORTED_SCHEMA_KEYWORDS = new Set([
   "minItems",
   "maxItems",
 ]);
+const SUPPORTED_SCHEMA_TYPES = new Set([
+  "object",
+  "array",
+  "string",
+  "number",
+  "integer",
+  "boolean",
+  "null",
+]);
 
 function isSchemaShape(schema: unknown): schema is Record<string, unknown> {
   if (typeof schema !== "object" || schema === null || Array.isArray(schema)) {
@@ -122,7 +170,12 @@ function isSchemaShape(schema: unknown): schema is Record<string, unknown> {
   }
   const record = schema as Record<string, unknown>;
   if (Object.keys(record).some((key) => !SUPPORTED_SCHEMA_KEYWORDS.has(key))) return false;
-  if (record.type !== undefined && typeof record.type !== "string") return false;
+  if (
+    record.type !== undefined &&
+    (typeof record.type !== "string" || !SUPPORTED_SCHEMA_TYPES.has(record.type))
+  ) {
+    return false;
+  }
   if (record.enum !== undefined && !Array.isArray(record.enum)) return false;
   if (
     record.required !== undefined &&
@@ -169,10 +222,16 @@ function matchesInputSchema(value: unknown, schema: Record<string, unknown>): bo
   if (!isSchemaShape(schema)) {
     return false;
   }
-  if (Array.isArray(schema.enum) && !schema.enum.some((candidate) => Object.is(candidate, value))) {
+  if (
+    Array.isArray(schema.enum) &&
+    !schema.enum.some((candidate) => canonicalizeJson(candidate) === canonicalizeJson(value))
+  ) {
     return false;
   }
-  if (typeof schema.const !== "undefined" && !Object.is(schema.const, value)) {
+  if (
+    typeof schema.const !== "undefined" &&
+    canonicalizeJson(schema.const) !== canonicalizeJson(value)
+  ) {
     return false;
   }
 
@@ -326,10 +385,13 @@ export async function issueUiInteractionToken(
     };
   }
   const request = parsedRequest.data;
-  const interactionId = opaqueId("interaction");
-  const interactionToken = randomBytes(32).toString("base64url");
-  const interactionTokenHash = hashText(interactionToken);
-  const idempotencyKeyHash = hashText(interactionId);
+  if (!input.interactionTokenSecret) {
+    return {
+      ok: false,
+      error: { code: "validation_failed", message: "Interaction token secret is not configured." },
+    };
+  }
+  const idempotencyKeyHash = hashText(`${input.actorUserId}\u0000${request.idempotencyKey}`);
 
   return sql.begin(async (tx) => {
     const instances = await tx<
@@ -363,6 +425,83 @@ export async function issueUiInteractionToken(
         error: { code: "forbidden", message: "UIInstance is outside this workspace." },
       };
     }
+    if (request.surfaceId !== instance.id) {
+      return {
+        ok: false,
+        error: { code: "ui_interaction_not_allowed", message: "Surface binding is invalid." },
+      };
+    }
+
+    const priorRows = await tx<
+      {
+        id: string;
+        ui_instance_id: string;
+        actor_user_id: string;
+        render_revision: number;
+        expected_state_revision: number | null;
+        render_node_id: string;
+        intent_name: string;
+        payload_hash: string;
+        interaction_token_ciphertext: string | null;
+        token_expires_at: string | Date | null;
+      }[]
+    >`
+      SELECT id, ui_instance_id, actor_user_id, render_revision, expected_state_revision,
+             render_node_id, intent_name, payload_hash, interaction_token_ciphertext,
+             token_expires_at
+      FROM ui_interactions
+      WHERE action_grant_id = ${request.actionGrantId}
+        AND idempotency_key_hash = ${idempotencyKeyHash}
+      FOR UPDATE
+    `;
+    const prior = priorRows[0];
+    if (prior) {
+      if (prior.ui_instance_id !== instance.id || prior.actor_user_id !== input.actorUserId) {
+        return {
+          ok: false,
+          error: {
+            code: "forbidden",
+            message: "Interaction idempotency key is not owned by this session.",
+          },
+        };
+      }
+      if (
+        prior.render_revision !== request.renderRevision ||
+        prior.expected_state_revision !== request.expectedStateRevision ||
+        prior.render_node_id !== request.renderNodeId ||
+        prior.intent_name !== request.actionRef ||
+        prior.payload_hash !== hashJson(request.input)
+      ) {
+        return {
+          ok: false,
+          error: {
+            code: "conflict",
+            message: "Idempotency key was reused with different interaction input.",
+          },
+        };
+      }
+      const interactionToken = openInteractionToken(
+        prior.interaction_token_ciphertext,
+        input.interactionTokenSecret,
+      );
+      if (!interactionToken || !prior.token_expires_at) {
+        return {
+          ok: false,
+          error: {
+            code: "conflict",
+            message: "Original interaction token is unavailable for retry.",
+          },
+        };
+      }
+      return {
+        ok: true,
+        value: {
+          interactionId: prior.id,
+          interactionToken,
+          expiresAt: new Date(prior.token_expires_at).toISOString(),
+        },
+      };
+    }
     if (instance.channel_status !== "active") {
       return {
         ok: false,
@@ -370,12 +509,6 @@ export async function issueUiInteractionToken(
           code: "ui_interaction_not_allowed",
           message: "Channel interactions are disabled.",
         },
-      };
-    }
-    if (request.surfaceId !== instance.id) {
-      return {
-        ok: false,
-        error: { code: "ui_interaction_not_allowed", message: "Surface binding is invalid." },
       };
     }
     if (
@@ -536,18 +669,27 @@ export async function issueUiInteractionToken(
     const expiresAt = new Date(
       Math.min(new Date(grant.expires_at).getTime(), Date.parse(now) + 5 * 60 * 1_000),
     ).toISOString();
+    const interactionId = opaqueId("interaction");
+    const interactionToken = randomBytes(32).toString("base64url");
+    const interactionTokenHash = hashText(interactionToken);
+    const interactionTokenCiphertext = sealInteractionToken(
+      interactionToken,
+      input.interactionTokenSecret,
+    );
     const payloadHash = hashJson(request.input);
     await tx`
       INSERT INTO ui_interactions (
         id, ui_instance_id, render_revision, expected_state_revision, action_grant_id,
         render_node_id, handler_key, intent_name, payload_redacted_json, payload_hash,
-        interaction_token_hash, idempotency_key_hash, token_expires_at, actor_user_id,
+        interaction_token_hash, interaction_token_ciphertext, idempotency_key_hash,
+        token_expires_at, actor_user_id,
         client_kind, state, created_at
       ) VALUES (
         ${interactionId}, ${instance.id}, ${instance.current_render_revision},
         ${instance.current_state_revision}, ${grant.id}, ${input.request.renderNodeId},
         ${grant.handler_key}, ${grant.action_ref}, ${JSON.stringify(request.input)}::jsonb,
-        ${payloadHash}, ${interactionTokenHash}, ${idempotencyKeyHash}, ${expiresAt},
+        ${payloadHash}, ${interactionTokenHash}, ${interactionTokenCiphertext},
+        ${idempotencyKeyHash}, ${expiresAt},
         ${input.actorUserId}, 'registry', 'token_issued', ${now}
       )
     `;

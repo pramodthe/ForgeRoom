@@ -6,13 +6,14 @@ import { commitUiInteraction, issueUiInteractionToken } from "./ui-interactions"
 import { HASH, NOW, seedRuntime, withMigratedDatabase } from "./test-harness";
 
 const TEST_NOW = "2020-01-01T00:00:00.000Z";
+const INTERACTION_TOKEN_SECRET = "test-interaction-token-secret";
 
 function sha256(value: unknown): string {
   return `sha256:${createHash("sha256").update(canonicalizeJson(value), "utf8").digest("hex")}`;
 }
 
 async function prepareReadySurface(sql: Parameters<typeof seedRuntime>[0]): Promise<void> {
-  const inputSchema = { type: "object", additionalProperties: false };
+  const inputSchema = { type: "object", additionalProperties: false, enum: [{}] };
   const actionBody = actionGrantSchema.parse({
     schemaVersion: 1,
     id: "ag_test",
@@ -89,17 +90,28 @@ describe("UI interaction gateway", () => {
         actionRef: "select_row",
         input: {},
         clientKind: "registry" as const,
+        idempotencyKey: "interaction-test-1",
       };
       const issued = await issueUiInteractionToken(sql, {
         instanceId: "ui_1",
         workspaceId: "ws_1",
         actorUserId: "user_1",
         request,
+        interactionTokenSecret: INTERACTION_TOKEN_SECRET,
         now: TEST_NOW,
       });
       if (!issued.ok) throw new Error(`${issued.error.code}: ${issued.error.message}`);
       if (!issued.ok) return;
       expect(issued.value.interactionToken).toHaveLength(43);
+      const issuanceRetry = await issueUiInteractionToken(sql, {
+        instanceId: "ui_1",
+        workspaceId: "ws_1",
+        actorUserId: "user_1",
+        request,
+        interactionTokenSecret: INTERACTION_TOKEN_SECRET,
+        now: TEST_NOW,
+      });
+      expect(issuanceRetry).toEqual(issued);
 
       const committed = await commitUiInteraction(sql, {
         instanceId: "ui_1",
@@ -149,7 +161,9 @@ describe("UI interaction gateway", () => {
           actionRef: "select_row",
           input: { unexpected: true },
           clientKind: "registry",
+          idempotencyKey: "interaction-test-invalid",
         },
+        interactionTokenSecret: INTERACTION_TOKEN_SECRET,
         now: TEST_NOW,
       });
       expect(invalidInput).toEqual({
@@ -170,7 +184,9 @@ describe("UI interaction gateway", () => {
           actionRef: "select_row",
           input: {},
           clientKind: "registry",
+          idempotencyKey: "interaction-test-stale",
         },
+        interactionTokenSecret: INTERACTION_TOKEN_SECRET,
         now: TEST_NOW,
       });
       if (!issued.ok) throw new Error(`${issued.error.code}: ${issued.error.message}`);
@@ -225,13 +241,15 @@ describe("UI interaction gateway", () => {
         actionRef: "select_row",
         input: {},
         clientKind: "registry" as const,
+        idempotencyKey: "interaction-test-concurrent-a",
       };
       const issued = await Promise.all([
         issueUiInteractionToken(sql, {
           instanceId: "ui_1",
           workspaceId: "ws_1",
           actorUserId: "user_1",
-          request,
+          request: { ...request, idempotencyKey: "interaction-test-concurrent-b" },
+          interactionTokenSecret: INTERACTION_TOKEN_SECRET,
           now: TEST_NOW,
         }),
         issueUiInteractionToken(sql, {
@@ -239,6 +257,7 @@ describe("UI interaction gateway", () => {
           workspaceId: "ws_1",
           actorUserId: "user_1",
           request,
+          interactionTokenSecret: INTERACTION_TOKEN_SECRET,
           now: TEST_NOW,
         }),
       ]);

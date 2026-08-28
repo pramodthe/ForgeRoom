@@ -327,11 +327,12 @@ Trusted-host interaction token request:
   "actionGrantId": "uag_123",
   "actionRef": "select_node",
   "input": { "nodeId": "node_7" },
-  "clientKind": "registry"
+  "clientKind": "registry",
+  "idempotencyKey": "ui-select-node-001"
 }
 ~~~
 
-The server authenticates and authorizes channel access, verifies the exact controlled instance/render/component/render-node/ActionGrant/input hash, and stores the redacted input. P0 returns a short-lived one-use `{ interactionId, state: "token_issued", interactionToken, expiresAt }`; trusted registry code posts only that ID/token pair to `/interactions`. Model-authored content never sees or chooses the token or idempotency scope. Commit atomically consumes the token and ActionGrant use count; retries return the first recorded result.
+The server authenticates and authorizes channel access, verifies the exact controlled instance/render/component/render-node/ActionGrant/input hash, and stores the redacted input. The trusted host supplies a stable, caller-generated `idempotencyKey` for retries; it is scoped to the actor and ActionGrant and cannot change the effective interaction fields. P0 returns a short-lived one-use `{ interactionId, state: "token_issued", interactionToken, expiresAt }`; trusted registry code posts only that ID/token pair to `/interactions`. Model-authored content never sees or chooses the token or idempotency scope. Commit atomically consumes the token and ActionGrant use count; retries return the first recorded result without creating a second interaction.
 
 A P0 UI interaction may update bounded local/shared presentation state, re-read only the exact retained DataGrant named by a `server_read` grant, or resolve one exact durable component-input interrupt. It cannot open or decide a RequiredAction, create/decide an ActionProposal, answer a canonical Question, resume a PauseGroup, enqueue an unrelated agent turn, or directly invoke Composio/TrueForge. Component-input resolution enqueues its own structured application continuation and is not a PauseGroup resume. Free text uses the trusted composer or canonical RequiredQuestion flow.
 

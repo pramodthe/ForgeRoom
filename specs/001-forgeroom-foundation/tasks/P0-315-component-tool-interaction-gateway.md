@@ -46,8 +46,9 @@ implemented.
 - [x] Trusted-host registry token issuance and commit endpoints for `local_state`.
 - [x] Exact instance/workspace/channel/actor, promoted render revision, manifest hash, render-node,
   ActionGrant, input-schema, expiry, and use-limit checks.
-- [x] Hashed one-use tokens, redacted safe input persistence, compare-and-swap state revisions,
-  terminal-result idempotency, and concurrent-commit serialization.
+- [x] Hashed one-use tokens, encrypted retry-token persistence, stable idempotency-key replay,
+  redacted safe input persistence, compare-and-swap state revisions, terminal-result idempotency,
+  and concurrent-commit serialization.
 - [x] Authenticated channel membership, Origin/CSRF mutation guards, closed request schemas, and
   controlled `provider_unavailable` error translation.
 - [ ] `server_read` retained DataGrant resolution.

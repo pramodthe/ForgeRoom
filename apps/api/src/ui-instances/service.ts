@@ -55,9 +55,10 @@ export type UiInstanceService = {
 export function createUiInstanceService(options: {
   workspace: WorkspaceService;
   auth: AuthService;
+  interactionTokenSecret: string;
   sql?: SqlClient;
 }): UiInstanceService {
-  const { workspace, auth, sql } = options;
+  const { workspace, auth, interactionTokenSecret, sql } = options;
 
   async function authorizeInstance(session: SessionResponse, instanceId: string) {
     if (!sql) {
@@ -261,6 +262,7 @@ export function createUiInstanceService(options: {
           workspaceId: session.workspace_id,
           actorUserId: session.user.id,
           request,
+          interactionTokenSecret,
         });
         if (!result.ok) {
           return { ok: false, error: result.error };
