@@ -37,7 +37,18 @@ export function createUiInstanceService(options: {
         };
       }
 
-      const bundle = await loadUiInstanceReplayBundle(sql, instanceId);
+      let bundle: Awaited<ReturnType<typeof loadUiInstanceReplayBundle>>;
+      try {
+        bundle = await loadUiInstanceReplayBundle(sql, instanceId);
+      } catch {
+        return {
+          ok: false,
+          error: {
+            code: "provider_unavailable",
+            message: "UIInstance replay persistence is temporarily unavailable.",
+          },
+        };
+      }
       if (!bundle) {
         return {
           ok: false,

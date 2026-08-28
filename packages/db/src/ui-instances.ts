@@ -9,9 +9,11 @@ import {
   dataGrantSchema,
   uiInstanceReplayResponseSchema,
 } from "@forgeroom/contracts";
+import type postgres from "postgres";
 import type { createSql } from "./client";
 
 type SqlClient = ReturnType<typeof createSql>;
+type SqlExecutor = SqlClient | postgres.TransactionSql;
 
 export type SurfaceGrantRow = {
   id: string;
@@ -104,7 +106,11 @@ function mapRenderGrant(grant: SurfaceGrantRow) {
 }
 
 function grantIsActive(grant: SurfaceGrantRow, now: Date): boolean {
-  return grant.revoked_at === null && new Date(grant.expires_at).getTime() > now.getTime();
+  return (
+    grant.revoked_at === null &&
+    new Date(grant.expires_at).getTime() > now.getTime() &&
+    (grant.max_uses === null || grant.use_count < grant.max_uses)
+  );
 }
 
 function mapDataGrant(grant: SurfaceGrantRow): DataGrantDisclosure | null {
@@ -233,8 +239,8 @@ function mapActionGrant(
   return { ...common, mode: actionGrant.mode };
 }
 
-export async function loadUiInstanceReplayBundle(
-  sql: SqlClient,
+async function loadUiInstanceReplayBundleFrom(
+  sql: SqlExecutor,
   instanceId: string,
 ): Promise<UiInstanceReplayBundle | null> {
   const rows = await sql<
@@ -306,7 +312,7 @@ export async function loadUiInstanceReplayBundle(
     ORDER BY created_at ASC
   `;
 
-  const renderRevision = row.current_render_revision;
+  const requestedRenderRevision = row.current_render_revision;
   let renderManifestHash: string | null = null;
   let validatedPropsHash: string | null = null;
   let validatedProps: Record<string, unknown> | null = null;
@@ -315,8 +321,14 @@ export async function loadUiInstanceReplayBundle(
   let baseRenderRevision: number | null = null;
   let baseStateRevision: number | null = null;
   let rendererProfileHash = row.descriptor_hash;
+  let replayRenderRevision: number | null = null;
+  let replayLastGoodRenderRevision: number | null = null;
 
-  if (renderRevision !== null || row.current_state_revision !== null) {
+  if (
+    requestedRenderRevision !== null ||
+    row.last_good_render_revision !== null ||
+    row.current_state_revision !== null
+  ) {
     const revisions = await sql<
       {
         revision_kind: "render" | "state";
@@ -341,12 +353,31 @@ export async function loadUiInstanceReplayBundle(
         AND validation_state = 'valid'
         AND promoted_at IS NOT NULL
         AND (
-          (revision_kind = 'render' AND revision = ${renderRevision})
+          (
+            revision_kind = 'render'
+            AND (
+              revision = ${requestedRenderRevision ?? -1}
+              OR revision = ${row.last_good_render_revision ?? -1}
+            )
+          )
           OR (revision_kind = 'state' AND revision = ${row.current_state_revision ?? -1})
         )
+      ORDER BY revision DESC
     `;
     for (const revision of revisions) {
       if (revision.revision_kind === "render") {
+        if (revision.revision === row.last_good_render_revision) {
+          replayLastGoodRenderRevision = revision.revision;
+        }
+        if (
+          replayRenderRevision === null &&
+          (revision.revision === requestedRenderRevision ||
+            revision.revision === row.last_good_render_revision)
+        ) {
+          replayRenderRevision = revision.revision;
+        } else {
+          continue;
+        }
         renderManifestHash = revision.manifest_hash;
         validatedPropsHash = revision.validated_props_hash;
         validatedProps = revision.validated_props_json;
@@ -387,8 +418,8 @@ export async function loadUiInstanceReplayBundle(
     rendererProfileHash,
     rail: "registry_v1",
     status: row.status,
-    currentRenderRevision: row.current_render_revision,
-    lastGoodRenderRevision: row.last_good_render_revision,
+    currentRenderRevision: replayRenderRevision,
+    lastGoodRenderRevision: replayLastGoodRenderRevision,
     currentStateRevision: row.current_state_revision,
     renderManifestHash,
     validatedPropsHash,
@@ -405,6 +436,21 @@ export async function loadUiInstanceReplayBundle(
     actionGrants: grants.filter((grant) => grant.grant_kind === "action"),
     lastChannelSequence: sequenceRows[0]?.max ?? 0,
   };
+}
+
+/**
+ * Load the complete replay snapshot under one database transaction. The UI
+ * pointers, revisions, grants, and channel cursor must share one snapshot so
+ * a concurrent promotion cannot produce a response whose cursor skips it.
+ */
+export async function loadUiInstanceReplayBundle(
+  sql: SqlClient,
+  instanceId: string,
+): Promise<UiInstanceReplayBundle | null> {
+  return sql.begin(async (tx) => {
+    await tx`SET TRANSACTION ISOLATION LEVEL REPEATABLE READ`;
+    return loadUiInstanceReplayBundleFrom(tx, instanceId);
+  });
 }
 
 export function toUiInstanceReplayResponse(
