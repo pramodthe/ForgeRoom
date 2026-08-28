@@ -40,6 +40,34 @@ async function seedBrokeredDataTable(sql: Parameters<typeof seedRuntime>[0]): Pr
   return aligned;
 }
 
+/**
+ * Resolves once some backend other than this one is blocked waiting on a lock.
+ * A fixed delay cannot tell "the broker is parked at checkpoint 2" apart from
+ * "the broker has not reached it yet", so a slow run would release the revocation
+ * early and pass without exercising the FOR SHARE at all. Without the lock nothing
+ * ever blocks here, so the negative control fails on any machine rather than by luck.
+ */
+async function waitForLockWaiter(probe: ReturnType<typeof createSql>): Promise<void> {
+  const deadline = Date.now() + 15_000;
+  while (Date.now() < deadline) {
+    const waiting = await probe<{ pid: number }[]>`
+      SELECT pid
+      FROM pg_stat_activity
+      WHERE datname = current_database()
+        AND pid <> pg_backend_pid()
+        AND wait_event_type = 'Lock'
+      LIMIT 1
+    `;
+    if (waiting.length > 0) {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  throw new Error(
+    "Broker never blocked on the authority rows; checkpoint 2 is not taking FOR SHARE.",
+  );
+}
+
 describe("component tool gateway", () => {
   it("loads offer context and finalizes a building instance", async () => {
     await withMigratedDatabase(async (sql) => {
@@ -372,9 +400,11 @@ describe("component tool gateway", () => {
 
   it("quarantines instead of persisting an instance when a grant revocation commits during create", async () => {
     await withTemporaryDatabase(async (url) => {
-      // Two connections so a revocation can be held uncommitted while the broker runs.
+      // Three connections: the broker, an uncommitted revocation, and a probe that
+      // observes whether the broker is actually blocked on the lock.
       const sql = createSql(url);
       const revoker = createSql(url);
+      const probe = createSql(url);
       try {
         await migrate(sql);
         await seedRuntime(sql);
@@ -384,20 +414,24 @@ describe("component tool gateway", () => {
         const rowLockHeld = new Promise<void>((resolve) => {
           holdingRowLock = resolve;
         });
+        let releaseRevoker = (): void => undefined;
+        const revokerReleased = new Promise<void>((resolve) => {
+          releaseRevoker = resolve;
+        });
+
         const revoked = revoker.begin(async (tx) => {
           await tx`
             UPDATE ui_component_grants SET revoked_at = ${NOW} WHERE id = 'cg_broker'
           `;
           holdingRowLock();
-          // Held long enough that the broker reaches checkpoint 2 while this
-          // revocation is still uncommitted — that is the window under test.
-          await new Promise((resolve) => setTimeout(resolve, 1_500));
+          // Held until the broker is provably parked on the lock, never on a timer.
+          await revokerReleased;
         });
+
         // Start the broker only once the revocation actually holds the row lock,
         // otherwise the broker can win the race and the test proves nothing.
         await rowLockHeld;
-
-        const result = await brokerComponentToolMcpCall(sql, {
+        const brokered = brokerComponentToolMcpCall(sql, {
           generationId: "gen_1",
           stableName: "DataTable",
           toolCallId: "tc_revoke_race",
@@ -408,11 +442,19 @@ describe("component tool gateway", () => {
           },
           now: NOW,
         });
-        await revoked;
+        brokered.catch(() => undefined);
 
-        // Checkpoint 2 takes FOR SHARE on the grant, so it blocks behind the revoker
-        // and re-evaluates once that commits. Without the lock it reads the
-        // pre-revocation snapshot and persists an instance whose authority is gone.
+        try {
+          await waitForLockWaiter(probe);
+        } finally {
+          releaseRevoker();
+        }
+        await revoked;
+        const result = await brokered;
+
+        // Checkpoint 2 blocked behind the revoker and re-evaluated once it committed.
+        // Without the lock it reads the pre-revocation snapshot and persists an
+        // instance whose authority has been withdrawn.
         expect(result).toMatchObject({
           status: "quarantined",
           instanceId: "",
@@ -424,6 +466,7 @@ describe("component tool gateway", () => {
         `;
         expect(instances).toHaveLength(0);
       } finally {
+        await probe.end({ timeout: 5 });
         await revoker.end({ timeout: 5 });
         await sql.end({ timeout: 5 });
       }
