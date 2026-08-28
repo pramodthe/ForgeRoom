@@ -637,6 +637,7 @@ describe("UIInstance replay and interactions", () => {
       actionRef: "select_row",
       input: { rowId: "row_1" },
       clientKind: "registry",
+      idempotencyKey: "interaction-test-1",
     };
     expect(uiInteractionTokenRequestSchema.safeParse(request).success).toBe(true);
     expect(

@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { uiInstanceReplayResponseSchema } from "@forgeroom/contracts";
+import {
+  errorEnvelopeSchema,
+  sessionResponseSchema,
+  uiInstanceReplayResponseSchema,
+} from "@forgeroom/contracts";
 import { seedRuntime, withMigratedDatabase } from "@forgeroom/db/test-harness";
 import { createMemoryAuthStore } from "../auth/store";
 import { createAuthService } from "../auth/service";
@@ -142,4 +146,63 @@ describe("ui instance routes", () => {
       expect(replay.status).toBe(404);
     });
   });
+
+  it("protects interaction token issuance with CSRF and closed-schema validation", async () => {
+    await withMigratedDatabase(async (sql) => {
+      await seedRuntime(sql);
+      const env = loadApiEnv({
+        NODE_ENV: "test",
+        APP_ORIGIN: "http://localhost:5173",
+        OWNER_EMAIL: "owner@example.test",
+        OWNER_PASSWORD: PASSWORD,
+        OWNER_USER_ID: "user_1",
+        WORKSPACE_ID: "ws_1",
+        AUTH_STORE: "memory",
+        SESSION_COOKIE_NAME: "fr_session",
+      });
+      const auth = createAuthService({ env, store: createMemoryAuthStore() });
+      await auth.seedOwner();
+      const workspace = createWorkspaceService({
+        store: createPostgresWorkspaceStore(sql),
+        sql,
+      });
+      const app = createApiApp({ env, auth, workspace, sql });
+      const login = await app.request("/api/auth/login", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          origin: "http://localhost:5173",
+        },
+        body: JSON.stringify({ email: "owner@example.test", password: PASSWORD }),
+      });
+      const cookie = cookieFrom(login, env.sessionCookieName);
+      const session = sessionResponseSchema.parse(await login.json());
+      expect(cookie).toBeTruthy();
+
+      const csrfRejected = await app.request("/api/ui-instances/ui_1/interaction-tokens", {
+        method: "POST",
+        headers: {
+          cookie: `${env.sessionCookieName}=${cookie}`,
+          origin: "http://localhost:5173",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({}),
+      });
+      expect(csrfRejected.status).toBe(403);
+
+      const invalid = await app.request("/api/ui-instances/ui_1/interaction-tokens", {
+        method: "POST",
+        headers: {
+          cookie: `${env.sessionCookieName}=${cookie}`,
+          origin: "http://localhost:5173",
+          "x-csrf-token": session.csrf_token,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({}),
+      });
+      expect(invalid.status).toBe(400);
+      const failure = errorEnvelopeSchema.parse(await invalid.json());
+      expect(failure.error.code).toBe("validation_failed");
+    });
+  }, 60_000);
 });

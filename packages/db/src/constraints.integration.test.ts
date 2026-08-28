@@ -35,6 +35,8 @@ describe("P0 foundation migration", () => {
       `;
       expect(forbidden.filter((row) => EXCLUDED_COLUMN.test(row.column_name))).toEqual([]);
 
+      const interactionTokenRolled = await rollbackLast(sql);
+      expect(interactionTokenRolled).toBe("0009_ui_interaction_token_retries.sql");
       const registryRolled = await rollbackLast(sql);
       expect(registryRolled).toBe("0008_command_receipt_result_json.sql");
       const sessionRotationRolled = await rollbackLast(sql);
@@ -80,6 +82,7 @@ describe("P0 foundation migration", () => {
           "0006_connection_reconnect_intents.sql",
           "0007_session_rotation_rollback.sql",
           "0008_command_receipt_result_json.sql",
+          "0009_ui_interaction_token_retries.sql",
         ]);
         expect(await appliedMigrations(first)).toEqual([
           "0001_p0_foundation.sql",
@@ -90,6 +93,7 @@ describe("P0 foundation migration", () => {
           "0006_connection_reconnect_intents.sql",
           "0007_session_rotation_rollback.sql",
           "0008_command_receipt_result_json.sql",
+          "0009_ui_interaction_token_retries.sql",
         ]);
 
         const rollbackResults = await Promise.all([
@@ -102,9 +106,11 @@ describe("P0 foundation migration", () => {
           rollbackLast(first),
           rollbackLast(second),
           rollbackLast(first),
+          rollbackLast(second),
         ]);
         expect(rollbackResults).toEqual(
           expect.arrayContaining([
+            "0009_ui_interaction_token_retries.sql",
             "0007_session_rotation_rollback.sql",
             "0008_command_receipt_result_json.sql",
             "0006_connection_reconnect_intents.sql",
@@ -125,6 +131,7 @@ describe("P0 foundation migration", () => {
   it("backfills workspace ownership for existing stable sessions", async () => {
     await withMigratedDatabase(async (sql) => {
       await seedRuntime(sql);
+      expect(await rollbackLast(sql)).toBe("0009_ui_interaction_token_retries.sql");
       expect(await rollbackLast(sql)).toBe("0008_command_receipt_result_json.sql");
       expect(await rollbackLast(sql)).toBe("0007_session_rotation_rollback.sql");
       expect(await rollbackLast(sql)).toBe("0006_connection_reconnect_intents.sql");
@@ -140,6 +147,7 @@ describe("P0 foundation migration", () => {
         "0006_connection_reconnect_intents.sql",
         "0007_session_rotation_rollback.sql",
         "0008_command_receipt_result_json.sql",
+        "0009_ui_interaction_token_retries.sql",
       ]);
 
       const [session] = await sql<{ workspace_id: string }[]>`
@@ -154,6 +162,7 @@ describe("P0 foundation migration", () => {
   it("identifies cross-workspace legacy sessions before enforcing the boundary", async () => {
     await withMigratedDatabase(async (sql) => {
       await seedRuntime(sql);
+      expect(await rollbackLast(sql)).toBe("0009_ui_interaction_token_retries.sql");
       expect(await rollbackLast(sql)).toBe("0008_command_receipt_result_json.sql");
       expect(await rollbackLast(sql)).toBe("0007_session_rotation_rollback.sql");
       expect(await rollbackLast(sql)).toBe("0006_connection_reconnect_intents.sql");
@@ -191,6 +200,7 @@ describe("P0 foundation migration", () => {
         "0006_connection_reconnect_intents.sql",
         "0007_session_rotation_rollback.sql",
         "0008_command_receipt_result_json.sql",
+        "0009_ui_interaction_token_retries.sql",
       ]);
     });
   }, 60_000);

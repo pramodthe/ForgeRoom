@@ -616,6 +616,7 @@ export const uiInteractions = pgTable("ui_interactions", {
   payloadRedactedJson: jsonb("payload_redacted_json").notNull(),
   payloadHash: text("payload_hash").notNull(),
   interactionTokenHash: text("interaction_token_hash"),
+  interactionTokenCiphertext: text("interaction_token_ciphertext"),
   idempotencyKeyHash: text("idempotency_key_hash").notNull(),
   tokenExpiresAt: timestamptz("token_expires_at"),
   actorUserId: text("actor_user_id").notNull(),

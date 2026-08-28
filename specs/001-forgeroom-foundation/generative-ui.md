@@ -1243,6 +1243,7 @@ type InteractionTokenRequest = {
   actionRef: string;
   input: JsonValue;
   clientKind: "registry" | "iframe";
+  idempotencyKey: string;
 };
 ~~~
 

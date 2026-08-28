@@ -1078,6 +1078,7 @@ export const uiInteractionTokenRequestSchema = z
     actionRef: z.string().min(1),
     input: safeJsonValueSchema,
     clientKind: uiClientKindSchema,
+    idempotencyKey: z.string().min(1).max(512),
   })
   .strict();
 
