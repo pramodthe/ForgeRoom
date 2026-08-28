@@ -548,6 +548,18 @@ export async function commitUiInteraction(
   const tokenHash = hashText(input.interactionToken);
 
   return sql.begin(async (tx) => {
+    // Serialize every commit for one surface before reading its state pointer.
+    // This makes the compare-and-swap outcome deterministic for different
+    // interaction rows that share the same UIInstance.
+    const instanceLocks = await tx<{ id: string }[]>`
+      SELECT id
+      FROM ui_instances
+      WHERE id = ${input.instanceId}
+      FOR UPDATE
+    `;
+    if (!instanceLocks[0]) {
+      return { ok: false, error: { code: "not_found", message: "UIInstance not found." } };
+    }
     const rows = await tx<
       {
         interaction_id: string;
