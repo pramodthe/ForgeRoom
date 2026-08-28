@@ -19,6 +19,7 @@
     "@forgeroom/ui-components-mcp": "workspace:*"
   },
   "devDependencies": {
+    "@forgeroom/domain": "workspace:*",
     "esbuild": "^0.25.9",
     "tsx": "^4.20.5",
     "typescript": "catalog:",

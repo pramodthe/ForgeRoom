@@ -7,6 +7,9 @@ import type {
   ChannelTimelineMessage,
   ChannelTimelineMessagesResponse,
   CoworkerDisableCommand,
+  CoworkerDraft,
+  CoworkerDraftConfirmCommand,
+  CoworkerDraftCreateCommand,
   CoworkerProfile,
   CoworkerUpdateCommand,
   SkillDraft,
@@ -18,6 +21,7 @@ import {
   channelRosterResponseSchema,
   channelSchema,
   channelTimelineMessagesResponseSchema,
+  coworkerDraftSchema,
   coworkerProfileSchema,
   coworkerUpdateCommandSchema,
   skillVersionSchema,
@@ -522,6 +526,49 @@ export async function disableCoworker(input: {
     },
   );
   return coworkerProfileSchema.parse(stripRequestId(body as { request_id: string }));
+}
+
+export async function createCoworkerDraft(input: {
+  workspaceId: string;
+  csrfToken: string;
+  command: CoworkerDraftCreateCommand;
+}): Promise<CoworkerDraft> {
+  const body = await apiFetch<{ draft: unknown; request_id: string }>(
+    `/api/workspaces/${encodeURIComponent(input.workspaceId)}/coworker-drafts`,
+    {
+      method: "POST",
+      csrfToken: input.csrfToken,
+      body: JSON.stringify(input.command),
+    },
+  );
+  return coworkerDraftSchema.parse(stripRequestId(body).draft);
+}
+
+export async function getCoworkerDraft(input: { draftId: string }): Promise<CoworkerDraft> {
+  const body = await apiFetch<{ draft: unknown; request_id: string }>(
+    `/api/coworker-drafts/${encodeURIComponent(input.draftId)}`,
+  );
+  return coworkerDraftSchema.parse(stripRequestId(body).draft);
+}
+
+export async function confirmCoworkerDraft(input: {
+  draftId: string;
+  csrfToken: string;
+  command: CoworkerDraftConfirmCommand;
+}): Promise<{ draft: CoworkerDraft; coworker: CoworkerProfile }> {
+  const body = await apiFetch<{ draft: unknown; coworker: unknown; request_id: string }>(
+    `/api/coworker-drafts/${encodeURIComponent(input.draftId)}/confirm`,
+    {
+      method: "POST",
+      csrfToken: input.csrfToken,
+      body: JSON.stringify(input.command),
+    },
+  );
+  const parsed = stripRequestId(body);
+  return {
+    draft: coworkerDraftSchema.parse(parsed.draft),
+    coworker: coworkerProfileSchema.parse(parsed.coworker),
+  };
 }
 
 export async function createFixtureResearcher(workspaceId: string): Promise<CoworkerDetail> {

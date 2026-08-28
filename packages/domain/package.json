@@ -13,6 +13,7 @@
     "build": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@forgeroom/composio": "workspace:*",
     "@forgeroom/contracts": "workspace:*"
   },
   "devDependencies": {

@@ -14,6 +14,11 @@ import {
   taskGrants,
   workspaceCommandReceipts,
 } from "@forgeroom/db";
+import type {
+  CoworkerDraftState,
+  CoworkerEffectivePreview,
+  CoworkerProposal,
+} from "@forgeroom/contracts";
 import type { TaskStatus } from "@forgeroom/contracts";
 import { and, eq, isNull } from "drizzle-orm";
 import { randomOpaqueId } from "../auth/crypto";
@@ -35,9 +40,12 @@ import type {
   ChannelRecord,
   CommandReceipt,
   CoworkerEditableConfig,
+  CoworkerDraftRecord,
+  CoworkerDraftWriteResult,
   CoworkerMutationResult,
   CoworkerRecord,
   CoworkerUpdateResult,
+  ProvisionCoworkerFromDraftInput,
   ListEventsAfterResult,
   MembershipWriteResult,
   MessageRecord,
@@ -70,6 +78,40 @@ function asIso(value: string | Date): string {
     return value;
   }
   return parsed.toISOString();
+}
+
+function mapCoworkerDraft(row: {
+  id: string;
+  workspace_id: string;
+  source_text_encrypted: string;
+  proposal_json: unknown;
+  effective_preview_json: unknown;
+  draft_hash: string;
+  revision: number;
+  policy_revision: number;
+  catalog_revision: number;
+  state: string;
+  created_by: string;
+  expires_at: string | Date;
+  created_at: string | Date;
+  decided_at: string | Date | null;
+}): CoworkerDraftRecord {
+  return {
+    id: row.id,
+    workspaceId: row.workspace_id,
+    revision: row.revision,
+    draftHash: row.draft_hash,
+    policyRevision: row.policy_revision,
+    catalogRevision: row.catalog_revision,
+    state: row.state as CoworkerDraftState,
+    proposal: row.proposal_json as CoworkerProposal,
+    effectivePreview: row.effective_preview_json as CoworkerEffectivePreview,
+    sourceTextEncrypted: row.source_text_encrypted,
+    createdBy: row.created_by,
+    expiresAt: asIso(row.expires_at),
+    createdAt: asIso(row.created_at),
+    decidedAt: row.decided_at ? asIso(row.decided_at) : null,
+  };
 }
 
 function asConfig(value: unknown): CoworkerEditableConfig {
@@ -584,6 +626,9 @@ export function createPostgresWorkspaceStore(sql: SqlClient): WorkspaceCatalogSt
         payloadHash: row.payload_hash,
         createdAt: asIso(row.created_at),
       }));
+    },
+    async appendAuditEvent(audit) {
+      await insertAuditEventSql(sql, audit);
     },
     async listTasks(channelId) {
       const rows = await db.select().from(tasks).where(eq(tasks.channelId, channelId));
@@ -2148,6 +2193,348 @@ export function createPostgresWorkspaceStore(sql: SqlClient): WorkspaceCatalogSt
           event: written.event,
           pin,
         } satisfies AppendChannelEventResult & { pin: PinRecord };
+      });
+    },
+
+    async insertCoworkerDraft(draft) {
+      await sql`
+        INSERT INTO coworker_drafts (
+          id, workspace_id, source_text_encrypted, proposal_json, effective_preview_json,
+          draft_hash, revision, policy_revision, catalog_revision, state, created_by,
+          expires_at, created_at, decided_at
+        ) VALUES (
+          ${draft.id}, ${draft.workspaceId}, ${draft.sourceTextEncrypted},
+          ${JSON.stringify(draft.proposal)}::jsonb, ${JSON.stringify(draft.effectivePreview)}::jsonb,
+          ${draft.draftHash}, ${draft.revision}, ${draft.policyRevision}, ${draft.catalogRevision},
+          ${draft.state}, ${draft.createdBy}, ${draft.expiresAt}, ${draft.createdAt},
+          ${draft.decidedAt}
+        )
+      `;
+    },
+
+    async getCoworkerDraft(id) {
+      const rows = await sql<
+        Array<{
+          id: string;
+          workspace_id: string;
+          source_text_encrypted: string;
+          proposal_json: unknown;
+          effective_preview_json: unknown;
+          draft_hash: string;
+          revision: number;
+          policy_revision: number;
+          catalog_revision: number;
+          state: string;
+          created_by: string;
+          expires_at: string | Date;
+          created_at: string | Date;
+          decided_at: string | Date | null;
+        }>
+      >`
+        SELECT *
+        FROM coworker_drafts
+        WHERE id = ${id}
+        LIMIT 1
+      `;
+      const row = rows[0];
+      return row ? mapCoworkerDraft(row) : null;
+    },
+
+    async listCoworkerDrafts(workspaceId) {
+      const rows = await sql<
+        Array<{
+          id: string;
+          workspace_id: string;
+          source_text_encrypted: string;
+          proposal_json: unknown;
+          effective_preview_json: unknown;
+          draft_hash: string;
+          revision: number;
+          policy_revision: number;
+          catalog_revision: number;
+          state: string;
+          created_by: string;
+          expires_at: string | Date;
+          created_at: string | Date;
+          decided_at: string | Date | null;
+        }>
+      >`
+        SELECT *
+        FROM coworker_drafts
+        WHERE workspace_id = ${workspaceId}
+        ORDER BY created_at DESC, id DESC
+      `;
+      return rows.map(mapCoworkerDraft);
+    },
+
+    async supersedeCoworkerDrafts(input) {
+      await sql`
+        UPDATE coworker_drafts
+        SET state = 'superseded',
+            decided_at = ${input.supersededBefore}
+        WHERE workspace_id = ${input.workspaceId}
+          AND id <> ${input.exceptDraftId}
+          AND state IN ('draft', 'awaiting_review')
+      `;
+    },
+
+    async updateCoworkerDraftState(input) {
+      const rows = await sql<
+        Array<{
+          id: string;
+          workspace_id: string;
+          source_text_encrypted: string;
+          proposal_json: unknown;
+          effective_preview_json: unknown;
+          draft_hash: string;
+          revision: number;
+          policy_revision: number;
+          catalog_revision: number;
+          state: string;
+          created_by: string;
+          expires_at: string | Date;
+          created_at: string | Date;
+          decided_at: string | Date | null;
+        }>
+      >`
+        UPDATE coworker_drafts
+        SET state = ${input.nextState},
+            decided_at = COALESCE(${input.decidedAt ?? null}, decided_at)
+        WHERE id = ${input.draftId}
+          AND revision = ${input.expectedRevision}
+        RETURNING *
+      `;
+      const row = rows[0];
+      if (!row) {
+        return null;
+      }
+      const mapped = mapCoworkerDraft(row);
+      return {
+        ...mapped,
+        confirmIdempotencyKey: input.confirmIdempotencyKey ?? mapped.confirmIdempotencyKey,
+        provisionedCoworkerId: input.provisionedCoworkerId ?? mapped.provisionedCoworkerId,
+      };
+    },
+
+    async provisionCoworkerFromDraft(
+      input: ProvisionCoworkerFromDraftInput,
+    ): Promise<CoworkerDraftWriteResult> {
+      return sql.begin(async (tx) => {
+        const draftRows = await tx<
+          Array<{
+            id: string;
+            workspace_id: string;
+            source_text_encrypted: string;
+            proposal_json: unknown;
+            effective_preview_json: unknown;
+            draft_hash: string;
+            revision: number;
+            policy_revision: number;
+            catalog_revision: number;
+            state: string;
+            created_by: string;
+            expires_at: string | Date;
+            created_at: string | Date;
+            decided_at: string | Date | null;
+          }>
+        >`
+          SELECT *
+          FROM coworker_drafts
+          WHERE id = ${input.draftId}
+          FOR UPDATE
+        `;
+        const draftRow = draftRows[0];
+        if (!draftRow) {
+          return { ok: false, reason: "not_found" };
+        }
+        const draft = mapCoworkerDraft(draftRow);
+        const proposal = draft.proposal;
+
+        if (new Date(input.now).getTime() > new Date(draft.expiresAt).getTime()) {
+          if (draft.state === "awaiting_review") {
+            await tx`
+              UPDATE coworker_drafts
+              SET state = 'expired', decided_at = ${input.now}
+              WHERE id = ${input.draftId}
+            `;
+          }
+          return { ok: false, reason: "expired", draft };
+        }
+
+        const existingByHandle = await tx<Array<{ id: string }>>`
+          SELECT id
+          FROM agent_profiles
+          WHERE workspace_id = ${draft.workspaceId}
+            AND lower(handle) = lower(${proposal.handle})
+          LIMIT 1
+        `;
+        if (existingByHandle[0]) {
+          if (
+            draft.state === "ready" ||
+            draft.state === "confirmed" ||
+            draft.state === "provisioning"
+          ) {
+            const coworkerRows = await tx<
+              Array<{
+                id: string;
+                workspace_id: string;
+                handle: string;
+                name: string;
+                title: string;
+                status: string;
+                current_version_id: string | null;
+                config_revision: number;
+                editable_config_json: unknown;
+              }>
+            >`
+              SELECT id, workspace_id, handle, name, title, status, current_version_id,
+                     config_revision, editable_config_json
+              FROM agent_profiles
+              WHERE id = ${existingByHandle[0].id}
+              LIMIT 1
+            `;
+            const coworkerRow = coworkerRows[0];
+            if (coworkerRow) {
+              return {
+                ok: true,
+                draft: { ...draft, state: "ready", provisionedCoworkerId: coworkerRow.id },
+                coworker: {
+                  id: coworkerRow.id,
+                  workspaceId: coworkerRow.workspace_id,
+                  handle: coworkerRow.handle,
+                  name: coworkerRow.name,
+                  title: coworkerRow.title,
+                  avatarSeed: null,
+                  visibility: "workspace",
+                  status: coworkerRow.status as CoworkerRecord["status"],
+                  editableConfigJson: asConfig(coworkerRow.editable_config_json),
+                  currentVersionId: coworkerRow.current_version_id,
+                  configRevision: coworkerRow.config_revision,
+                  nativeSubagentsEnabled: false,
+                  createdAt: input.createdAt,
+                  updatedAt: input.createdAt,
+                },
+              };
+            }
+          }
+          return { ok: false, reason: "handle_conflict", draft };
+        }
+
+        if (draft.state !== "awaiting_review") {
+          return { ok: false, reason: "invalid_state", draft };
+        }
+
+        if (
+          draft.revision !== input.expectedRevision ||
+          draft.draftHash !== input.expectedHash ||
+          draft.policyRevision !== input.expectedPolicyRevision ||
+          draft.catalogRevision !== input.expectedCatalogRevision
+        ) {
+          return { ok: false, reason: "stale", draft };
+        }
+
+        const config: CoworkerEditableConfig = {
+          standing_instructions: proposal.standing_instructions,
+          model_preset: proposal.model_preset,
+          budget: proposal.budget,
+          channel_ids: [...proposal.channel_ids],
+          task_record_grants: proposal.task_record_grants.map((grant) => ({
+            channel_id: grant.channel_id,
+            operations: [...grant.operations],
+          })),
+          tool_grants: [...proposal.tool_grants],
+          skill_version_ids: [...proposal.skill_version_ids],
+          component_version_ids: [...proposal.component_version_ids],
+          sandbox: draft.effectivePreview.sandbox,
+        };
+        const versionConfig = {
+          ...config,
+          name: proposal.name,
+          handle: proposal.handle,
+          title: proposal.title,
+          native_subagents_enabled: false,
+        };
+
+        await tx`
+          INSERT INTO agent_profiles (
+            id, workspace_id, handle, name, title, visibility, status,
+            editable_config_json, current_version_id, config_revision,
+            native_subagents_enabled, created_at, updated_at
+          ) VALUES (
+            ${input.coworkerId}, ${draft.workspaceId}, ${proposal.handle}, ${proposal.name},
+            ${proposal.title}, 'workspace', 'active',
+            ${JSON.stringify(config)}::jsonb, ${input.versionId}, 1, false,
+            ${input.createdAt}, ${input.createdAt}
+          )
+        `;
+        await tx`
+          INSERT INTO agent_versions (
+            id, agent_profile_id, version, config_json, spec_hash, created_by, created_at
+          ) VALUES (
+            ${input.versionId}, ${input.coworkerId}, 1,
+            ${JSON.stringify(versionConfig)}::jsonb, ${input.specHash},
+            ${input.actorId}, ${input.createdAt}
+          )
+        `;
+
+        for (const channelId of proposal.channel_ids) {
+          await tx`
+            INSERT INTO channel_participants (
+              channel_id, participant_type, participant_id, role, joined_at, removed_at
+            ) VALUES (
+              ${channelId}, 'coworker', ${input.coworkerId}, 'member', ${input.createdAt}, NULL
+            )
+            ON CONFLICT (channel_id, participant_type, participant_id) DO UPDATE SET
+              removed_at = NULL,
+              joined_at = EXCLUDED.joined_at
+          `;
+        }
+
+        const updatedRows = await tx<
+          Array<{
+            id: string;
+            workspace_id: string;
+            source_text_encrypted: string;
+            proposal_json: unknown;
+            effective_preview_json: unknown;
+            draft_hash: string;
+            revision: number;
+            policy_revision: number;
+            catalog_revision: number;
+            state: string;
+            created_by: string;
+            expires_at: string | Date;
+            created_at: string | Date;
+            decided_at: string | Date | null;
+          }>
+        >`
+          UPDATE coworker_drafts
+          SET state = 'ready', decided_at = ${input.now}
+          WHERE id = ${input.draftId}
+          RETURNING *
+        `;
+        const updatedDraft = mapCoworkerDraft(updatedRows[0]!);
+        const coworker: CoworkerRecord = {
+          id: input.coworkerId,
+          workspaceId: draft.workspaceId,
+          handle: proposal.handle,
+          name: proposal.name,
+          title: proposal.title,
+          avatarSeed: null,
+          visibility: "workspace",
+          status: "active",
+          editableConfigJson: config,
+          currentVersionId: input.versionId,
+          configRevision: 1,
+          nativeSubagentsEnabled: false,
+          createdAt: input.createdAt,
+          updatedAt: input.createdAt,
+        };
+        return {
+          ok: true,
+          draft: { ...updatedDraft, provisionedCoworkerId: coworker.id },
+          coworker,
+        };
       });
     },
   };

@@ -2,12 +2,12 @@
 
 | Field | Current value |
 | --- | --- |
-| Overall | M0 Demo contract done; M1 Foundation done; P0-208 done; P0-212/P0-314 done; P0-301–P0-312 done |
+| Overall | M0 Demo contract done; M1 Foundation done; P0-109/P0-213/P0-313/P0-403 done; P0-315 in progress; P0-301–P0-312 done |
 | Current phase | Phase 1 — Foundation / M3 tools |
 | Active task | — |
-| Next task | Critical path: P0-313; also ready: P0-109, P0-213, P0-315 |
+| Next task | Critical path: P0-315 tail; then P0-316, P0-318, UI wave (P0-404+) |
 | P0 blockers | Run-limit hard enforcement |
-| Last updated | 2026-08-27 |
+| Last updated | 2026-08-28 (P0-315 broker channel projection + render grants) |
 
 ## Milestones
 

@@ -12,6 +12,10 @@ import {
   channelPinRemoveCommandSchema,
   channelUpdateCommandSchema,
   coworkerDisableCommandSchema,
+  coworkerDraftConfirmCommandSchema,
+  coworkerDraftCreateCommandSchema,
+  coworkerDraftRejectCommandSchema,
+  coworkerDraftReviseCommandSchema,
   coworkerUpdateCommandSchema,
   taskCreateCommandSchema,
   taskUpdateCommandSchema,
@@ -41,7 +45,11 @@ function fail(c: Context, error: WorkspaceServiceError) {
             ? 409
             : error.code === "stale_task_revision" || error.code === "task_transition_not_allowed"
               ? 409
-              : 400;
+              : error.code === "stale_coworker_draft" ||
+                  error.code === "expired_proposal" ||
+                  error.code === "coworker_provisioning_failed"
+                ? 409
+                : 400;
   const failure = errorResponse(error.code, error.message, {
     status,
     details: ("details" in error ? error.details : undefined) as SafeJsonObject | undefined,
@@ -746,6 +754,90 @@ export function mountWorkspaceRoutes(
     return c.json(failure.body, failure.status);
   });
 
+  app.post("/api/workspaces/:workspaceId/coworker-drafts", async (c) => {
+    const authed = await requireMutationSession(c, env, auth);
+    if (authed instanceof Response) return authed;
+    const workspaceId = requireParam(c, "workspaceId");
+    if (workspaceId instanceof Response) return workspaceId;
+    const parsed = coworkerDraftCreateCommandSchema.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) {
+      const failure = errorResponse("validation_failed", "Invalid coworker draft create command.", {
+        status: 400,
+      });
+      return c.json(failure.body, failure.status);
+    }
+    const result = await workspace.createCoworkerDraft(authed.session, workspaceId, parsed.data);
+    if (!result.ok) return fail(c, result.error);
+    return okJson(c, { draft: result.value }, 201);
+  });
+
+  app.get("/api/coworker-drafts/:draftId", async (c) => {
+    const authed = await requireSession(c, env, auth);
+    if (authed instanceof Response) return authed;
+    const draftId = requireParam(c, "draftId");
+    if (draftId instanceof Response) return draftId;
+    const result = await workspace.getCoworkerDraft(authed.session, draftId);
+    if (!result.ok) return fail(c, result.error);
+    return okJson(c, { draft: result.value }, 200);
+  });
+
+  app.post("/api/coworker-drafts/:draftId/revise", async (c) => {
+    const authed = await requireMutationSession(c, env, auth);
+    if (authed instanceof Response) return authed;
+    const draftId = requireParam(c, "draftId");
+    if (draftId instanceof Response) return draftId;
+    const parsed = coworkerDraftReviseCommandSchema.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) {
+      const failure = errorResponse("validation_failed", "Invalid coworker draft revise command.", {
+        status: 400,
+      });
+      return c.json(failure.body, failure.status);
+    }
+    const result = await workspace.reviseCoworkerDraft(authed.session, draftId, parsed.data);
+    if (!result.ok) return fail(c, result.error);
+    return okJson(c, { draft: result.value }, 200);
+  });
+
+  app.post("/api/coworker-drafts/:draftId/confirm", async (c) => {
+    const authed = await requireMutationSession(c, env, auth);
+    if (authed instanceof Response) return authed;
+    const draftId = requireParam(c, "draftId");
+    if (draftId instanceof Response) return draftId;
+    const parsed = coworkerDraftConfirmCommandSchema.safeParse(
+      await c.req.json().catch(() => null),
+    );
+    if (!parsed.success) {
+      const failure = errorResponse(
+        "validation_failed",
+        "Invalid coworker draft confirm command.",
+        {
+          status: 400,
+        },
+      );
+      return c.json(failure.body, failure.status);
+    }
+    const result = await workspace.confirmCoworkerDraft(authed.session, draftId, parsed.data);
+    if (!result.ok) return fail(c, result.error);
+    return okJson(c, result.value, 200);
+  });
+
+  app.post("/api/coworker-drafts/:draftId/reject", async (c) => {
+    const authed = await requireMutationSession(c, env, auth);
+    if (authed instanceof Response) return authed;
+    const draftId = requireParam(c, "draftId");
+    if (draftId instanceof Response) return draftId;
+    const parsed = coworkerDraftRejectCommandSchema.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) {
+      const failure = errorResponse("validation_failed", "Invalid coworker draft reject command.", {
+        status: 400,
+      });
+      return c.json(failure.body, failure.status);
+    }
+    const result = await workspace.rejectCoworkerDraft(authed.session, draftId, parsed.data);
+    if (!result.ok) return fail(c, result.error);
+    return okJson(c, { draft: result.value }, 200);
+  });
+
   app.post("/api/channels/:channelId/tasks", async (c) => {
     const authed = await requireMutationSession(c, env, auth);
     if (authed instanceof Response) return authed;
@@ -808,6 +900,22 @@ export function mountWorkspaceRoutes(
     const result = await workspace.listTaskHistory(authed.session, taskId);
     if (!result.ok) return fail(c, result.error);
     return okJson(c, { revisions: result.value }, 200);
+  });
+
+  app.get("/api/runs/:runId/receipt", async (c) => {
+    const authed = await requireSession(c, env, auth);
+    if (authed instanceof Response) {
+      return authed;
+    }
+    const runId = requireParam(c, "runId");
+    if (runId instanceof Response) {
+      return runId;
+    }
+    const result = await workspace.getRunReceipt(authed.session, runId);
+    if (!result.ok) {
+      return fail(c, result.error);
+    }
+    return okJson(c, result.value, 200);
   });
 
   app.post("/api/runs/:runId/cancel", async (c) => {

@@ -188,6 +188,9 @@ importers:
         specifier: workspace:*
         version: link:../../packages/integrations/ui-components-mcp
     devDependencies:
+      '@forgeroom/domain':
+        specifier: workspace:*
+        version: link:../../packages/domain
       '@types/node':
         specifier: 'catalog:'
         version: 22.20.1
@@ -250,6 +253,9 @@ importers:
 
   packages/domain:
     dependencies:
+      '@forgeroom/composio':
+        specifier: workspace:*
+        version: link:../integrations/composio
       '@forgeroom/contracts':
         specifier: workspace:*
         version: link:../contracts
@@ -371,6 +377,9 @@ importers:
       '@forgeroom/contracts':
         specifier: workspace:*
         version: link:../contracts
+      '@forgeroom/domain':
+        specifier: workspace:*
+        version: link:../domain
       '@forgeroom/trueforge':
         specifier: workspace:*
         version: link:../integrations/trueforge

@@ -58,20 +58,43 @@ async function ping(url: string): Promise<void> {
   }
 }
 
-export async function ensureLocalPostgres(): Promise<string> {
-  const candidates = [
-    databaseUrl(),
-    `postgres://${encodeURIComponent(process.env.USER ?? "postgres")}@127.0.0.1:5432/postgres`,
-  ];
-  for (const url of candidates) {
+function postgresCandidates(): string[] {
+  const seen = new Set<string>();
+  const candidates: string[] = [];
+  const push = (url: string | undefined) => {
+    if (!url || seen.has(url)) {
+      return;
+    }
+    seen.add(url);
+    candidates.push(url);
+  };
+  push(process.env.DATABASE_URL);
+  push(databaseUrl());
+  push(`postgres://${encodeURIComponent(process.env.USER ?? "postgres")}@127.0.0.1:5432/postgres`);
+  return candidates;
+}
+
+let cachedPostgresUrl: string | null | undefined;
+
+/** Fast reachability probe — never starts Docker. */
+export async function resolvePostgresTestUrl(): Promise<string | null> {
+  if (cachedPostgresUrl !== undefined) {
+    return cachedPostgresUrl;
+  }
+  for (const url of postgresCandidates()) {
     try {
       await ping(url);
+      cachedPostgresUrl = url;
       return url;
     } catch {
-      // Try Docker or the next candidate.
+      // Try the next candidate.
     }
   }
+  cachedPostgresUrl = null;
+  return null;
+}
 
+async function bootstrapDockerPostgres(): Promise<string> {
   try {
     execSync(`${dockerBin()} compose -f infra/compose.yaml up -d postgres`, {
       cwd: repoRoot,
@@ -81,7 +104,7 @@ export async function ensureLocalPostgres(): Promise<string> {
     const lastError = error;
     const deadline = Date.now() + 40_000;
     while (Date.now() < deadline) {
-      for (const url of candidates) {
+      for (const url of postgresCandidates()) {
         try {
           await ping(url);
           return url;
@@ -108,8 +131,37 @@ export async function ensureLocalPostgres(): Promise<string> {
   throw lastError;
 }
 
+export async function ensureLocalPostgres(): Promise<string> {
+  const existing = await resolvePostgresTestUrl();
+  if (existing) {
+    return existing;
+  }
+  if (process.env.FORGEROOM_TEST_DOCKER_POSTGRES === "1") {
+    const bootstrapped = await bootstrapDockerPostgres();
+    cachedPostgresUrl = bootstrapped;
+    return bootstrapped;
+  }
+  throw new Error(
+    "PostgreSQL is not reachable. Set DATABASE_URL, start infra/compose.yaml, or set FORGEROOM_TEST_DOCKER_POSTGRES=1.",
+  );
+}
+
+async function skipIntegrationTestWhenUnavailable(): Promise<void> {
+  const { getCurrentTest } = await import("vitest/suite");
+  const test = getCurrentTest();
+  if (test?.context && "skip" in test.context && typeof test.context.skip === "function") {
+    test.context.skip(true, "PostgreSQL not available");
+  }
+}
+
 export async function withTemporaryDatabase<T>(fn: (url: string) => Promise<T>): Promise<T> {
-  const url = await ensureLocalPostgres();
+  const url = await resolvePostgresTestUrl();
+  if (!url) {
+    await skipIntegrationTestWhenUnavailable();
+    throw new Error(
+      "PostgreSQL is not reachable. Set DATABASE_URL, start infra/compose.yaml, or set FORGEROOM_TEST_DOCKER_POSTGRES=1.",
+    );
+  }
   const admin = postgres(adminUrl(url), { max: 1, prepare: false, onnotice: () => undefined });
   const dbName = `forgeroom_p0103_${process.pid}_${Date.now()}`;
   try {
@@ -124,8 +176,15 @@ export async function withTemporaryDatabase<T>(fn: (url: string) => Promise<T>):
 }
 
 export async function withMigratedDatabase<T>(fn: (sql: postgres.Sql) => Promise<T>): Promise<T> {
-  return withTemporaryDatabase(async (url) => {
-    const sql = createSql(url);
+  const url = await resolvePostgresTestUrl();
+  if (!url) {
+    await skipIntegrationTestWhenUnavailable();
+    throw new Error(
+      "PostgreSQL is not reachable. Set DATABASE_URL, start infra/compose.yaml, or set FORGEROOM_TEST_DOCKER_POSTGRES=1.",
+    );
+  }
+  return withTemporaryDatabase(async (testUrl) => {
+    const sql = createSql(testUrl);
     try {
       await migrate(sql);
       return await fn(sql);

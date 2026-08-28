@@ -9,10 +9,16 @@ import type {
 } from "@forgeroom/contracts";
 import {
   actionGrantSchema,
+  interpretP0ActionGrant,
   safeJsonValueSchema,
   safeJsonObjectSchema,
   uiInteractionTokenRequestSchema,
 } from "@forgeroom/contracts";
+import { enqueueComponentInterruptContinuationInTx } from "./component-interrupt-continuation";
+import {
+  loadRetainedDataGrantSnapshot,
+  resolveRetainedDataGrantRead,
+} from "./retained-data-grants";
 
 export type SqlClient = postgres.Sql;
 
@@ -362,9 +368,18 @@ function grantMatchesRow(
     maxUses: number | null;
     expiresAt: string | Date;
     revokedAt: string | Date | null;
+    linkedDataGrantId?: string | null;
+    componentInterruptId?: string | null;
   },
 ): boolean {
+  const modeMatches =
+    grant.mode === row.actionMode &&
+    (grant.mode !== "server_read" ||
+      (grant.data_grant_id === row.linkedDataGrantId && grant.data_ref.length > 0)) &&
+    (grant.mode !== "complete_component_interrupt" ||
+      grant.component_interrupt_id === row.componentInterruptId);
   return (
+    modeMatches &&
     grant.id === row.id &&
     grant.bound_render_revision === row.boundRenderRevision &&
     grant.bound_manifest_hash === row.boundManifestHash &&
@@ -640,6 +655,8 @@ export async function issueUiInteractionToken(
         allowed_render_node_ids_json: unknown;
         input_schema_json: unknown;
         grant_body_redacted_json: unknown;
+        linked_data_grant_id: string | null;
+        component_interrupt_id: string | null;
         max_uses: number | null;
         use_count: number;
         expires_at: string | Date;
@@ -648,7 +665,7 @@ export async function issueUiInteractionToken(
     >`
       SELECT id, bound_render_revision, bound_manifest_hash, action_ref, handler_key,
              action_mode, input_schema_hash, input_schema_json, allowed_render_node_ids_json,
-             grant_body_redacted_json,
+             grant_body_redacted_json, linked_data_grant_id, component_interrupt_id,
              max_uses, use_count, expires_at, revoked_at
       FROM ui_surface_grants
       WHERE id = ${input.request.actionGrantId}
@@ -660,7 +677,17 @@ export async function issueUiInteractionToken(
     if (!grant) {
       return { ok: false, error: { code: "not_found", message: "ActionGrant not found." } };
     }
-    const parsedGrant = actionGrantSchema.safeParse(parseJson(grant.grant_body_redacted_json));
+    const interpretedGrant = interpretP0ActionGrant(parseJson(grant.grant_body_redacted_json));
+    if (!interpretedGrant.ok) {
+      return {
+        ok: false,
+        error: {
+          code: "ui_interaction_not_allowed",
+          message: "ActionGrant mode is unsupported in P0.",
+        },
+      };
+    }
+    const parsedGrant = actionGrantSchema.safeParse(interpretedGrant.grant);
     const persistedInputSchema = safeJsonObjectSchema.safeParse(parseJson(grant.input_schema_json));
     if (
       !parsedGrant.success ||
@@ -681,6 +708,8 @@ export async function issueUiInteractionToken(
         maxUses: grant.max_uses,
         expiresAt: grant.expires_at,
         revokedAt: grant.revoked_at,
+        linkedDataGrantId: grant.linked_data_grant_id,
+        componentInterruptId: grant.component_interrupt_id,
       }) ||
       canonicalizeJson(parsedGrant.data.input_schema) !==
         canonicalizeJson(persistedInputSchema.data)
@@ -691,32 +720,68 @@ export async function issueUiInteractionToken(
       };
     }
     const actionGrant = parsedGrant.data;
-    if (
+    const commonBindingInvalid =
       grant.bound_render_revision !== instance.current_render_revision ||
       grant.bound_manifest_hash !== revision.manifest_hash ||
       grant.action_ref !== request.actionRef ||
-      grant.action_mode !== "local_state" ||
       !grant.handler_key ||
       !grant.input_schema_hash ||
       !parseStringArray(grant.allowed_render_node_ids_json).includes(request.renderNodeId) ||
       !actionGrant.allowed_render_node_ids.includes(request.renderNodeId) ||
-      !matchesInputSchema(request.input, actionGrant.input_schema)
-    ) {
+      !matchesInputSchema(request.input, actionGrant.input_schema);
+    if (commonBindingInvalid) {
       return {
         ok: false,
         error: { code: "ui_interaction_not_allowed", message: "ActionGrant binding is invalid." },
       };
     }
-    if (grant.revoked_at !== null || new Date(grant.expires_at).getTime() <= Date.parse(now)) {
+    if (actionGrant.mode === "server_read") {
+      const linkedDataGrant = await loadRetainedDataGrantSnapshot(tx, {
+        uiInstanceId: instance.id,
+        dataGrantId: actionGrant.data_grant_id,
+        expectedRenderRevision: instance.current_render_revision,
+        expectedManifestHash: revision.manifest_hash,
+        expectedDataRef: actionGrant.data_ref,
+        now,
+      });
+      if (!linkedDataGrant.ok) {
+        return {
+          ok: false,
+          error: {
+            code: linkedDataGrant.code === "not_found" ? "not_found" : "ui_interaction_not_allowed",
+            message: linkedDataGrant.message,
+          },
+        };
+      }
+    }
+    if (actionGrant.mode === "complete_component_interrupt") {
+      const interrupts = await tx<{ id: string; state: string }[]>`
+        SELECT id, state
+        FROM ui_component_interrupts
+        WHERE id = ${actionGrant.component_interrupt_id}
+          AND ui_instance_id = ${instance.id}
+          AND action_grant_id = ${grant.id}
+        FOR UPDATE
+      `;
+      const interrupt = interrupts[0];
+      if (!interrupt || interrupt.state !== "waiting") {
+        return {
+          ok: false,
+          error: {
+            code: "ui_interaction_not_allowed",
+            message: "Component interrupt is not waiting for resolution.",
+          },
+        };
+      }
+    }
+    if (
+      grant.revoked_at !== null ||
+      new Date(grant.expires_at).getTime() <= Date.parse(now) ||
+      (grant.max_uses !== null && grant.use_count >= grant.max_uses)
+    ) {
       return {
         ok: false,
         error: { code: "ui_interaction_not_allowed", message: "ActionGrant is inactive." },
-      };
-    }
-    if (grant.max_uses !== null && grant.use_count >= grant.max_uses) {
-      return {
-        ok: false,
-        error: { code: "ui_interaction_not_allowed", message: "ActionGrant usage limit reached." },
       };
     }
 
@@ -803,6 +868,11 @@ export async function commitUiInteraction(
         action_revoked_at: string | Date | null;
         action_max_uses: number | null;
         action_use_count: number;
+        linked_data_grant_id: string | null;
+        component_interrupt_id: string | null;
+        run_step_id: string;
+        channel_agent_session_id: string;
+        session_generation_id: string;
         current_render_revision: number | null;
         current_state_revision: number | null;
         current_manifest_hash: string | null;
@@ -826,6 +896,8 @@ export async function commitUiInteraction(
         g.issued_by AS grant_issued_by,
         g.action_mode, g.expires_at AS action_expires_at, g.revoked_at AS action_revoked_at,
         g.max_uses AS action_max_uses, g.use_count AS action_use_count,
+        g.linked_data_grant_id, g.component_interrupt_id,
+        ui.run_step_id, at.channel_agent_session_id, at.session_generation_id,
         ui.current_render_revision, ui.current_state_revision,
         (
           SELECT r.manifest_hash
@@ -843,9 +915,10 @@ export async function commitUiInteraction(
       JOIN ui_instances AS ui ON ui.id = i.ui_instance_id
       JOIN channels AS ch ON ch.id = ui.channel_id
       JOIN ui_surface_grants AS g ON g.id = i.action_grant_id
+      JOIN agent_turns AS at ON at.id = ui.agent_turn_id
       WHERE i.id = ${input.interactionId}
         AND i.ui_instance_id = ${input.instanceId}
-      FOR UPDATE OF i, ui, g, ch
+      FOR UPDATE OF i, ui, g, ch, at
     `;
     const row = rows[0];
     if (!row) {
@@ -860,7 +933,11 @@ export async function commitUiInteraction(
     if (row.interaction_token_hash !== tokenHash) {
       return { ok: false, error: { code: "forbidden", message: "Interaction token is invalid." } };
     }
-    const parsedGrant = actionGrantSchema.safeParse(parseJson(row.grant_body_redacted_json));
+    const interpretedGrant = interpretP0ActionGrant(parseJson(row.grant_body_redacted_json));
+    const parsedGrant =
+      interpretedGrant.ok === true
+        ? actionGrantSchema.safeParse(interpretedGrant.grant)
+        : ({ success: false } as const);
     const persistedInputSchema = safeJsonObjectSchema.safeParse(parseJson(row.input_schema_json));
     const grantAuthorityValid =
       parsedGrant.success &&
@@ -883,6 +960,8 @@ export async function commitUiInteraction(
         maxUses: row.action_max_uses,
         expiresAt: row.action_expires_at,
         revokedAt: row.action_revoked_at,
+        linkedDataGrantId: row.linked_data_grant_id,
+        componentInterruptId: row.component_interrupt_id,
       }) &&
       canonicalizeJson(parsedGrant.data.input_schema) ===
         canonicalizeJson(persistedInputSchema.data) &&
@@ -933,7 +1012,11 @@ export async function commitUiInteraction(
         },
       };
     }
-    if (row.action_mode !== "local_state") {
+    if (
+      row.action_mode !== "local_state" &&
+      row.action_mode !== "server_read" &&
+      row.action_mode !== "complete_component_interrupt"
+    ) {
       return {
         ok: false,
         error: {
@@ -943,44 +1026,184 @@ export async function commitUiInteraction(
       };
     }
 
-    const nextStateRevision = (row.current_state_revision ?? -1) + 1;
-    const state = {
-      lastInteraction: {
-        actionRef: row.intent_name,
-        renderNodeId: row.render_node_id,
-        input: parseJson(row.payload_redacted_json) as SafeJsonValue,
-      },
-    };
-    const stateHash = hashJson(state);
-    const revisionId = opaqueId("uirev");
-    await tx`
-      INSERT INTO ui_instance_revisions (
-        id, ui_instance_id, revision_kind, revision, base_revision,
-        validator_policy_version, state_schema_hash, scoped_state_json,
-        scoped_state_hash, content_hash, validation_state, created_at, promoted_at
-      ) VALUES (
-        ${revisionId}, ${row.ui_instance_id}, 'state', ${nextStateRevision},
-        ${row.current_state_revision}, 'registry_v1', ${hashText("registry_v1-state-v1")},
-        ${JSON.stringify(state)}::jsonb, ${stateHash}, ${stateHash}, 'valid', ${now}, ${now}
-      )
-    `;
-    await tx`
-      UPDATE ui_instances
-      SET current_state_revision = ${nextStateRevision}, updated_at = ${now}
-      WHERE id = ${row.ui_instance_id}
-        AND current_state_revision IS NOT DISTINCT FROM ${row.current_state_revision}
-    `;
+    const actionGrant = parsedGrant.success ? parsedGrant.data : null;
+    if (!actionGrant) {
+      return {
+        ok: false,
+        error: { code: "ui_interaction_not_allowed", message: "ActionGrant authority is invalid." },
+      };
+    }
+    const payloadInput = parseJson(row.payload_redacted_json) as SafeJsonValue;
+    let result: SafeJsonValue;
+    let resultRef: string | null = null;
+    let nextStateRevision = row.current_state_revision;
+
+    if (row.action_mode === "local_state") {
+      nextStateRevision = (row.current_state_revision ?? -1) + 1;
+      const state = {
+        lastInteraction: {
+          actionRef: row.intent_name,
+          renderNodeId: row.render_node_id,
+          input: payloadInput,
+        },
+      };
+      const stateHash = hashJson(state);
+      resultRef = opaqueId("uirev");
+      await tx`
+        INSERT INTO ui_instance_revisions (
+          id, ui_instance_id, revision_kind, revision, base_revision,
+          validator_policy_version, state_schema_hash, scoped_state_json,
+          scoped_state_hash, content_hash, validation_state, created_at, promoted_at
+        ) VALUES (
+          ${resultRef}, ${row.ui_instance_id}, 'state', ${nextStateRevision},
+          ${row.current_state_revision}, 'registry_v1', ${hashText("registry_v1-state-v1")},
+          ${JSON.stringify(state)}::jsonb, ${stateHash}, ${stateHash}, 'valid', ${now}, ${now}
+        )
+      `;
+      await tx`
+        UPDATE ui_instances
+        SET current_state_revision = ${nextStateRevision}, updated_at = ${now}
+        WHERE id = ${row.ui_instance_id}
+          AND current_state_revision IS NOT DISTINCT FROM ${row.current_state_revision}
+      `;
+      result = { stateRevision: nextStateRevision };
+    } else if (row.action_mode === "server_read") {
+      if (actionGrant.mode !== "server_read" || !row.current_manifest_hash) {
+        return {
+          ok: false,
+          error: { code: "ui_interaction_not_allowed", message: "ActionGrant binding is invalid." },
+        };
+      }
+      const retained = await loadRetainedDataGrantSnapshot(tx, {
+        uiInstanceId: row.ui_instance_id,
+        dataGrantId: actionGrant.data_grant_id,
+        expectedRenderRevision: row.render_revision,
+        expectedManifestHash: row.current_manifest_hash,
+        expectedDataRef: actionGrant.data_ref,
+        now,
+      });
+      if (!retained.ok) {
+        return {
+          ok: false,
+          error: {
+            code: retained.code === "not_found" ? "not_found" : "ui_interaction_not_allowed",
+            message: retained.message,
+          },
+        };
+      }
+      try {
+        const data = resolveRetainedDataGrantRead({
+          snapshot: retained.snapshot,
+          dataGrant: retained.dataGrant,
+          allowedSelectionPaths: actionGrant.allowed_selection_paths,
+        });
+        const parsedData = safeJsonValueSchema.safeParse(data);
+        if (!parsedData.success) {
+          return {
+            ok: false,
+            error: {
+              code: "ui_interaction_not_allowed",
+              message: "Retained data read produced an invalid JSON value.",
+            },
+          };
+        }
+        result = { dataRef: actionGrant.data_ref, data: parsedData.data };
+      } catch (error) {
+        return {
+          ok: false,
+          error: {
+            code: "ui_interaction_not_allowed",
+            message: error instanceof Error ? error.message : "Retained data read failed.",
+          },
+        };
+      }
+      await tx`
+        UPDATE ui_surface_grants
+        SET use_count = use_count + 1
+        WHERE id = ${actionGrant.data_grant_id}
+          AND revoked_at IS NULL
+          AND expires_at > ${now}
+          AND (max_uses IS NULL OR use_count < max_uses)
+      `;
+    } else {
+      if (
+        actionGrant.mode !== "complete_component_interrupt" ||
+        !row.component_interrupt_id ||
+        actionGrant.component_interrupt_id !== row.component_interrupt_id
+      ) {
+        return {
+          ok: false,
+          error: { code: "ui_interaction_not_allowed", message: "ActionGrant binding is invalid." },
+        };
+      }
+      const interrupts = await tx<
+        {
+          id: string;
+          state: string;
+          session_generation_id: string;
+          result_redacted_json: unknown;
+        }[]
+      >`
+        SELECT id, state, session_generation_id, result_redacted_json
+        FROM ui_component_interrupts
+        WHERE id = ${actionGrant.component_interrupt_id}
+          AND ui_instance_id = ${row.ui_instance_id}
+          AND action_grant_id = ${row.action_grant_id}
+        FOR UPDATE
+      `;
+      const interrupt = interrupts[0];
+      if (
+        !interrupt ||
+        interrupt.state !== "waiting" ||
+        interrupt.session_generation_id !== row.session_generation_id
+      ) {
+        return {
+          ok: false,
+          error: {
+            code: "ui_interaction_not_allowed",
+            message: "Component interrupt is not waiting for resolution.",
+          },
+        };
+      }
+      const resultHash = hashJson(payloadInput);
+      await tx`
+        UPDATE ui_component_interrupts
+        SET result_redacted_json = ${JSON.stringify(payloadInput)}::jsonb,
+            result_hash = ${resultHash}
+        WHERE id = ${interrupt.id}
+          AND state = 'waiting'
+      `;
+      const continuation = await enqueueComponentInterruptContinuationInTx(tx, {
+        interactionId: row.interaction_id,
+        uiInstanceId: row.ui_instance_id,
+        interruptId: interrupt.id,
+        runStepId: row.run_step_id,
+        channelAgentSessionId: row.channel_agent_session_id,
+        sessionGenerationId: row.session_generation_id,
+        now,
+      });
+      if (!continuation.ok) {
+        return {
+          ok: false,
+          error: { code: "conflict", message: continuation.message },
+        };
+      }
+      result = payloadInput;
+      resultRef = continuation.queueItemId;
+    }
+
     await tx`
       UPDATE ui_surface_grants
       SET use_count = use_count + 1
       WHERE id = ${row.action_grant_id}
+        AND revoked_at IS NULL
+        AND expires_at > ${now}
         AND (max_uses IS NULL OR use_count < max_uses)
     `;
-    const result = { stateRevision: nextStateRevision };
     await tx`
       UPDATE ui_interactions
       SET state = 'succeeded', result_redacted_json = ${JSON.stringify(result)}::jsonb,
-          result_ref = ${revisionId}, consumed_at = ${now}
+          result_ref = ${resultRef}, consumed_at = ${now}
       WHERE id = ${row.interaction_id} AND state = 'token_issued'
     `;
     return {
@@ -989,7 +1212,7 @@ export async function commitUiInteraction(
         interactionId: row.interaction_id,
         state: "succeeded",
         result,
-        resultRef: revisionId,
+        resultRef,
         renderRevision: row.render_revision,
         stateRevision: nextStateRevision,
       },

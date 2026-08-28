@@ -2,12 +2,16 @@ import { createHash, randomBytes } from "node:crypto";
 import type postgres from "postgres";
 import {
   buildGrantScopePreimage,
+  buildRenderNodeSet,
+  allowedRenderNodeIds,
   canonicalizeJson,
   componentToolName,
   getRegistryDefinition,
   hashGrantScope,
 } from "@forgeroom/domain";
 import { validatePropsAgainstParameterSchema } from "./ui-interactions";
+import { enqueueComponentInterruptContinuationInTx } from "./component-interrupt-continuation";
+import { appendComponentBrokerChannelProjectionInTx } from "./component-channel-projection";
 
 export type SqlConnection = postgres.Sql;
 export type SqlClient = postgres.Sql | postgres.TransactionSql;
@@ -135,6 +139,7 @@ export async function loadPublishedComponentVersionForStableName(
   descriptorHash: string;
   exposure: "agent_tool" | "server_only";
   modelDescription: string;
+  semanticVersion: string;
 } | null> {
   const rows = await sql<
     {
@@ -143,9 +148,10 @@ export async function loadPublishedComponentVersionForStableName(
       descriptor_hash: string;
       exposure: "agent_tool" | "server_only";
       model_description: string;
+      semantic_version: string;
     }[]
   >`
-    SELECT v.id, c.stable_name, v.descriptor_hash, v.exposure, v.model_description
+    SELECT v.id, c.stable_name, v.descriptor_hash, v.exposure, v.model_description, v.semantic_version
     FROM ui_component_versions AS v
     JOIN ui_components AS c ON c.id = v.component_id
     WHERE c.workspace_id = ${input.workspaceId}
@@ -164,6 +170,7 @@ export async function loadPublishedComponentVersionForStableName(
     descriptorHash: row.descriptor_hash,
     exposure: row.exposure,
     modelDescription: row.model_description,
+    semanticVersion: row.semantic_version,
   };
 }
 
@@ -184,7 +191,7 @@ export async function createBuildingComponentUiInstance(
     textAlternative: string;
     now?: string;
   },
-): Promise<{ uiInstanceId: string }> {
+): Promise<{ uiInstanceId: string; activityMessageId: string }> {
   const now = input.now ?? new Date().toISOString();
   const uiInstanceId = opaqueId("ui");
   const activityMessageId = opaqueId("act");
@@ -214,7 +221,7 @@ export async function createBuildingComponentUiInstance(
       ${now}
     )
   `;
-  return { uiInstanceId };
+  return { uiInstanceId, activityMessageId };
 }
 
 export async function loadComponentOfferContext(
@@ -379,6 +386,7 @@ export async function finalizeOrQuarantineUiInstance(
     expectedRenderRevision: number | null;
     nextRenderRevision: number;
     renderManifestHash: string;
+    renderNodeSet?: { nodeId: string }[];
     validatedProps?: Record<string, unknown>;
     outcome: "ready" | "quarantined";
     now?: string;
@@ -397,6 +405,7 @@ async function finalizeOrQuarantineUiInstanceInTx(
     expectedRenderRevision: number | null;
     nextRenderRevision: number;
     renderManifestHash: string;
+    renderNodeSet?: { nodeId: string }[];
     validatedProps?: Record<string, unknown>;
     outcome: "ready" | "quarantined";
     now?: string;
@@ -415,12 +424,22 @@ async function finalizeOrQuarantineUiInstanceInTx(
       render_grant_id: string | null;
       text_alternative: string;
       validated_props_json: Record<string, unknown> | null;
+      stable_name: string;
     }[]
   >`
-      SELECT id, status, current_render_revision, component_version_id, render_grant_id, text_alternative
-      FROM ui_instances
-      WHERE id = ${input.uiInstanceId}
-      FOR UPDATE
+      SELECT
+        ui.id,
+        ui.status,
+        ui.current_render_revision,
+        ui.component_version_id,
+        ui.render_grant_id,
+        ui.text_alternative,
+        c.stable_name
+      FROM ui_instances AS ui
+      JOIN ui_component_versions AS v ON v.id = ui.component_version_id
+      JOIN ui_components AS c ON c.id = v.component_id
+      WHERE ui.id = ${input.uiInstanceId}
+      FOR UPDATE OF ui
     `;
   const instance = rows[0];
   if (!instance) {
@@ -442,7 +461,7 @@ async function finalizeOrQuarantineUiInstanceInTx(
   }
 
   const revisionId = opaqueId("uirev");
-  const renderNodeSet = [{ nodeId: "root" }];
+  const renderNodeSet = input.renderNodeSet ?? buildRenderNodeSet(instance.stable_name);
   const renderNodeSetHash = hashText(canonicalizeJson(renderNodeSet));
   const validatedProps = input.validatedProps ?? { schemaVersion: 1 };
   const validatedPropsHash = hashText(canonicalizeJson(validatedProps));
@@ -612,6 +631,16 @@ export async function applyScopedUiInteractionWorker(
     }
 
     if (!row.interrupt_id || row.interrupt_state !== "waiting") {
+      if (row.interrupt_state === "resolved") {
+        return {
+          ok: true,
+          value: {
+            interactionId: row.interaction_id,
+            enqueuedContinuation: false,
+            queueItemId: null,
+          },
+        };
+      }
       return {
         ok: true,
         value: {
@@ -622,39 +651,22 @@ export async function applyScopedUiInteractionWorker(
       };
     }
 
-    const queueItemId = opaqueId("q");
-    await tx`
-      SELECT id FROM channel_agent_sessions WHERE id = ${row.channel_agent_session_id} FOR UPDATE
-    `;
-    await tx`
-      INSERT INTO turn_queue_items (
-        id, channel_agent_session_id, run_step_id, bound_session_generation_id,
-        input_type, input_payload_redacted_json, fifo_sequence, state, created_at
-      )
-      SELECT
-        ${queueItemId},
-        ${row.channel_agent_session_id},
-        ${row.run_step_id},
-        ${row.session_generation_id},
-        'component_interaction_response',
-        ${JSON.stringify({
-          interaction_id: row.interaction_id,
-          ui_instance_id: input.uiInstanceId,
-          component_interrupt_id: row.interrupt_id,
-        })}::jsonb,
-        COALESCE((SELECT MAX(fifo_sequence) + 1 FROM turn_queue_items WHERE channel_agent_session_id = ${row.channel_agent_session_id}), 0),
-        'queued',
-        ${now}
-    `;
-
-    await tx`
-      UPDATE ui_component_interrupts
-      SET state = 'resolved',
-          continuation_queue_item_id = ${queueItemId},
-          resolved_at = ${now}
-      WHERE id = ${row.interrupt_id}
-        AND state = 'waiting'
-    `;
+    const continuation = await enqueueComponentInterruptContinuationInTx(tx, {
+      interactionId: row.interaction_id,
+      uiInstanceId: input.uiInstanceId,
+      interruptId: row.interrupt_id,
+      runStepId: row.run_step_id,
+      channelAgentSessionId: row.channel_agent_session_id,
+      sessionGenerationId: row.session_generation_id,
+      now,
+    });
+    if (!continuation.ok) {
+      return {
+        ok: false,
+        code: "scope_mismatch",
+        message: continuation.message,
+      };
+    }
 
     const consumed = await tx<{ id: string }[]>`
       UPDATE ui_surface_grants
@@ -678,7 +690,7 @@ export async function applyScopedUiInteractionWorker(
       value: {
         interactionId: row.interaction_id,
         enqueuedContinuation: true,
-        queueItemId,
+        queueItemId: continuation.queueItemId,
       },
     };
   });
@@ -751,10 +763,39 @@ async function hasActiveComponentGrant(
   return rows.length > 0;
 }
 
+async function setupRenderGrant(
+  sql: SqlClient,
+  input: {
+    uiInstanceId: string;
+    stableName: string;
+    grantScopeHash: string;
+    now: string;
+  },
+): Promise<string> {
+  const definition = getRegistryDefinition(input.stableName);
+  const componentKind = definition?.kind ?? "table";
+  const grantExpiresAtValue = grantExpiresAt(input.now);
+  const renderGrantId = opaqueId("rg");
+  await sql`
+    INSERT INTO ui_surface_grants (
+      id, ui_instance_id, grant_kind, policy_revision, rail, allowed_component_types_json,
+      limits_json, grant_body_redacted_json, grant_scope_hash, issued_by, expires_at, created_at
+    )
+    VALUES (
+      ${renderGrantId}, ${input.uiInstanceId}, 'render', 1, 'registry_v1', ${JSON.stringify([componentKind])}::jsonb,
+      '{}'::jsonb, '{}'::jsonb, ${input.grantScopeHash}, 'application_policy', ${grantExpiresAtValue}, ${input.now}
+    )
+  `;
+  await sql`UPDATE ui_instances SET render_grant_id = ${renderGrantId} WHERE id = ${input.uiInstanceId}`;
+  return renderGrantId;
+}
+
 async function setupInteractiveBrokerArtifacts(
   sql: SqlClient,
   input: {
     uiInstanceId: string;
+    workspaceId: string;
+    channelId: string;
     generationId: string;
     toolCallId: string;
     stableName: string;
@@ -772,36 +813,61 @@ async function setupInteractiveBrokerArtifacts(
   const primaryIntent = definition?.declaredInteractionIntents[0] ?? "interact";
   const inputSchema = definition?.parameterSchema ?? {};
   const inputSchemaHash = hashText(canonicalizeJson(inputSchema));
-  const componentKind = definition?.kind ?? "table";
   const grantExpiresAtValue = grantExpiresAt(input.now);
-  const renderGrantId = opaqueId("rg");
-  await sql`
-    INSERT INTO ui_surface_grants (
-      id, ui_instance_id, grant_kind, policy_revision, rail, allowed_component_types_json,
-      limits_json, grant_scope_hash, issued_by, expires_at, created_at
-    )
-    VALUES (
-      ${renderGrantId}, ${input.uiInstanceId}, 'render', 1, 'registry_v1', ${JSON.stringify([componentKind])}::jsonb,
-      '{}'::jsonb, ${input.grantScopeHash}, 'application_policy', ${grantExpiresAtValue}, ${input.now}
-    )
-  `;
-  await sql`UPDATE ui_instances SET render_grant_id = ${renderGrantId} WHERE id = ${input.uiInstanceId}`;
+  const renderNodeIds = allowedRenderNodeIds(input.stableName);
+
+  await setupRenderGrant(sql, {
+    uiInstanceId: input.uiInstanceId,
+    stableName: input.stableName,
+    grantScopeHash: input.grantScopeHash,
+    now: input.now,
+  });
 
   const actionGrantId = opaqueId("ag");
+  const interruptId = opaqueId("intr");
+  const actionGrantBody = {
+    schemaVersion: 1,
+    id: actionGrantId,
+    workspace_id: input.workspaceId,
+    channel_id: input.channelId,
+    surface_id: input.uiInstanceId,
+    policy_revision: 1,
+    issued_by: "application_policy",
+    expires_at: grantExpiresAtValue,
+    revoked_at: null,
+    grant_scope_hash: input.grantScopeHash,
+    created_at: input.now,
+    kind: "action",
+    bound_render_revision: input.renderRevision,
+    bound_manifest_hash: input.renderManifestHash,
+    action_ref: primaryIntent,
+    handler_key: "controlled_ui.complete_component_interrupt.v1",
+    input_schema: inputSchema,
+    input_schema_hash: inputSchemaHash,
+    allowed_render_node_ids: renderNodeIds,
+    requires_recent_auth: false,
+    requires_trusted_confirmation: false,
+    max_uses: 1,
+    use_count: 0,
+    mode: "complete_component_interrupt",
+    component_interrupt_id: interruptId,
+  };
   await sql`
     INSERT INTO ui_surface_grants (
       id, ui_instance_id, grant_kind, policy_revision, bound_render_revision, bound_manifest_hash,
       action_ref, handler_key, action_mode, input_schema_json, input_schema_hash,
-      allowed_render_node_ids_json, grant_scope_hash, max_uses, use_count, issued_by, expires_at, created_at
+      allowed_render_node_ids_json, component_interrupt_id, grant_body_redacted_json,
+      grant_scope_hash, max_uses, use_count, issued_by, expires_at, created_at
     )
     VALUES (
       ${actionGrantId}, ${input.uiInstanceId}, 'action', 1, ${input.renderRevision}, ${input.renderManifestHash},
-      ${primaryIntent}, ${primaryIntent}, 'local_state', ${JSON.stringify(inputSchema)}::jsonb, ${inputSchemaHash},
-      '["root"]'::jsonb, ${input.grantScopeHash}, 3, 0, 'application_policy', ${grantExpiresAtValue}, ${input.now}
+      ${primaryIntent}, 'controlled_ui.complete_component_interrupt.v1', 'complete_component_interrupt',
+      ${JSON.stringify(inputSchema)}::jsonb, ${inputSchemaHash},
+      ${JSON.stringify(renderNodeIds)}::jsonb, ${interruptId}, ${JSON.stringify(actionGrantBody)}::jsonb,
+      ${input.grantScopeHash}, 1, 0, 'application_policy', ${grantExpiresAtValue}, ${input.now}
     )
   `;
 
-  const interruptId = opaqueId("intr");
   await sql`
     INSERT INTO ui_component_interrupts (
       id, ui_instance_id, run_id, run_step_id, agent_turn_id, logical_thread_id,
@@ -987,13 +1053,15 @@ export async function brokerComponentToolMcpCall(
         run_step_id: string;
         run_id: string;
         source_event_id: string;
+        source_message_id: string;
       }[]
     >`
       SELECT
         t.id AS agent_turn_id,
         t.run_step_id,
         rs.run_id,
-        m.event_id AS source_event_id
+        m.event_id AS source_event_id,
+        r.source_message_id
       FROM agent_turns AS t
       JOIN run_steps AS rs ON rs.id = t.run_step_id
       JOIN runs AS r ON r.id = rs.run_id
@@ -1038,6 +1106,7 @@ export async function brokerComponentToolMcpCall(
       expectedRenderRevision: null,
       nextRenderRevision: 1,
       renderManifestHash,
+      renderNodeSet: buildRenderNodeSet(input.stableName),
       validatedProps: input.props,
       outcome: "ready",
       now,
@@ -1055,6 +1124,8 @@ export async function brokerComponentToolMcpCall(
     if (interactive) {
       await setupInteractiveBrokerArtifacts(tx, {
         uiInstanceId: created.uiInstanceId,
+        workspaceId: context.workspaceId,
+        channelId: context.channelId,
         generationId: input.generationId,
         toolCallId: input.toolCallId,
         stableName: input.stableName,
@@ -1067,6 +1138,33 @@ export async function brokerComponentToolMcpCall(
         logicalThreadId: context.logicalThreadId,
         now,
       });
+    } else {
+      await setupRenderGrant(tx, {
+        uiInstanceId: created.uiInstanceId,
+        stableName: input.stableName,
+        grantScopeHash,
+        now,
+      });
+    }
+
+    await appendComponentBrokerChannelProjectionInTx(tx, {
+      channelId: context.channelId,
+      coworkerId: context.coworkerId,
+      logicalThreadId: context.logicalThreadId,
+      applicationRunId: activeTurn.run_id,
+      runStepId: activeTurn.run_step_id,
+      agentTurnId: activeTurn.agent_turn_id,
+      sourceMessageId: activeTurn.source_message_id,
+      uiInstanceId: created.uiInstanceId,
+      activityMessageId: created.activityMessageId,
+      stableName: input.stableName,
+      componentVersion: version.semanticVersion,
+      renderRevision: finalized.value.renderRevision,
+      textAlternative,
+      now,
+    });
+
+    if (interactive) {
       return {
         status: "awaiting_component_input" as const,
         instanceId: created.uiInstanceId,

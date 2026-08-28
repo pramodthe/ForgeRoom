@@ -1,8 +1,11 @@
 import { Link, useParams } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import type { CoworkerDraft } from "@forgeroom/contracts";
 import { LoadingState, RouteErrorState } from "@forgeroom/ui-components";
 import { useRef, useState } from "react";
 import {
+  confirmCoworkerDraft,
+  createCoworkerDraft,
   createFixtureResearcher,
   disableCoworker,
   getCoworker,
@@ -41,12 +44,10 @@ export function CoworkersPage() {
           </div>
           <button
             type="button"
-            onClick={() => isFixtureMode && setBuilderOpen(true)}
-            disabled={!isFixtureMode}
-            title={isFixtureMode ? undefined : "CoworkerDraft integration is not connected yet"}
-            className="rounded-xl bg-zinc-950 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-zinc-800 disabled:cursor-not-allowed disabled:bg-zinc-300"
+            onClick={() => setBuilderOpen(true)}
+            className="rounded-xl bg-zinc-950 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-zinc-800"
           >
-            {isFixtureMode ? "+ New coworker" : "Builder integration pending"}
+            + New coworker
           </button>
         </div>
         <div className="mt-6 grid grid-cols-2 gap-4">
@@ -122,11 +123,10 @@ export function CoworkersPage() {
           </p>
           <button
             type="button"
-            onClick={() => isFixtureMode && setBuilderOpen(true)}
-            disabled={!isFixtureMode}
-            className="mt-4 rounded-lg border border-zinc-300 bg-white px-3 py-2 text-xs font-medium text-zinc-700 shadow-sm disabled:cursor-not-allowed disabled:text-zinc-400"
+            onClick={() => setBuilderOpen(true)}
+            className="mt-4 rounded-lg border border-zinc-300 bg-white px-3 py-2 text-xs font-medium text-zinc-700 shadow-sm"
           >
-            {isFixtureMode ? "Open coworker builder" : "CoworkerDraft integration pending"}
+            Open coworker builder
           </button>
         </section>
       </div>
@@ -152,23 +152,75 @@ function CoworkerBuilder({
 }) {
   const dialogRef = useRef<HTMLDivElement>(null);
   useDialogFocus(dialogRef, onClose);
+  const { session } = useSession();
   const [stage, setStage] = useState<
     "prompt" | "gathering" | "review" | "confirming" | "creating" | "ready"
   >("prompt");
   const [prompt, setPrompt] = useState(
-    "Create a customer research coworker that can read support data and GitHub, but cannot modify external systems.",
+    "Create a Research coworker that can read GitHub and web data but cannot modify anything.",
   );
+  const [draft, setDraft] = useState<CoworkerDraft | null>(null);
   const [creationError, setCreationError] = useState<string | null>(null);
 
-  async function createResearcher() {
+  async function generateDraft() {
+    setCreationError(null);
+    setStage("gathering");
+    try {
+      if (isFixtureMode) {
+        await new Promise((resolve) => window.setTimeout(resolve, 500));
+        setStage("review");
+        return;
+      }
+      if (!session) {
+        throw new Error("Your session expired. Sign in again.");
+      }
+      const created = await createCoworkerDraft({
+        workspaceId,
+        csrfToken: session.csrf_token,
+        command: {
+          schemaVersion: 1,
+          request: prompt,
+          idempotency_key: newIdempotencyKey("coworker_draft"),
+        },
+      });
+      setDraft(created);
+      setStage("review");
+    } catch (error) {
+      setCreationError(error instanceof Error ? error.message : "Unable to create draft.");
+      setStage("prompt");
+    }
+  }
+
+  async function confirmDraft() {
     setCreationError(null);
     setStage("confirming");
-    await new Promise((resolve) => window.setTimeout(resolve, 350));
-    setStage("creating");
     try {
-      await createFixtureResearcher(workspaceId);
+      if (isFixtureMode) {
+        await new Promise((resolve) => window.setTimeout(resolve, 350));
+        setStage("creating");
+        await createFixtureResearcher(workspaceId);
+        await onCreated();
+        await new Promise((resolve) => window.setTimeout(resolve, 700));
+        setStage("ready");
+        return;
+      }
+      if (!session || !draft) {
+        throw new Error("Your session expired. Sign in again.");
+      }
+      await confirmCoworkerDraft({
+        draftId: draft.id,
+        csrfToken: session.csrf_token,
+        command: {
+          schemaVersion: 1,
+          draft_revision: draft.revision,
+          draft_hash: draft.draft_hash,
+          policy_revision: draft.policy_revision,
+          catalog_revision: draft.catalog_revision,
+          idempotency_key: newIdempotencyKey("coworker_confirm"),
+        },
+      });
+      setStage("creating");
       await onCreated();
-      await new Promise((resolve) => window.setTimeout(resolve, 700));
       setStage("ready");
     } catch (error) {
       setCreationError(error instanceof Error ? error.message : "Unable to create coworker.");
@@ -227,10 +279,7 @@ function CoworkerBuilder({
               <div className="mt-5 flex justify-end">
                 <button
                   type="button"
-                  onClick={() => {
-                    setStage("gathering");
-                    window.setTimeout(() => setStage("review"), 500);
-                  }}
+                  onClick={() => void generateDraft()}
                   className="rounded-xl bg-zinc-950 px-4 py-2.5 text-sm font-semibold text-white"
                 >
                   Generate review draft
@@ -246,8 +295,9 @@ function CoworkerBuilder({
           ) : null}
           {stage === "review" ? (
             <PermissionReview
+              draft={draft}
               onBack={() => setStage("prompt")}
-              onCreate={() => void createResearcher()}
+              onCreate={() => void confirmDraft()}
             />
           ) : null}
           {creationError ? (
@@ -275,7 +325,9 @@ function CoworkerBuilder({
               <span className="mx-auto grid h-12 w-12 place-items-center rounded-2xl bg-emerald-100 text-xl text-emerald-700">
                 ✓
               </span>
-              <h3 className="mt-4 text-lg font-semibold text-zinc-950">Researcher is ready</h3>
+              <h3 className="mt-4 text-lg font-semibold text-zinc-950">
+                {draft?.proposal.name ?? "Researcher"} is ready
+              </h3>
               <p className="mt-1 text-sm text-zinc-500">Added to General with read-only tools.</p>
               <button
                 type="button"
@@ -302,21 +354,36 @@ function BuilderProgress({ title, detail }: { title: string; detail: string }) {
   );
 }
 
-function PermissionReview({ onBack, onCreate }: { onBack: () => void; onCreate: () => void }) {
+function PermissionReview({
+  draft,
+  onBack,
+  onCreate,
+}: {
+  draft: CoworkerDraft | null;
+  onBack: () => void;
+  onCreate: () => void;
+}) {
+  const name = draft?.proposal.name ?? "Researcher";
+  const title = draft?.proposal.title ?? "Customer research specialist";
+  const instructions =
+    draft?.proposal.standing_instructions ??
+    "Analyze support and GitHub evidence, identify customer patterns, and prepare sourced briefings.";
+  const tools = draft?.effective_preview.tools ?? ["GITHUB_GET_AN_ISSUE"];
+  const denials = draft?.effective_preview.denials ?? [
+    "knowledge_memory_workflow_unsupported_in_p0",
+    "native_subagents",
+  ];
   return (
     <div>
       <div className="rounded-2xl border border-violet-100 bg-violet-50/60 p-4">
         <div className="flex items-start gap-3">
-          <Avatar name="Researcher" tone="violet" />
+          <Avatar name={name} tone="violet" />
           <div>
-            <h3 className="font-semibold text-zinc-950">Researcher</h3>
+            <h3 className="font-semibold text-zinc-950">{name}</h3>
             <p className="text-xs text-zinc-500">
-              Customer research specialist · default model preset
+              {title} · {draft?.proposal.model_preset ?? "default model preset"}
             </p>
-            <p className="mt-2 text-sm leading-5 text-zinc-600">
-              Analyze support and GitHub evidence, identify customer patterns, and prepare sourced
-              briefings.
-            </p>
+            <p className="mt-2 text-sm leading-5 text-zinc-600">{instructions}</p>
           </div>
         </div>
       </div>
@@ -324,19 +391,15 @@ function PermissionReview({ onBack, onCreate }: { onBack: () => void; onCreate: 
         <ReviewGroup
           title="Access"
           items={[
-            "Channel: General only",
-            "Acting account: Workspace service account",
-            "SUPPORT_SEARCH · read",
-            "GITHUB_GET_ISSUES · read",
+            draft?.effective_preview.account ?? "Workspace service account",
+            ...tools.map((tool) => `${tool} · read`),
           ]}
         />
         <ReviewGroup
           title="Capabilities"
           items={[
-            "Components: DataTable, BarOrLineChart",
-            "Private skill: Support insight brief",
-            "TaskRecord: create; update fields/status",
-            "Sandbox disabled · 20 calls · 12k tokens",
+            `Sandbox ${draft?.effective_preview.sandbox ? "enabled" : "disabled"}`,
+            `${draft?.proposal.budget.max_tool_calls ?? 20} calls · ${draft?.proposal.budget.max_turn_tokens ?? 12000} tokens`,
           ]}
         />
         <ReviewGroup
@@ -344,20 +407,10 @@ function PermissionReview({ onBack, onCreate }: { onBack: () => void; onCreate: 
           items={[
             "No external writes",
             "No destructive tools",
-            "Data export requires approval",
             "Read provider data may leave workspace",
           ]}
         />
-        <ReviewGroup
-          title="Unavailable in P0"
-          items={[
-            "Knowledge library",
-            "Long-term memory",
-            "Scheduled workflows",
-            "Native subagents",
-          ]}
-          denied
-        />
+        <ReviewGroup title="Unavailable / denied in P0" items={denials.slice(0, 6)} denied />
       </div>
       <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs leading-5 text-amber-900">
         <strong>Data boundary:</strong> support text may be sent to the selected model provider.
@@ -372,7 +425,8 @@ function PermissionReview({ onBack, onCreate }: { onBack: () => void; onCreate: 
           onClick={onCreate}
           className="rounded-xl bg-zinc-950 px-4 py-2.5 text-sm font-semibold text-white"
         >
-          Create Researcher · draft revision 1
+          Create {name}
+          {draft ? ` · draft revision ${draft.revision}` : ""}
         </button>
       </div>
     </div>
