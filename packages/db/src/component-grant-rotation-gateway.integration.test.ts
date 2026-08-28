@@ -11,7 +11,13 @@ import {
   completeSessionRotation,
 } from "./session-rotation";
 import { claimTurnQueueItem, enqueueTurnQueueItem } from "./turn-queue";
-import { HASH, NOW, seedRuntime, withMigratedDatabase } from "./test-harness";
+import {
+  HASH,
+  NOW,
+  alignSeededDataTableToRegistry,
+  seedRuntime,
+  withMigratedDatabase,
+} from "./test-harness";
 
 async function clearSeedTurn(sql: Parameters<typeof seedRuntime>[0]): Promise<void> {
   await sql`UPDATE agent_turns SET state = 'completed', completed_at = ${NOW} WHERE id = 'turn_1'`;
@@ -22,12 +28,15 @@ async function clearSeedTurn(sql: Parameters<typeof seedRuntime>[0]): Promise<vo
   `;
 }
 
-async function seedOfferedDataTable(sql: Parameters<typeof seedRuntime>[0]): Promise<void> {
+async function seedOfferedDataTable(
+  sql: Parameters<typeof seedRuntime>[0],
+): Promise<{ componentVersionId: string; descriptorHash: string }> {
+  const aligned = await alignSeededDataTableToRegistry(sql);
   await sql`
     INSERT INTO ui_component_grants (
       id, component_version_id, workspace_id, channel_id, agent_profile_id, granted_by, granted_at
     )
-    VALUES ('cg_rot', 'compv_1', 'ws_1', NULL, 'cw_1', 'user_1', ${NOW})
+    VALUES ('cg_rot', ${aligned.componentVersionId}, 'ws_1', NULL, 'cw_1', 'user_1', ${NOW})
   `;
   await sql`
     UPDATE session_revisions
@@ -36,6 +45,7 @@ async function seedOfferedDataTable(sql: Parameters<typeof seedRuntime>[0]): Pro
     })}
     WHERE id = 'sr_1'
   `;
+  return aligned;
 }
 
 describe("component grant rotation gateway", () => {
@@ -43,7 +53,7 @@ describe("component grant rotation gateway", () => {
     await withMigratedDatabase(async (sql) => {
       await seedRuntime(sql);
       await clearSeedTurn(sql);
-      await seedOfferedDataTable(sql);
+      const aligned = await seedOfferedDataTable(sql);
 
       const normal = await enqueueTurnQueueItem(sql, {
         id: "q_rot_normal",
@@ -97,14 +107,14 @@ describe("component grant rotation gateway", () => {
         channelId: "ch_1",
         coworkerId: "cw_1",
         expectedSessionGeneration: 1,
-        componentVersionId: "compv_1",
-        expectedDescriptorHash: HASH,
+        componentVersionId: aligned.componentVersionId,
+        expectedDescriptorHash: aligned.descriptorHash,
         expectedGrantScopeHash: hashGrantScope(
           buildGrantScopePreimage({
             workspaceId: "ws_1",
             channelId: "ch_1",
             agentProfileId: "cw_1",
-            componentVersionId: "compv_1",
+            componentVersionId: aligned.componentVersionId,
           }),
         ),
       });
@@ -153,14 +163,14 @@ describe("component grant rotation gateway", () => {
         channelId: "ch_1",
         coworkerId: "cw_1",
         expectedSessionGeneration: 1,
-        componentVersionId: "compv_1",
-        expectedDescriptorHash: HASH,
+        componentVersionId: aligned.componentVersionId,
+        expectedDescriptorHash: aligned.descriptorHash,
         expectedGrantScopeHash: hashGrantScope(
           buildGrantScopePreimage({
             workspaceId: "ws_1",
             channelId: "ch_1",
             agentProfileId: "cw_1",
-            componentVersionId: "compv_1",
+            componentVersionId: aligned.componentVersionId,
           }),
         ),
       });

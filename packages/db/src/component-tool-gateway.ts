@@ -757,6 +757,205 @@ function isInteractiveComponent(stableName: string): boolean {
   return definition.declaredInteractionIntents.length > 0 || definition.confirmation !== "none";
 }
 
+export type BrokerComponentAuthoritySnapshot = {
+  componentVersionId: string;
+  stableName: string;
+  descriptorHash: string;
+  exposure: "agent_tool" | "server_only";
+  semanticVersion: string;
+  grantScopeHash: string;
+};
+
+/**
+ * Row locks that close the window between the authority recheck and the UIInstance
+ * and grant inserts. Without them the recheck reads under READ COMMITTED and a
+ * concurrent grant revocation, publication change or session rotation can commit in
+ * the gap, persisting an instance — and for interactive components an
+ * approval-capable ActionGrant — after its authority was withdrawn.
+ *
+ * Locks are FOR SHARE (concurrent brokers still proceed; only writers block), are
+ * held until the enclosing transaction commits, and are taken in a fixed
+ * session → component → grant order so two brokers cannot deadlock against each
+ * other. A writer that already committed is picked up by the recheck that follows,
+ * because READ COMMITTED re-evaluates a locked row after the blocking writer commits.
+ */
+async function lockBrokerAuthorityRows(
+  tx: SqlClient,
+  input: {
+    workspaceId: string;
+    channelId: string;
+    coworkerId: string;
+    stableName: string;
+  },
+): Promise<void> {
+  await tx`
+    SELECT cas.id
+    FROM channel_agent_sessions AS cas
+    WHERE cas.channel_id = ${input.channelId}
+      AND cas.agent_profile_id = ${input.coworkerId}
+    FOR SHARE
+  `;
+  await tx`
+    SELECT v.id
+    FROM ui_component_versions AS v
+    JOIN ui_components AS c ON c.id = v.component_id
+    WHERE c.workspace_id = ${input.workspaceId}
+      AND c.stable_name = ${input.stableName}
+      AND c.current_published_version_id = v.id
+    FOR SHARE OF v, c
+  `;
+  await tx`
+    SELECT g.id
+    FROM ui_component_grants AS g
+    JOIN ui_component_versions AS v ON v.id = g.component_version_id
+    JOIN ui_components AS c ON c.id = v.component_id
+    WHERE g.workspace_id = ${input.workspaceId}
+      AND c.stable_name = ${input.stableName}
+      AND g.revoked_at IS NULL
+      AND (g.channel_id IS NULL OR g.channel_id = ${input.channelId})
+      AND (g.agent_profile_id IS NULL OR g.agent_profile_id = ${input.coworkerId})
+    FOR SHARE OF g
+  `;
+}
+
+/**
+ * Publication/version/schema/descriptor/grant recheck used after complete args
+ * and again immediately before UIInstance creation.
+ */
+export async function recheckBrokerComponentAuthority(
+  sql: SqlClient,
+  input: {
+    workspaceId: string;
+    channelId: string;
+    coworkerId: string;
+    stableName: string;
+    props: Record<string, unknown>;
+    expectedSessionGeneration: number;
+    /** When set, require the same published version/descriptor as the post-args checkpoint. */
+    expected?: Pick<
+      BrokerComponentAuthoritySnapshot,
+      "componentVersionId" | "descriptorHash" | "grantScopeHash"
+    >;
+    /**
+     * Take row locks before rechecking. Only valid when `sql` is a transaction —
+     * checkpoint 1 runs outside one, where locks would be released immediately.
+     */
+    lockRows?: boolean;
+  },
+): Promise<
+  ComponentGatewayResult<BrokerComponentAuthoritySnapshot & { offered: true; hasActiveGrant: true }>
+> {
+  const definition = getRegistryDefinition(input.stableName);
+  if (!definition) {
+    return { ok: false, code: "not_found", message: "Unknown controlled component." };
+  }
+
+  if (input.lockRows) {
+    await lockBrokerAuthorityRows(sql, {
+      workspaceId: input.workspaceId,
+      channelId: input.channelId,
+      coworkerId: input.coworkerId,
+      stableName: input.stableName,
+    });
+  }
+
+  const validation = validateRegistryProps(input.stableName, input.props);
+  if (!validation.ok) {
+    return { ok: false, code: "schema_mismatch", message: validation.message };
+  }
+
+  const version = await loadPublishedComponentVersionForStableName(sql, {
+    workspaceId: input.workspaceId,
+    stableName: input.stableName,
+  });
+  if (!version) {
+    return { ok: false, code: "not_published", message: "Component version is not published." };
+  }
+  if (version.exposure === "server_only") {
+    return {
+      ok: false,
+      code: "server_only",
+      message: "Server-only components cannot be brokered as agent tools.",
+    };
+  }
+  if (version.descriptorHash !== definition.descriptorHash) {
+    return {
+      ok: false,
+      code: "descriptor_mismatch",
+      message: "Published descriptor hash does not match the code-owned registry.",
+    };
+  }
+  if (input.expected) {
+    if (
+      version.componentVersionId !== input.expected.componentVersionId ||
+      version.descriptorHash !== input.expected.descriptorHash
+    ) {
+      return {
+        ok: false,
+        code: "descriptor_mismatch",
+        message: "Published component version changed before instance creation.",
+      };
+    }
+  }
+
+  const grantScopeHash = hashGrantScope(
+    buildGrantScopePreimage({
+      workspaceId: input.workspaceId,
+      channelId: input.channelId,
+      agentProfileId: input.coworkerId,
+      componentVersionId: version.componentVersionId,
+    }),
+  );
+  if (input.expected && grantScopeHash !== input.expected.grantScopeHash) {
+    return {
+      ok: false,
+      code: "grant_scope_mismatch",
+      message: "Grant scope hash changed before instance creation.",
+    };
+  }
+
+  const offer = await loadComponentOfferContext(sql, {
+    channelId: input.channelId,
+    coworkerId: input.coworkerId,
+    expectedSessionGeneration: input.expectedSessionGeneration,
+    componentVersionId: version.componentVersionId,
+    expectedDescriptorHash: version.descriptorHash,
+    expectedGrantScopeHash: grantScopeHash,
+  });
+  if (!offer.ok) {
+    return { ok: false, code: offer.code, message: offer.message };
+  }
+  if (!offer.value.hasActiveGrant) {
+    return {
+      ok: false,
+      code: "stale_or_ungranted",
+      message: "Component grant is missing or revoked.",
+    };
+  }
+  const toolName = componentToolName(input.stableName);
+  if (!offer.value.offeredComponentToolNames.includes(toolName)) {
+    return {
+      ok: false,
+      code: "not_offered",
+      message: "Component tool was not offered in the current session revision.",
+    };
+  }
+
+  return {
+    ok: true,
+    value: {
+      componentVersionId: version.componentVersionId,
+      stableName: version.stableName,
+      descriptorHash: version.descriptorHash,
+      exposure: version.exposure,
+      semanticVersion: version.semanticVersion,
+      grantScopeHash,
+      offered: true,
+      hasActiveGrant: true,
+    },
+  };
+}
+
 async function hasActiveComponentGrant(
   sql: SqlClient,
   input: {
@@ -935,42 +1134,33 @@ export async function brokerComponentToolMcpCall(
     };
   }
 
-  const version = await loadPublishedComponentVersionForStableName(sql, {
+  // Checkpoint 1: after complete args — publication/version/schema/descriptor/grant.
+  const postArgs = await recheckBrokerComponentAuthority(sql, {
     workspaceId: context.workspaceId,
+    channelId: context.channelId,
+    coworkerId: context.coworkerId,
     stableName: input.stableName,
+    props: input.props,
+    expectedSessionGeneration: context.generation,
   });
-  if (!version || version.exposure === "server_only") {
+  if (!postArgs.ok) {
     return {
       status: "quarantined",
       instanceId: "",
       renderRevision: null,
-      textAlternative: componentName,
+      textAlternative: postArgs.message,
       componentName,
     };
   }
 
-  const validation = validateRegistryProps(input.stableName, input.props);
-  if (!validation.ok) {
-    return {
-      status: "quarantined",
-      instanceId: "",
-      renderRevision: null,
-      textAlternative: validation.message,
-      componentName,
-    };
-  }
-
-  const grantScopeHash = hashGrantScope(
-    buildGrantScopePreimage({
-      workspaceId: context.workspaceId,
-      channelId: context.channelId,
-      agentProfileId: context.coworkerId,
-      componentVersionId: version.componentVersionId,
-    }),
-  );
   const textAlternative = readTextAlternative(input.stableName, input.props);
   const renderManifestHash = hashText(canonicalizeJson(input.props));
   const interactive = isInteractiveComponent(input.stableName);
+  const expectedAuthority = {
+    componentVersionId: postArgs.value.componentVersionId,
+    descriptorHash: postArgs.value.descriptorHash,
+    grantScopeHash: postArgs.value.grantScopeHash,
+  };
 
   return sql.begin(async (tx) => {
     const existingRows = await tx<
@@ -995,7 +1185,7 @@ export async function brokerComponentToolMcpCall(
         workspaceId: context.workspaceId,
         channelId: context.channelId,
         coworkerId: context.coworkerId,
-        componentVersionId: version.componentVersionId,
+        componentVersionId: expectedAuthority.componentVersionId,
         now,
       });
       if (!grantStillActive) {
@@ -1050,24 +1240,6 @@ export async function brokerComponentToolMcpCall(
       }
     }
 
-    const offer = await loadComponentOfferContext(tx, {
-      channelId: context.channelId,
-      coworkerId: context.coworkerId,
-      expectedSessionGeneration: context.generation,
-      componentVersionId: version.componentVersionId,
-      expectedDescriptorHash: version.descriptorHash,
-      expectedGrantScopeHash: grantScopeHash,
-    });
-    if (!offer.ok || !offer.value.hasActiveGrant) {
-      return {
-        status: "quarantined" as const,
-        instanceId: "",
-        renderRevision: null,
-        textAlternative: componentName,
-        componentName,
-      };
-    }
-
     const activeTurnRows = await tx<
       {
         agent_turn_id: string;
@@ -1105,6 +1277,27 @@ export async function brokerComponentToolMcpCall(
       };
     }
 
+    // Checkpoint 2: immediately before instance creation.
+    const beforeCreate = await recheckBrokerComponentAuthority(tx, {
+      workspaceId: context.workspaceId,
+      channelId: context.channelId,
+      coworkerId: context.coworkerId,
+      stableName: input.stableName,
+      props: input.props,
+      expectedSessionGeneration: context.generation,
+      expected: expectedAuthority,
+      lockRows: true,
+    });
+    if (!beforeCreate.ok) {
+      return {
+        status: "quarantined" as const,
+        instanceId: "",
+        renderRevision: null,
+        textAlternative: beforeCreate.message,
+        componentName,
+      };
+    }
+
     const created = await createBuildingComponentUiInstance(tx, {
       workspaceId: context.workspaceId,
       channelId: context.channelId,
@@ -1113,7 +1306,7 @@ export async function brokerComponentToolMcpCall(
       agentTurnId: activeTurn.agent_turn_id,
       logicalThreadId: context.logicalThreadId,
       toolCallId: input.toolCallId,
-      componentVersionId: version.componentVersionId,
+      componentVersionId: beforeCreate.value.componentVersionId,
       sourceEventId: activeTurn.source_event_id,
       creatorAgentId: context.coworkerId,
       title: textAlternative,
@@ -1125,7 +1318,7 @@ export async function brokerComponentToolMcpCall(
       workspaceId: context.workspaceId,
       channelId: context.channelId,
       coworkerId: context.coworkerId,
-      componentVersionId: version.componentVersionId,
+      componentVersionId: beforeCreate.value.componentVersionId,
       stableName: input.stableName,
       validatedProps: input.props,
     });
@@ -1162,7 +1355,7 @@ export async function brokerComponentToolMcpCall(
         stableName: input.stableName,
         renderRevision: finalized.value.renderRevision,
         renderManifestHash,
-        grantScopeHash,
+        grantScopeHash: beforeCreate.value.grantScopeHash,
         runId: activeTurn.run_id,
         runStepId: activeTurn.run_step_id,
         agentTurnId: activeTurn.agent_turn_id,
@@ -1173,7 +1366,7 @@ export async function brokerComponentToolMcpCall(
       await setupRenderGrant(tx, {
         uiInstanceId: created.uiInstanceId,
         stableName: input.stableName,
-        grantScopeHash,
+        grantScopeHash: beforeCreate.value.grantScopeHash,
         now,
       });
     }
@@ -1185,7 +1378,7 @@ export async function brokerComponentToolMcpCall(
         channelId: context.channelId,
         renderRevision: finalized.value.renderRevision,
         renderManifestHash,
-        grantScopeHash,
+        grantScopeHash: beforeCreate.value.grantScopeHash,
         snapshot: dataGrantPlan.snapshot,
         grants: dataGrantPlan.grants,
         now,
@@ -1203,7 +1396,7 @@ export async function brokerComponentToolMcpCall(
       uiInstanceId: created.uiInstanceId,
       activityMessageId: created.activityMessageId,
       stableName: input.stableName,
-      componentVersion: version.semanticVersion,
+      componentVersion: beforeCreate.value.semanticVersion,
       renderRevision: finalized.value.renderRevision,
       textAlternative,
       now,

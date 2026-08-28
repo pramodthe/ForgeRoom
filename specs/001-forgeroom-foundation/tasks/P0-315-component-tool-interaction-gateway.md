@@ -19,8 +19,8 @@ TrueForge can call a granted frontend component, persist its exact instance and 
 ## Acceptance criteria
 
 - [ ] Browser renderer tools are advertisements; server offers only its grant intersection to TrueForge.
-- [ ] Publication/version/schema/descriptor/grant recheck occurs after complete args and immediately before instance creation.
-- [ ] Component descriptor/grant changes block affected queue claims, rotate offered-tool session revisions and stale old offers. *(grant rotation + queue block + stale broker generation covered; descriptor publication recheck remains)*
+- [x] Publication/version/schema/descriptor/grant recheck occurs after complete args and immediately before instance creation.
+- [x] Component descriptor/grant changes block affected queue claims, rotate offered-tool session revisions and stale old offers.
 - [ ] Complete props validate server-side and client-side; one tool call creates one immutable UIInstance lineage.
 - [ ] Server broker returns ordinary render results without a live browser; interactive waiting is represented by a durable interrupt, not an ephemeral callback.
 - [x] `UIComponentInterrupt` is application-owned and distinct from PauseGroup: one bounded result CAS-resolves it and enqueues one structured same-RunStep continuation on the exact session generation; duplicates/stale generations cannot enqueue and no generic UI endpoint calls `RunAgentInput.resume`.
@@ -73,6 +73,8 @@ implemented.
 - [x] Broker-time DataGrant provisioning for declared data functions with registry grants.
 - [x] P0 `rows` data-function handler returns bounded retained snapshot reads.
 - [x] P0 route guard: no `/render-capabilities` or P1 confirmation endpoints in ui-instance routes.
+- [x] Broker rechecks publication/version/schema/descriptor/grant after complete args and again
+  immediately before UIInstance creation; descriptor drift or missing grants quarantine.
 
 - `pnpm --filter @forgeroom/db typecheck`
 - `pnpm --filter @forgeroom/db exec vitest run src/ui-interactions.integration.test.ts`
