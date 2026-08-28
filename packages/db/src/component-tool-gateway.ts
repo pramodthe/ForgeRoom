@@ -8,6 +8,7 @@ import {
   hashGrantScope,
 } from "@forgeroom/domain";
 import { validatePropsAgainstParameterSchema } from "./ui-interactions";
+import { enqueueComponentInterruptContinuationInTx } from "./component-interrupt-continuation";
 
 export type SqlConnection = postgres.Sql;
 export type SqlClient = postgres.Sql | postgres.TransactionSql;
@@ -612,6 +613,16 @@ export async function applyScopedUiInteractionWorker(
     }
 
     if (!row.interrupt_id || row.interrupt_state !== "waiting") {
+      if (row.interrupt_state === "resolved") {
+        return {
+          ok: true,
+          value: {
+            interactionId: row.interaction_id,
+            enqueuedContinuation: false,
+            queueItemId: null,
+          },
+        };
+      }
       return {
         ok: true,
         value: {
@@ -622,39 +633,22 @@ export async function applyScopedUiInteractionWorker(
       };
     }
 
-    const queueItemId = opaqueId("q");
-    await tx`
-      SELECT id FROM channel_agent_sessions WHERE id = ${row.channel_agent_session_id} FOR UPDATE
-    `;
-    await tx`
-      INSERT INTO turn_queue_items (
-        id, channel_agent_session_id, run_step_id, bound_session_generation_id,
-        input_type, input_payload_redacted_json, fifo_sequence, state, created_at
-      )
-      SELECT
-        ${queueItemId},
-        ${row.channel_agent_session_id},
-        ${row.run_step_id},
-        ${row.session_generation_id},
-        'component_interaction_response',
-        ${JSON.stringify({
-          interaction_id: row.interaction_id,
-          ui_instance_id: input.uiInstanceId,
-          component_interrupt_id: row.interrupt_id,
-        })}::jsonb,
-        COALESCE((SELECT MAX(fifo_sequence) + 1 FROM turn_queue_items WHERE channel_agent_session_id = ${row.channel_agent_session_id}), 0),
-        'queued',
-        ${now}
-    `;
-
-    await tx`
-      UPDATE ui_component_interrupts
-      SET state = 'resolved',
-          continuation_queue_item_id = ${queueItemId},
-          resolved_at = ${now}
-      WHERE id = ${row.interrupt_id}
-        AND state = 'waiting'
-    `;
+    const continuation = await enqueueComponentInterruptContinuationInTx(tx, {
+      interactionId: row.interaction_id,
+      uiInstanceId: input.uiInstanceId,
+      interruptId: row.interrupt_id,
+      runStepId: row.run_step_id,
+      channelAgentSessionId: row.channel_agent_session_id,
+      sessionGenerationId: row.session_generation_id,
+      now,
+    });
+    if (!continuation.ok) {
+      return {
+        ok: false,
+        code: "scope_mismatch",
+        message: continuation.message,
+      };
+    }
 
     const consumed = await tx<{ id: string }[]>`
       UPDATE ui_surface_grants
@@ -678,7 +672,7 @@ export async function applyScopedUiInteractionWorker(
       value: {
         interactionId: row.interaction_id,
         enqueuedContinuation: true,
-        queueItemId,
+        queueItemId: continuation.queueItemId,
       },
     };
   });
@@ -755,6 +749,8 @@ async function setupInteractiveBrokerArtifacts(
   sql: SqlClient,
   input: {
     uiInstanceId: string;
+    workspaceId: string;
+    channelId: string;
     generationId: string;
     toolCallId: string;
     stableName: string;
@@ -778,30 +774,60 @@ async function setupInteractiveBrokerArtifacts(
   await sql`
     INSERT INTO ui_surface_grants (
       id, ui_instance_id, grant_kind, policy_revision, rail, allowed_component_types_json,
-      limits_json, grant_scope_hash, issued_by, expires_at, created_at
+      limits_json, grant_body_redacted_json, grant_scope_hash, issued_by, expires_at, created_at
     )
     VALUES (
       ${renderGrantId}, ${input.uiInstanceId}, 'render', 1, 'registry_v1', ${JSON.stringify([componentKind])}::jsonb,
-      '{}'::jsonb, ${input.grantScopeHash}, 'application_policy', ${grantExpiresAtValue}, ${input.now}
+      '{}'::jsonb, '{}'::jsonb, ${input.grantScopeHash}, 'application_policy', ${grantExpiresAtValue}, ${input.now}
     )
   `;
   await sql`UPDATE ui_instances SET render_grant_id = ${renderGrantId} WHERE id = ${input.uiInstanceId}`;
 
   const actionGrantId = opaqueId("ag");
+  const interruptId = opaqueId("intr");
+  const actionGrantBody = {
+    schemaVersion: 1,
+    id: actionGrantId,
+    workspace_id: input.workspaceId,
+    channel_id: input.channelId,
+    surface_id: input.uiInstanceId,
+    policy_revision: 1,
+    issued_by: "application_policy",
+    expires_at: grantExpiresAtValue,
+    revoked_at: null,
+    grant_scope_hash: input.grantScopeHash,
+    created_at: input.now,
+    kind: "action",
+    bound_render_revision: input.renderRevision,
+    bound_manifest_hash: input.renderManifestHash,
+    action_ref: primaryIntent,
+    handler_key: "controlled_ui.complete_component_interrupt.v1",
+    input_schema: inputSchema,
+    input_schema_hash: inputSchemaHash,
+    allowed_render_node_ids: ["root"],
+    requires_recent_auth: false,
+    requires_trusted_confirmation: false,
+    max_uses: 1,
+    use_count: 0,
+    mode: "complete_component_interrupt",
+    component_interrupt_id: interruptId,
+  };
   await sql`
     INSERT INTO ui_surface_grants (
       id, ui_instance_id, grant_kind, policy_revision, bound_render_revision, bound_manifest_hash,
       action_ref, handler_key, action_mode, input_schema_json, input_schema_hash,
-      allowed_render_node_ids_json, grant_scope_hash, max_uses, use_count, issued_by, expires_at, created_at
+      allowed_render_node_ids_json, component_interrupt_id, grant_body_redacted_json,
+      grant_scope_hash, max_uses, use_count, issued_by, expires_at, created_at
     )
     VALUES (
       ${actionGrantId}, ${input.uiInstanceId}, 'action', 1, ${input.renderRevision}, ${input.renderManifestHash},
-      ${primaryIntent}, ${primaryIntent}, 'local_state', ${JSON.stringify(inputSchema)}::jsonb, ${inputSchemaHash},
-      '["root"]'::jsonb, ${input.grantScopeHash}, 3, 0, 'application_policy', ${grantExpiresAtValue}, ${input.now}
+      ${primaryIntent}, 'controlled_ui.complete_component_interrupt.v1', 'complete_component_interrupt',
+      ${JSON.stringify(inputSchema)}::jsonb, ${inputSchemaHash},
+      '["root"]'::jsonb, ${interruptId}, ${JSON.stringify(actionGrantBody)}::jsonb,
+      ${input.grantScopeHash}, 1, 0, 'application_policy', ${grantExpiresAtValue}, ${input.now}
     )
   `;
 
-  const interruptId = opaqueId("intr");
   await sql`
     INSERT INTO ui_component_interrupts (
       id, ui_instance_id, run_id, run_step_id, agent_turn_id, logical_thread_id,
@@ -1055,6 +1081,8 @@ export async function brokerComponentToolMcpCall(
     if (interactive) {
       await setupInteractiveBrokerArtifacts(tx, {
         uiInstanceId: created.uiInstanceId,
+        workspaceId: context.workspaceId,
+        channelId: context.channelId,
         generationId: input.generationId,
         toolCallId: input.toolCallId,
         stableName: input.stableName,

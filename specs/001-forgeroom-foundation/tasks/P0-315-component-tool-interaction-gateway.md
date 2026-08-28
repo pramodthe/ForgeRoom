@@ -23,9 +23,9 @@ TrueForge can call a granted frontend component, persist its exact instance and 
 - [ ] Component descriptor/grant changes block affected queue claims, rotate offered-tool session revisions and stale old offers.
 - [ ] Complete props validate server-side and client-side; one tool call creates one immutable UIInstance lineage.
 - [ ] Server broker returns ordinary render results without a live browser; interactive waiting is represented by a durable interrupt, not an ephemeral callback.
-- [ ] `UIComponentInterrupt` is application-owned and distinct from PauseGroup: one bounded result CAS-resolves it and enqueues one structured same-RunStep continuation on the exact session generation; duplicates/stale generations cannot enqueue and no generic UI endpoint calls `RunAgentInput.resume`.
+- [x] `UIComponentInterrupt` is application-owned and distinct from PauseGroup: one bounded result CAS-resolves it and enqueues one structured same-RunStep continuation on the exact session generation; duplicates/stale generations cannot enqueue and no generic UI endpoint calls `RunAgentInput.resume`.
 - [ ] Data functions are reviewed read-only handlers with independent grants and row/byte/time limits.
-- [ ] server_read ActionGrant binds an exact independent DataGrant/data_ref/selection scope and succeeds only while both grants are current; the ActionGrant alone cannot choose/read data.
+- [x] server_read ActionGrant binds an exact independent DataGrant/data_ref/selection scope and succeeds only while both grants are current; the ActionGrant alone cannot choose/read data.
 - [ ] Trusted host obtains a one-use interaction token bound to user/channel/instance/render revision/render-node/ActionGrant/input hash/expiry; commit is idempotent and the token is never model-authored.
 - [ ] ActionGrant component binding uses the exact render-node ID from the immutable manifest, never the registry `ui_components.id` identity.
 - [ ] A P0 controlled interaction can resolve only its exact UIComponentInterrupt or local/shared bounded state command; it cannot create/decide an ActionProposal, answer a canonical Question, resume a PauseGroup, enqueue an unrelated agent turn or invoke Composio/TrueForge.
@@ -53,8 +53,8 @@ implemented.
   controlled `provider_unavailable` error translation.
 - [x] Component offer/recheck, finalize/quarantine, and scoped-interaction worker commands.
 - [x] Component grant changes rotate offered-tool session revisions.
-- [ ] `server_read` retained DataGrant resolution.
-- [ ] `complete_component_interrupt` CAS resolution and same-RunStep continuation enqueue.
+- [x] `server_read` retained DataGrant resolution.
+- [x] `complete_component_interrupt` CAS resolution and same-RunStep continuation enqueue.
 - [x] TrueForge `ui_components_v1` MCP bridge and noninteractive broker tool-result path.
 
 - `pnpm --filter @forgeroom/db typecheck`
