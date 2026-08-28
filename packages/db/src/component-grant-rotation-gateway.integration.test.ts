@@ -11,7 +11,13 @@ import {
   completeSessionRotation,
 } from "./session-rotation";
 import { claimTurnQueueItem, enqueueTurnQueueItem } from "./turn-queue";
-import { HASH, NOW, seedRuntime, withMigratedDatabase } from "./test-harness";
+import {
+  HASH,
+  NOW,
+  DATA_TABLE_DESCRIPTOR_HASH,
+  seedRuntime,
+  withMigratedDatabase,
+} from "./test-harness";
 
 async function clearSeedTurn(sql: Parameters<typeof seedRuntime>[0]): Promise<void> {
   await sql`UPDATE agent_turns SET state = 'completed', completed_at = ${NOW} WHERE id = 'turn_1'`;
@@ -98,7 +104,7 @@ describe("component grant rotation gateway", () => {
         coworkerId: "cw_1",
         expectedSessionGeneration: 1,
         componentVersionId: "compv_1",
-        expectedDescriptorHash: HASH,
+        expectedDescriptorHash: DATA_TABLE_DESCRIPTOR_HASH,
         expectedGrantScopeHash: hashGrantScope(
           buildGrantScopePreimage({
             workspaceId: "ws_1",
@@ -154,7 +160,7 @@ describe("component grant rotation gateway", () => {
         coworkerId: "cw_1",
         expectedSessionGeneration: 1,
         componentVersionId: "compv_1",
-        expectedDescriptorHash: HASH,
+        expectedDescriptorHash: DATA_TABLE_DESCRIPTOR_HASH,
         expectedGrantScopeHash: hashGrantScope(
           buildGrantScopePreimage({
             workspaceId: "ws_1",

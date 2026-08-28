@@ -109,6 +109,7 @@ export {
   loadPublishedComponentVersionForStableName,
   createBuildingComponentUiInstance,
   brokerComponentToolMcpCall,
+  recheckBrokerComponentAuthority,
   finalizeOrQuarantineUiInstance,
   applyScopedUiInteractionWorker,
 } from "./component-tool-gateway";
@@ -117,6 +118,7 @@ export type {
   ComponentGatewayResult,
   ComponentToolGenerationContext,
   ComponentToolMcpBrokerResult,
+  BrokerComponentAuthoritySnapshot,
 } from "./component-tool-gateway";
 export { recordApprovalDecision, loadApprovalProposalForCard } from "./approval-decision";
 export type {

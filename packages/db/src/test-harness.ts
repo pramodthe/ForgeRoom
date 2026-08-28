@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import postgres from "postgres";
+import { getRegistryDefinition } from "@forgeroom/domain";
 import { createSql, databaseUrl } from "./client";
 import { migrate } from "./migrate";
 
@@ -37,6 +38,8 @@ function dockerBin(): string {
 
 export const HASH = `sha256:${"ab".repeat(32)}`;
 export const NOW = "2026-08-25T23:00:00.000Z";
+export const DATA_TABLE_DESCRIPTOR_HASH =
+  getRegistryDefinition("DataTable")?.descriptorHash ?? HASH;
 
 function adminUrl(url: string): string {
   const parsed = new URL(url);
@@ -302,7 +305,7 @@ export async function seedRuntime(sql: postgres.Sql): Promise<void> {
     )
     VALUES (
       'compv_1', 'comp_1', '1.0.0', 'agent_tool', 'none', 'Table',
-      '{}'::jsonb, 'DataTable@1.0.0', ${HASH}, 'user_1', ${NOW}
+      '{}'::jsonb, 'DataTable@1.0.0', ${DATA_TABLE_DESCRIPTOR_HASH}, 'user_1', ${NOW}
     )
   `;
   await sql`

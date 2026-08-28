@@ -1,11 +1,20 @@
 import { describe, expect, it } from "vitest";
-import { buildGrantScopePreimage, hashGrantScope } from "@forgeroom/domain";
+import { buildGrantScopePreimage, getRegistryDefinition, hashGrantScope } from "@forgeroom/domain";
 import {
   brokerComponentToolMcpCall,
   finalizeOrQuarantineUiInstance,
   loadComponentOfferContext,
+  recheckBrokerComponentAuthority,
 } from "./component-tool-gateway";
-import { HASH, NOW, seedRuntime, withMigratedDatabase } from "./test-harness";
+import {
+  HASH,
+  NOW,
+  DATA_TABLE_DESCRIPTOR_HASH,
+  seedRuntime,
+  withMigratedDatabase,
+} from "./test-harness";
+
+const TASK_CARD_DESCRIPTOR_HASH = getRegistryDefinition("TaskCard")!.descriptorHash;
 
 describe("component tool gateway", () => {
   it("loads offer context and finalizes a building instance", async () => {
@@ -38,7 +47,7 @@ describe("component tool gateway", () => {
         coworkerId: "cw_1",
         expectedSessionGeneration: 1,
         componentVersionId: "compv_1",
-        expectedDescriptorHash: HASH,
+        expectedDescriptorHash: DATA_TABLE_DESCRIPTOR_HASH,
         expectedGrantScopeHash: grantScopeHash,
       });
       expect(offer.ok).toBe(true);
@@ -216,7 +225,7 @@ describe("component tool gateway", () => {
         )
         VALUES (
           'compv_task', 'comp_task', '1.0.0', 'agent_tool', 'none', 'Task card',
-          '{}'::jsonb, 'TaskCard@1.0.0', ${HASH}, 'user_1', ${NOW}
+          '{}'::jsonb, 'TaskCard@1.0.0', ${TASK_CARD_DESCRIPTOR_HASH}, 'user_1', ${NOW}
         )
       `;
       await sql`
@@ -260,6 +269,110 @@ describe("component tool gateway", () => {
         SELECT render_grant_id FROM ui_instances WHERE id = ${result.instanceId}
       `;
       expect(instance?.render_grant_id).toEqual(expect.any(String));
+    });
+  });
+
+  it("quarantines when publication/descriptor drifts before instance creation", async () => {
+    await withMigratedDatabase(async (sql) => {
+      await seedRuntime(sql);
+      await sql`
+        INSERT INTO ui_component_grants (
+          id, component_version_id, workspace_id, channel_id, agent_profile_id, granted_by, granted_at
+        )
+        VALUES ('cg_drift', 'compv_1', 'ws_1', NULL, 'cw_1', 'user_1', ${NOW})
+      `;
+      await sql`
+        UPDATE session_revisions
+        SET effective_config_redacted_json = ${sql.json({
+          component_tool_names: ["ui.dataTable"],
+        })}
+        WHERE id = 'sr_1'
+      `;
+
+      const props = {
+        caption: "Results",
+        empty_text: "No rows",
+        columns: [{ key: "id", label: "ID" }],
+      };
+      const postArgs = await recheckBrokerComponentAuthority(sql, {
+        workspaceId: "ws_1",
+        channelId: "ch_1",
+        coworkerId: "cw_1",
+        stableName: "DataTable",
+        props,
+        expectedSessionGeneration: 1,
+      });
+      expect(postArgs.ok).toBe(true);
+      if (!postArgs.ok) {
+        return;
+      }
+
+      await sql`
+        UPDATE ui_component_versions
+        SET descriptor_hash = ${HASH}
+        WHERE id = 'compv_1'
+      `;
+
+      const beforeCreate = await recheckBrokerComponentAuthority(sql, {
+        workspaceId: "ws_1",
+        channelId: "ch_1",
+        coworkerId: "cw_1",
+        stableName: "DataTable",
+        props,
+        expectedSessionGeneration: 1,
+        expected: {
+          componentVersionId: postArgs.value.componentVersionId,
+          descriptorHash: postArgs.value.descriptorHash,
+          grantScopeHash: postArgs.value.grantScopeHash,
+        },
+      });
+      expect(beforeCreate).toEqual({
+        ok: false,
+        code: "descriptor_mismatch",
+        message: "Published descriptor hash does not match the code-owned registry.",
+      });
+
+      const brokered = await brokerComponentToolMcpCall(sql, {
+        generationId: "gen_1",
+        stableName: "DataTable",
+        toolCallId: "tc_descriptor_drift",
+        props,
+        now: NOW,
+      });
+      expect(brokered).toMatchObject({
+        status: "quarantined",
+        instanceId: "",
+      });
+    });
+  });
+
+  it("quarantines when the component grant is revoked before broker finalize", async () => {
+    await withMigratedDatabase(async (sql) => {
+      await seedRuntime(sql);
+      await sql`
+        UPDATE session_revisions
+        SET effective_config_redacted_json = ${sql.json({
+          component_tool_names: ["ui.dataTable"],
+        })}
+        WHERE id = 'sr_1'
+      `;
+
+      const brokered = await brokerComponentToolMcpCall(sql, {
+        generationId: "gen_1",
+        stableName: "DataTable",
+        toolCallId: "tc_ungranted",
+        props: {
+          caption: "Results",
+          empty_text: "No rows",
+          columns: [{ key: "id", label: "ID" }],
+        },
+        now: NOW,
+      });
+      expect(brokered).toMatchObject({
+        status: "quarantined",
+        instanceId: "",
+        textAlternative: "Component grant is missing or revoked.",
+      });
     });
   });
 });
