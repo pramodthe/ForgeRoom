@@ -178,8 +178,11 @@ export const coworkerProfileSchema = z
 
 export type CoworkerDraft = z.infer<typeof coworkerDraftSchema>;
 export type CoworkerProposal = z.infer<typeof coworkerProposalSchema>;
+export type CoworkerEffectivePreview = z.infer<typeof coworkerEffectivePreviewSchema>;
 export type CoworkerDraftCreateCommand = z.infer<typeof coworkerDraftCreateCommandSchema>;
 export type CoworkerDraftReviseCommand = z.infer<typeof coworkerDraftReviseCommandSchema>;
+export type CoworkerDraftConfirmCommand = z.infer<typeof coworkerDraftConfirmCommandSchema>;
+export type CoworkerDraftRejectCommand = z.infer<typeof coworkerDraftRejectCommandSchema>;
 export type CoworkerUpdateCommand = z.infer<typeof coworkerUpdateCommandSchema>;
 export type CoworkerDisableCommand = z.infer<typeof coworkerDisableCommandSchema>;
 export type CoworkerProfile = z.infer<typeof coworkerProfileSchema>;

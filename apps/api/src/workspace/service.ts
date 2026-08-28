@@ -13,6 +13,11 @@ import type {
   ChannelRosterResponse,
   ChannelUpdateCommand,
   CoworkerDisableCommand,
+  CoworkerDraft,
+  CoworkerDraftConfirmCommand,
+  CoworkerDraftCreateCommand,
+  CoworkerDraftRejectCommand,
+  CoworkerDraftReviseCommand,
   CoworkerProfile,
   CoworkerUpdateCommand,
   SafeJsonObject,
@@ -69,6 +74,15 @@ import {
   skillNamesFromCoworker,
 } from "./session-provision";
 import { rotateOwnedChannelCoworkerSession } from "./session-rotation";
+import {
+  confirmCoworkerDraftBody,
+  createCoworkerDraft as createCoworkerDraftBody,
+  getCoworkerDraftForSession,
+  rejectCoworkerDraft as rejectCoworkerDraftBody,
+  reviseCoworkerDraft as reviseCoworkerDraftBody,
+  toCoworkerDraft,
+  type CoworkerDraftDeps,
+} from "./coworker-drafts";
 import type { TaskRecordUpsertToolArgs } from "../tasks/schema";
 import {
   createMemoryWorkspaceStore,
@@ -102,7 +116,10 @@ export type WorkspaceServiceError =
   | { code: "recipient_unavailable"; message: string; details?: SafeJsonObject }
   | { code: "stale_task_revision"; message: string; details?: SafeJsonObject }
   | { code: "task_transition_not_allowed"; message: string; details?: SafeJsonObject }
-  | { code: "provider_unavailable"; message: string; details?: SafeJsonObject };
+  | { code: "provider_unavailable"; message: string; details?: SafeJsonObject }
+  | { code: "stale_coworker_draft"; message: string; details?: SafeJsonObject }
+  | { code: "expired_proposal"; message: string; details?: SafeJsonObject }
+  | { code: "coworker_provisioning_failed"; message: string; details?: SafeJsonObject };
 
 export type WorkspaceServiceResult<T> =
   { ok: true; value: T } | { ok: false; error: WorkspaceServiceError };
@@ -509,6 +526,36 @@ export type WorkspaceService = {
     coworkerId: string,
     command: CoworkerDisableCommand,
   ): Promise<WorkspaceServiceResult<CoworkerProfile>>;
+  createCoworkerDraft(
+    session: SessionResponse,
+    workspaceId: string,
+    command: CoworkerDraftCreateCommand,
+  ): Promise<WorkspaceServiceResult<CoworkerDraft>>;
+  getCoworkerDraft(
+    session: SessionResponse,
+    draftId: string,
+  ): Promise<WorkspaceServiceResult<CoworkerDraft>>;
+  reviseCoworkerDraft(
+    session: SessionResponse,
+    draftId: string,
+    command: CoworkerDraftReviseCommand,
+  ): Promise<WorkspaceServiceResult<CoworkerDraft>>;
+  confirmCoworkerDraft(
+    session: SessionResponse,
+    draftId: string,
+    command: CoworkerDraftConfirmCommand,
+  ): Promise<
+    WorkspaceServiceResult<{
+      draft: CoworkerDraft;
+      coworker: CoworkerProfile;
+      provisioning_error?: string;
+    }>
+  >;
+  rejectCoworkerDraft(
+    session: SessionResponse,
+    draftId: string,
+    command: CoworkerDraftRejectCommand,
+  ): Promise<WorkspaceServiceResult<CoworkerDraft>>;
   cancelRunStep(
     session: SessionResponse,
     runId: string,
@@ -581,6 +628,15 @@ export function createWorkspaceService(options?: {
   const trueforgeClient = options?.trueforgeClient;
   const sql = options?.sql;
   const apiEnv = options?.apiEnv;
+
+  const draftDeps: CoworkerDraftDeps = {
+    store,
+    now,
+    trueforgeClient,
+    apiEnv,
+    sql,
+    specHash,
+  };
 
   function publish(result: { envelope: AgentChannelEnvelope }): void {
     eventHub.publish(result.envelope);
@@ -3882,6 +3938,102 @@ export function createWorkspaceService(options?: {
           }
           return { ok: true, value: toCoworker(updated) };
         },
+      });
+    },
+
+    async createCoworkerDraft(session, workspaceId, command) {
+      const denied = assertWorkspace(session, workspaceId);
+      if (denied) {
+        return { ok: false, error: denied };
+      }
+      const draftId = randomOpaqueId("cwd");
+      return withIdempotency({
+        workspaceId,
+        commandKind: "coworker.draft.create",
+        idempotencyKey: command.idempotency_key,
+        resultId: draftId,
+        reload: async (resultId) => {
+          const draft = await store.getCoworkerDraft(resultId);
+          return draft ? toCoworkerDraft(draft) : null;
+        },
+        run: () => createCoworkerDraftBody(draftDeps, session, workspaceId, command, draftId),
+      });
+    },
+
+    async getCoworkerDraft(session, draftId) {
+      return getCoworkerDraftForSession(draftDeps, session, draftId);
+    },
+
+    async reviseCoworkerDraft(session, draftId, command) {
+      return withIdempotency({
+        workspaceId: session.workspace_id,
+        commandKind: "coworker.draft.revise",
+        idempotencyKey: command.idempotency_key,
+        resultId: `${draftId}:${command.draft_revision}`,
+        reload: async (resultId) => {
+          const expected = `${draftId}:${command.draft_revision + 1}`;
+          if (resultId !== expected) {
+            return null;
+          }
+          const draft = await store.getCoworkerDraft(draftId);
+          return draft && draft.revision === command.draft_revision + 1
+            ? toCoworkerDraft(draft)
+            : null;
+        },
+        run: () => reviseCoworkerDraftBody(draftDeps, session, draftId, command),
+      });
+    },
+
+    async confirmCoworkerDraft(session, draftId, command) {
+      return withIdempotency({
+        workspaceId: session.workspace_id,
+        commandKind: "coworker.draft.confirm",
+        idempotencyKey: command.idempotency_key,
+        resultId: draftId,
+        reload: async (resultId) => {
+          if (resultId !== draftId) {
+            return null;
+          }
+          const draft = await store.getCoworkerDraft(draftId);
+          if (!draft || draft.state !== "ready") {
+            return null;
+          }
+          let coworker = draft.provisionedCoworkerId
+            ? await store.getCoworker(draft.provisionedCoworkerId)
+            : null;
+          if (!coworker) {
+            const coworkers = await store.listCoworkers(session.workspace_id);
+            coworker =
+              coworkers.find(
+                (row) => row.handle.toLowerCase() === draft.proposal.handle.toLowerCase(),
+              ) ?? null;
+          }
+          if (!coworker) {
+            return null;
+          }
+          return {
+            draft: toCoworkerDraft({ ...draft, provisionedCoworkerId: coworker.id }),
+            coworker: toCoworker(coworker),
+          };
+        },
+        run: () => confirmCoworkerDraftBody(draftDeps, session, draftId, command),
+      });
+    },
+
+    async rejectCoworkerDraft(session, draftId, command) {
+      return withIdempotency({
+        workspaceId: session.workspace_id,
+        commandKind: "coworker.draft.reject",
+        idempotencyKey: command.idempotency_key,
+        resultId: draftId,
+        reload: async (resultId) => {
+          if (resultId !== draftId) {
+            return null;
+          }
+          const draft = await store.getCoworkerDraft(draftId);
+          return draft?.state === "rejected" ? toCoworkerDraft(draft) : null;
+        },
+        run: () => rejectCoworkerDraftBody(draftDeps, session, draftId, command),
       });
     },
 

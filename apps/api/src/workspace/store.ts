@@ -1,5 +1,8 @@
 import type {
   AgentChannelEnvelope,
+  CoworkerDraftState,
+  CoworkerEffectivePreview,
+  CoworkerProposal,
   P0PersistedAguiEvent,
   SessionResponse,
   TaskRecordOperation,
@@ -355,6 +358,50 @@ export type CoworkerMutationResult =
 export type CoworkerUpdateResult =
   CoworkerMutationResult | { ok: false; reason: "channel_archived"; channelId: string };
 
+export type CoworkerDraftRecord = {
+  id: string;
+  workspaceId: string;
+  revision: number;
+  draftHash: string;
+  policyRevision: number;
+  catalogRevision: number;
+  state: CoworkerDraftState;
+  proposal: CoworkerProposal;
+  effectivePreview: CoworkerEffectivePreview;
+  sourceTextEncrypted: string;
+  createdBy: string;
+  expiresAt: string;
+  createdAt: string;
+  decidedAt: string | null;
+  /** Memory/postgres helper for idempotent confirm replay within a process. */
+  confirmIdempotencyKey?: string | null;
+  provisionedCoworkerId?: string | null;
+};
+
+export type CoworkerDraftWriteResult =
+  | { ok: true; draft: CoworkerDraftRecord; coworker?: CoworkerRecord }
+  | {
+      ok: false;
+      reason: "not_found" | "stale" | "expired" | "invalid_state" | "handle_conflict";
+      draft?: CoworkerDraftRecord;
+      coworker?: CoworkerRecord;
+    };
+
+export type ProvisionCoworkerFromDraftInput = {
+  draftId: string;
+  expectedRevision: number;
+  expectedHash: string;
+  expectedPolicyRevision: number;
+  expectedCatalogRevision: number;
+  actorId: string;
+  idempotencyKey: string;
+  now: string;
+  coworkerId: string;
+  versionId: string;
+  createdAt: string;
+  specHash: string;
+};
+
 export type WorkspaceCatalogStore = {
   getChannel(id: string): Promise<ChannelRecord | null>;
   listChannels(workspaceId: string): Promise<ChannelRecord[]>;
@@ -615,6 +662,24 @@ export type WorkspaceCatalogStore = {
     pinId: string;
     removedAt: string;
   }): Promise<AppendChannelEventResult & { pin: PinRecord }>;
+
+  insertCoworkerDraft(draft: CoworkerDraftRecord): Promise<void>;
+  getCoworkerDraft(id: string): Promise<CoworkerDraftRecord | null>;
+  listCoworkerDrafts(workspaceId: string): Promise<CoworkerDraftRecord[]>;
+  supersedeCoworkerDrafts(input: {
+    workspaceId: string;
+    supersededBefore: string;
+    exceptDraftId: string;
+  }): Promise<void>;
+  updateCoworkerDraftState(input: {
+    draftId: string;
+    expectedRevision: number;
+    nextState: CoworkerDraftState;
+    decidedAt?: string | null;
+    confirmIdempotencyKey?: string | null;
+    provisionedCoworkerId?: string | null;
+  }): Promise<CoworkerDraftRecord | null>;
+  provisionCoworkerFromDraft(input: ProvisionCoworkerFromDraftInput): Promise<CoworkerDraftWriteResult>;
 };
 
 export function emptyEditableConfig(): CoworkerEditableConfig {
@@ -637,6 +702,8 @@ export function createMemoryWorkspaceStore(): WorkspaceCatalogStore {
   const versions = new Map<string, AgentVersionRecord>();
   const taskGrants = new Map<string, TaskGrantRecord>();
   const receipts = new Map<string, CommandReceipt>();
+  const coworkerDrafts = new Map<string, CoworkerDraftRecord>();
+  let draftProvisionLock: Promise<void> = Promise.resolve();
   const events = new Map<string, ChannelEventRecord>();
   const messages = new Map<string, MessageRecord>();
   const pins = new Map<string, PinRecord>();
@@ -1383,6 +1450,204 @@ export function createMemoryWorkspaceStore(): WorkspaceCatalogStore {
         pins.set(removed.id, removed);
         return { ...appended, pin: structuredClone(removed) };
       });
+    },
+    async insertCoworkerDraft(draft) {
+      coworkerDrafts.set(draft.id, structuredClone(draft));
+    },
+    async getCoworkerDraft(id) {
+      const draft = coworkerDrafts.get(id);
+      return draft ? structuredClone(draft) : null;
+    },
+    async listCoworkerDrafts(workspaceId) {
+      return [...coworkerDrafts.values()]
+        .filter((row) => row.workspaceId === workspaceId)
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    },
+    async supersedeCoworkerDrafts(input) {
+      for (const draft of coworkerDrafts.values()) {
+        if (
+          draft.workspaceId === input.workspaceId &&
+          draft.id !== input.exceptDraftId &&
+          (draft.state === "draft" || draft.state === "awaiting_review")
+        ) {
+          coworkerDrafts.set(draft.id, {
+            ...draft,
+            state: "superseded",
+            decidedAt: input.supersededBefore,
+          });
+        }
+      }
+    },
+    async updateCoworkerDraftState(input) {
+      const draft = coworkerDrafts.get(input.draftId);
+      if (!draft || draft.revision !== input.expectedRevision) {
+        return null;
+      }
+      const updated: CoworkerDraftRecord = {
+        ...draft,
+        state: input.nextState,
+        decidedAt: input.decidedAt ?? draft.decidedAt,
+        confirmIdempotencyKey: input.confirmIdempotencyKey ?? draft.confirmIdempotencyKey,
+        provisionedCoworkerId: input.provisionedCoworkerId ?? draft.provisionedCoworkerId,
+      };
+      coworkerDrafts.set(updated.id, structuredClone(updated));
+      return structuredClone(updated);
+    },
+    async provisionCoworkerFromDraft(input) {
+      const run = async (): Promise<CoworkerDraftWriteResult> => {
+        const draft = coworkerDrafts.get(input.draftId);
+        if (!draft) {
+          return { ok: false, reason: "not_found" };
+        }
+
+        if (new Date(input.now).getTime() > new Date(draft.expiresAt).getTime()) {
+          if (draft.state === "awaiting_review") {
+            coworkerDrafts.set(draft.id, { ...draft, state: "expired", decidedAt: input.now });
+          }
+          return { ok: false, reason: "expired", draft: structuredClone(draft) };
+        }
+
+        if (
+          draft.confirmIdempotencyKey === input.idempotencyKey &&
+          draft.provisionedCoworkerId
+        ) {
+          const existing = coworkers.get(draft.provisionedCoworkerId);
+          if (existing) {
+            return {
+              ok: true,
+              draft: structuredClone(draft),
+              coworker: structuredClone(existing),
+            };
+          }
+        }
+
+        if (draft.state !== "awaiting_review") {
+          if (
+            draft.provisionedCoworkerId &&
+            (draft.state === "confirmed" ||
+              draft.state === "provisioning" ||
+              draft.state === "ready")
+          ) {
+            const existing = coworkers.get(draft.provisionedCoworkerId);
+            if (existing) {
+              return {
+                ok: true,
+                draft: structuredClone(draft),
+                coworker: structuredClone(existing),
+              };
+            }
+          }
+          return { ok: false, reason: "invalid_state", draft: structuredClone(draft) };
+        }
+
+        if (
+          draft.revision !== input.expectedRevision ||
+          draft.draftHash !== input.expectedHash ||
+          draft.policyRevision !== input.expectedPolicyRevision ||
+          draft.catalogRevision !== input.expectedCatalogRevision
+        ) {
+          return { ok: false, reason: "stale", draft: structuredClone(draft) };
+        }
+
+        const handleTaken = [...coworkers.values()].some(
+          (row) =>
+            row.workspaceId === draft.workspaceId &&
+            row.handle.toLowerCase() === draft.proposal.handle.toLowerCase(),
+        );
+        if (handleTaken) {
+          return { ok: false, reason: "handle_conflict", draft: structuredClone(draft) };
+        }
+
+        const config: CoworkerEditableConfig = {
+          standing_instructions: draft.proposal.standing_instructions,
+          model_preset: draft.proposal.model_preset,
+          budget: draft.proposal.budget,
+          channel_ids: [...draft.proposal.channel_ids],
+          task_record_grants: draft.proposal.task_record_grants.map((grant) => ({
+            channel_id: grant.channel_id,
+            operations: [...grant.operations],
+          })),
+          tool_grants: [...draft.proposal.tool_grants],
+          skill_version_ids: [...draft.proposal.skill_version_ids],
+          component_version_ids: [...draft.proposal.component_version_ids],
+          sandbox: draft.effectivePreview.sandbox,
+        };
+        const versionConfig = {
+          ...config,
+          name: draft.proposal.name,
+          handle: draft.proposal.handle,
+          title: draft.proposal.title,
+          native_subagents_enabled: false,
+        };
+        const version: AgentVersionRecord = {
+          id: input.versionId,
+          agentProfileId: input.coworkerId,
+          version: 1,
+          configJson: versionConfig,
+          specHash: input.specHash,
+          createdBy: input.actorId,
+          createdAt: input.createdAt,
+        };
+        const coworker: CoworkerRecord = {
+          id: input.coworkerId,
+          workspaceId: draft.workspaceId,
+          handle: draft.proposal.handle,
+          name: draft.proposal.name,
+          title: draft.proposal.title,
+          avatarSeed: null,
+          visibility: "workspace",
+          status: "active",
+          editableConfigJson: config,
+          currentVersionId: input.versionId,
+          configRevision: 1,
+          nativeSubagentsEnabled: false,
+          createdAt: input.createdAt,
+          updatedAt: input.createdAt,
+        };
+
+        coworkers.set(coworker.id, structuredClone(coworker));
+        versions.set(version.id, structuredClone(version));
+
+        for (const channelId of draft.proposal.channel_ids) {
+          const key = `${channelId}:coworker:${coworker.id}`;
+          participants.set(key, {
+            channelId,
+            participantType: "coworker",
+            participantId: coworker.id,
+            role: "member",
+            joinedAt: input.createdAt,
+            removedAt: null,
+          });
+        }
+
+        const confirmed: CoworkerDraftRecord = {
+          ...draft,
+          state: "ready",
+          decidedAt: input.now,
+          confirmIdempotencyKey: input.idempotencyKey,
+          provisionedCoworkerId: coworker.id,
+        };
+        coworkerDrafts.set(confirmed.id, structuredClone(confirmed));
+
+        return {
+          ok: true,
+          draft: structuredClone(confirmed),
+          coworker: structuredClone(coworker),
+        };
+      };
+
+      const previous = draftProvisionLock;
+      let release = () => {};
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      draftProvisionLock = previous.then(() => gate);
+      await previous;
+      try {
+        return await run();
+      } finally {
+        release();
+      }
     },
   };
 }

@@ -250,6 +250,9 @@ importers:
 
   packages/domain:
     dependencies:
+      '@forgeroom/composio':
+        specifier: workspace:*
+        version: link:../integrations/composio
       '@forgeroom/contracts':
         specifier: workspace:*
         version: link:../contracts
