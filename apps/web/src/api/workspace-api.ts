@@ -533,7 +533,7 @@ export async function createCoworkerDraft(input: {
   csrfToken: string;
   command: CoworkerDraftCreateCommand;
 }): Promise<CoworkerDraft> {
-  const body = await apiFetch<{ draft: unknown }>(
+  const body = await apiFetch<{ draft: unknown; request_id: string }>(
     `/api/workspaces/${encodeURIComponent(input.workspaceId)}/coworker-drafts`,
     {
       method: "POST",
@@ -545,7 +545,7 @@ export async function createCoworkerDraft(input: {
 }
 
 export async function getCoworkerDraft(input: { draftId: string }): Promise<CoworkerDraft> {
-  const body = await apiFetch<{ draft: unknown }>(
+  const body = await apiFetch<{ draft: unknown; request_id: string }>(
     `/api/coworker-drafts/${encodeURIComponent(input.draftId)}`,
   );
   return coworkerDraftSchema.parse(stripRequestId(body).draft);
@@ -556,7 +556,7 @@ export async function confirmCoworkerDraft(input: {
   csrfToken: string;
   command: CoworkerDraftConfirmCommand;
 }): Promise<{ draft: CoworkerDraft; coworker: CoworkerProfile }> {
-  const body = await apiFetch<{ draft: unknown; coworker: unknown }>(
+  const body = await apiFetch<{ draft: unknown; coworker: unknown; request_id: string }>(
     `/api/coworker-drafts/${encodeURIComponent(input.draftId)}/confirm`,
     {
       method: "POST",
