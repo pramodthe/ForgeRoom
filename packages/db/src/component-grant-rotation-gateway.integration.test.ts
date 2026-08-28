@@ -74,14 +74,6 @@ describe("component grant rotation gateway", () => {
       expect(begun.isRestriction).toBe(true);
       expect(begun.staleUnresolvedActions).toBe(true);
 
-      const blockedNormal = await claimTurnQueueItem(sql, {
-        queueItemId: "q_rot_normal",
-        workerId: "worker_1",
-        leaseExpiresAt: "2099-01-01T00:00:00.000Z",
-        now: NOW,
-      });
-      expect(blockedNormal).toEqual({ ok: false, reason: "session_rotating" });
-
       const blockedContinuation = await claimTurnQueueItem(sql, {
         queueItemId: "q_rot_component",
         workerId: "worker_1",
@@ -89,6 +81,14 @@ describe("component grant rotation gateway", () => {
         now: NOW,
       });
       expect(blockedContinuation).toEqual({ ok: false, reason: "session_rotating" });
+
+      const blockedNormal = await claimTurnQueueItem(sql, {
+        queueItemId: "q_rot_normal",
+        workerId: "worker_1",
+        leaseExpiresAt: "2099-01-01T00:00:00.000Z",
+        now: NOW,
+      });
+      expect(blockedNormal).toEqual({ ok: false, reason: "not_next" });
 
       const rotatingContext = await loadComponentToolGenerationContext(sql, "gen_1");
       expect(rotatingContext).toBeNull();
@@ -195,19 +195,13 @@ describe("component grant rotation gateway", () => {
       await clearSeedTurn(sql);
       await seedOfferedDataTable(sql);
       await sql`
-        INSERT INTO ui_surface_grants (
-          id, ui_instance_id, grant_kind, policy_revision, grant_scope_hash, issued_by, expires_at, created_at
-        )
-        VALUES ('ag_interrupt', 'ui_1', 'action', 1, ${HASH}, 'application_policy', ${NOW}, ${NOW})
-      `;
-      await sql`
         INSERT INTO ui_component_interrupts (
           id, ui_instance_id, run_id, run_step_id, agent_turn_id, logical_thread_id,
           tool_call_id, session_generation_id, action_grant_id, input_schema_hash, state, created_at
         )
         VALUES (
           'intr_rot', 'ui_1', 'run_1', 'step_1', 'turn_1', 'thread_1',
-          'tc_interrupt', 'gen_1', 'ag_interrupt', ${HASH}, 'waiting', ${NOW}
+          'tc_interrupt', 'gen_1', 'ag_1', ${HASH}, 'waiting', ${NOW}
         )
       `;
 
