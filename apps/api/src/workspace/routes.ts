@@ -803,11 +803,17 @@ export function mountWorkspaceRoutes(
     if (authed instanceof Response) return authed;
     const draftId = requireParam(c, "draftId");
     if (draftId instanceof Response) return draftId;
-    const parsed = coworkerDraftConfirmCommandSchema.safeParse(await c.req.json().catch(() => null));
+    const parsed = coworkerDraftConfirmCommandSchema.safeParse(
+      await c.req.json().catch(() => null),
+    );
     if (!parsed.success) {
-      const failure = errorResponse("validation_failed", "Invalid coworker draft confirm command.", {
-        status: 400,
-      });
+      const failure = errorResponse(
+        "validation_failed",
+        "Invalid coworker draft confirm command.",
+        {
+          status: 400,
+        },
+      );
       return c.json(failure.body, failure.status);
     }
     const result = await workspace.confirmCoworkerDraft(authed.session, draftId, parsed.data);

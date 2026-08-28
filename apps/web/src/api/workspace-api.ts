@@ -544,9 +544,7 @@ export async function createCoworkerDraft(input: {
   return coworkerDraftSchema.parse(stripRequestId(body).draft);
 }
 
-export async function getCoworkerDraft(input: {
-  draftId: string;
-}): Promise<CoworkerDraft> {
+export async function getCoworkerDraft(input: { draftId: string }): Promise<CoworkerDraft> {
   const body = await apiFetch<{ draft: unknown }>(
     `/api/coworker-drafts/${encodeURIComponent(input.draftId)}`,
   );

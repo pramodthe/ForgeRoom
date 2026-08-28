@@ -747,8 +747,7 @@ export async function issueUiInteractionToken(
         return {
           ok: false,
           error: {
-            code:
-              linkedDataGrant.code === "not_found" ? "not_found" : "ui_interaction_not_allowed",
+            code: linkedDataGrant.code === "not_found" ? "not_found" : "ui_interaction_not_allowed",
             message: linkedDataGrant.message,
           },
         };
@@ -1012,7 +1011,11 @@ export async function commitUiInteraction(
         },
       };
     }
-    if (row.action_mode !== "local_state" && row.action_mode !== "server_read" && row.action_mode !== "complete_component_interrupt") {
+    if (
+      row.action_mode !== "local_state" &&
+      row.action_mode !== "server_read" &&
+      row.action_mode !== "complete_component_interrupt"
+    ) {
       return {
         ok: false,
         error: {

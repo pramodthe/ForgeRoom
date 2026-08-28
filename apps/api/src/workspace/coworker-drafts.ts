@@ -18,11 +18,7 @@ import { canTransitionCoworkerDraft } from "@forgeroom/domain/transitions";
 import type { TrueForgeClient } from "@forgeroom/trueforge";
 import { randomOpaqueId } from "../auth/crypto";
 import { ensureCoworkerChannelSession } from "./session-provision";
-import type {
-  CoworkerDraftRecord,
-  CoworkerEditableConfig,
-  WorkspaceCatalogStore,
-} from "./store";
+import type { CoworkerDraftRecord, CoworkerEditableConfig, WorkspaceCatalogStore } from "./store";
 import type { ApiEnv } from "../env";
 import type { WorkspaceServiceResult } from "./service";
 
@@ -113,7 +109,10 @@ async function assignableChannelIds(
   return channels.filter((channel) => channel.status === "active").map((channel) => channel.id);
 }
 
-async function existingHandles(store: WorkspaceCatalogStore, workspaceId: string): Promise<string[]> {
+async function existingHandles(
+  store: WorkspaceCatalogStore,
+  workspaceId: string,
+): Promise<string[]> {
   const rows = await store.listCoworkers(workspaceId);
   return rows.map((row) => row.handle);
 }
@@ -214,10 +213,7 @@ export async function reviseCoworkerDraft(
       error: { code: "conflict", message: "Only reviewable drafts may be revised." },
     };
   }
-  if (
-    current.revision !== command.draft_revision ||
-    current.draftHash !== command.draft_hash
-  ) {
+  if (current.revision !== command.draft_revision || current.draftHash !== command.draft_hash) {
     return {
       ok: false,
       error: {
@@ -253,10 +249,7 @@ export async function rejectCoworkerDraft(
   if (!current || current.workspaceId !== session.workspace_id) {
     return { ok: false, error: { code: "not_found", message: "Coworker draft not found." } };
   }
-  if (
-    current.revision !== command.draft_revision ||
-    current.draftHash !== command.draft_hash
-  ) {
+  if (current.revision !== command.draft_revision || current.draftHash !== command.draft_hash) {
     return {
       ok: false,
       error: {
@@ -378,7 +371,10 @@ export async function confirmCoworkerDraftBody(
   if (!coworker) {
     return {
       ok: false,
-      error: { code: "conflict", message: "Coworker draft confirmation did not produce a profile." },
+      error: {
+        code: "conflict",
+        message: "Coworker draft confirmation did not produce a profile.",
+      },
     };
   }
 

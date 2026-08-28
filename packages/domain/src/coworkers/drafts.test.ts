@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { GOLDEN_RESEARCH_PROMPT, P0_WRITE_TOOL_DENIALS, RESEARCH_READ_TOOL_SLUG } from "./constants";
+import {
+  GOLDEN_RESEARCH_PROMPT,
+  P0_WRITE_TOOL_DENIALS,
+  RESEARCH_READ_TOOL_SLUG,
+} from "./constants";
 import { buildCoworkerDraftProposalFromRequest } from "./builder";
 import { hashCoworkerDraftBody, resolveCoworkerDraft } from "./resolver";
 
@@ -69,11 +73,13 @@ describe("coworker draft resolver", () => {
       now: new Date("2026-08-26T00:00:00.000Z"),
     });
     expect(first.draftHash).toBe(second.draftHash);
-    expect(hashCoworkerDraftBody({
-      proposal: first.proposal,
-      effectivePreview: first.effectivePreview,
-      policyRevision: first.policyRevision,
-      catalogRevision: first.catalogRevision,
-    })).toBe(first.draftHash);
+    expect(
+      hashCoworkerDraftBody({
+        proposal: first.proposal,
+        effectivePreview: first.effectivePreview,
+        policyRevision: first.policyRevision,
+        catalogRevision: first.catalogRevision,
+      }),
+    ).toBe(first.draftHash);
   });
 });

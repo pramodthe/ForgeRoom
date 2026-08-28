@@ -15,11 +15,7 @@ describe("retained DataGrant resolution", () => {
   };
 
   it("picks only granted field paths", () => {
-    expect(
-      pickAllowedFieldPaths(snapshot, [
-        ["rows", "id"],
-      ]),
-    ).toEqual({
+    expect(pickAllowedFieldPaths(snapshot, [["rows", "id"]])).toEqual({
       rows: [{ id: "row_1" }, { id: "row_2" }],
     });
   });
@@ -65,7 +61,10 @@ describe("retained DataGrant resolution", () => {
         classification_provenance: "connector policy",
         snapshot_schema_hash:
           "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-        allowed_field_paths: [["rows", "id"], ["rows", "status"]],
+        allowed_field_paths: [
+          ["rows", "id"],
+          ["rows", "status"],
+        ],
         max_rows: 20,
         max_bytes: 4_096,
         redaction_policy_key: "workspace-safe-v1",

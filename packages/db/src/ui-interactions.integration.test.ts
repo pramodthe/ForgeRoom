@@ -589,7 +589,10 @@ describe("UI interaction gateway", () => {
       const [interrupt] = await sql<
         { state: string; continuation_queue_item_id: string | null }[]
       >`SELECT state, continuation_queue_item_id FROM ui_component_interrupts WHERE id = ${interruptId}`;
-      expect(interrupt).toMatchObject({ state: "resolved", continuation_queue_item_id: expect.any(String) });
+      expect(interrupt).toMatchObject({
+        state: "resolved",
+        continuation_queue_item_id: expect.any(String),
+      });
 
       const queueItems = await sql<{ input_type: string; run_step_id: string }[]>`
         SELECT input_type, run_step_id
@@ -597,7 +600,9 @@ describe("UI interaction gateway", () => {
         WHERE channel_agent_session_id = 'cas_1'
           AND input_type = 'component_interaction_response'
       `;
-      expect(queueItems).toEqual([{ input_type: "component_interaction_response", run_step_id: "step_1" }]);
+      expect(queueItems).toEqual([
+        { input_type: "component_interaction_response", run_step_id: "step_1" },
+      ]);
     });
   }, 60_000);
 });

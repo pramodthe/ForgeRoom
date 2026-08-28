@@ -58,7 +58,9 @@ async function login(app: ReturnType<typeof createApiApp>, env: ReturnType<typeo
     body: JSON.stringify({ email: "owner@example.test", password: PASSWORD }),
   });
   const body = (await response.json()) as { csrf_token: string };
-  const cookie = response.headers.get("set-cookie")?.match(new RegExp(`${env.sessionCookieName}=([^;]+)`))?.[1];
+  const cookie = response.headers
+    .get("set-cookie")
+    ?.match(new RegExp(`${env.sessionCookieName}=([^;]+)`))?.[1];
   if (!cookie) {
     throw new Error("missing session cookie");
   }
@@ -108,7 +110,9 @@ describe("coworker drafts API", () => {
     const loaded = await app.request(`/api/coworker-drafts/${draftRef.id}`, {
       headers: { cookie: `${env.sessionCookieName}=${cookie}` },
     });
-    const parsedDraft = coworkerDraftSchema.parse(((await loaded.json()) as { draft: unknown }).draft);
+    const parsedDraft = coworkerDraftSchema.parse(
+      ((await loaded.json()) as { draft: unknown }).draft,
+    );
 
     const stale = await app.request(`/api/coworker-drafts/${parsedDraft.id}/confirm`, {
       method: "POST",
@@ -178,43 +182,49 @@ describe("coworker drafts API", () => {
     expect(listBody.coworkers).toHaveLength(1);
   });
 
-  it.skipIf(!process.env.DATABASE_URL)("persists idempotent confirm through postgres", async () => {
-    await withMigratedDatabase(async (sql) => {
-      const store = createPostgresWorkspaceStore(sql);
-      const { app, env } = await createTestApp(store);
-      const { cookie, csrf } = await login(app, env);
-      const created = await app.request(`/api/workspaces/${env.workspaceId}/coworker-drafts`, {
-        method: "POST",
-        headers: mutationHeaders(env, cookie, csrf),
-        body: JSON.stringify({
-          schemaVersion: 1,
-          request: GOLDEN_RESEARCH_PROMPT,
-          idempotency_key: "idem_pg_confirm_draft",
-        }),
+  it.skipIf(!process.env.DATABASE_URL)(
+    "persists idempotent confirm through postgres",
+    async () => {
+      await withMigratedDatabase(async (sql) => {
+        const store = createPostgresWorkspaceStore(sql);
+        const { app, env } = await createTestApp(store);
+        const { cookie, csrf } = await login(app, env);
+        const created = await app.request(`/api/workspaces/${env.workspaceId}/coworker-drafts`, {
+          method: "POST",
+          headers: mutationHeaders(env, cookie, csrf),
+          body: JSON.stringify({
+            schemaVersion: 1,
+            request: GOLDEN_RESEARCH_PROMPT,
+            idempotency_key: "idem_pg_confirm_draft",
+          }),
+        });
+        const draft = coworkerDraftSchema.parse(
+          ((await created.json()) as { draft: unknown }).draft,
+        );
+        const confirmBody = {
+          schemaVersion: 1 as const,
+          draft_revision: draft.revision,
+          draft_hash: draft.draft_hash,
+          policy_revision: draft.policy_revision,
+          catalog_revision: draft.catalog_revision,
+          idempotency_key: "idem_pg_confirm_once",
+        };
+        await app.request(`/api/coworker-drafts/${draft.id}/confirm`, {
+          method: "POST",
+          headers: mutationHeaders(env, cookie, csrf),
+          body: JSON.stringify(confirmBody),
+        });
+        await app.request(`/api/coworker-drafts/${draft.id}/confirm`, {
+          method: "POST",
+          headers: mutationHeaders(env, cookie, csrf),
+          body: JSON.stringify(confirmBody),
+        });
+        const listed = await app.request(`/api/workspaces/${env.workspaceId}/coworkers`, {
+          headers: { cookie: `${env.sessionCookieName}=${cookie}` },
+        });
+        expect(((await listed.json()) as { coworkers: unknown[] }).coworkers).toHaveLength(1);
       });
-      const draft = coworkerDraftSchema.parse(((await created.json()) as { draft: unknown }).draft);
-      const confirmBody = {
-        schemaVersion: 1 as const,
-        draft_revision: draft.revision,
-        draft_hash: draft.draft_hash,
-        policy_revision: draft.policy_revision,
-        catalog_revision: draft.catalog_revision,
-        idempotency_key: "idem_pg_confirm_once",
-      };
-      await app.request(`/api/coworker-drafts/${draft.id}/confirm`, {
-        method: "POST",
-        headers: mutationHeaders(env, cookie, csrf),
-        body: JSON.stringify(confirmBody),
-      });
-      await app.request(`/api/coworker-drafts/${draft.id}/confirm`, {
-        method: "POST",
-        headers: mutationHeaders(env, cookie, csrf),
-        body: JSON.stringify(confirmBody),
-      });
-      const listed = await app.request(`/api/workspaces/${env.workspaceId}/coworkers`, {
-        headers: { cookie: `${env.sessionCookieName}=${cookie}` },
-      });
-      expect(((await listed.json()) as { coworkers: unknown[] }).coworkers).toHaveLength(1);
-    });
-  }, 60_000);
+    },
+    60_000,
+  );
 });

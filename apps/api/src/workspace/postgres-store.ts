@@ -14,7 +14,11 @@ import {
   taskGrants,
   workspaceCommandReceipts,
 } from "@forgeroom/db";
-import type { CoworkerDraftState, CoworkerEffectivePreview, CoworkerProposal } from "@forgeroom/contracts";
+import type {
+  CoworkerDraftState,
+  CoworkerEffectivePreview,
+  CoworkerProposal,
+} from "@forgeroom/contracts";
 import type { TaskStatus } from "@forgeroom/contracts";
 import { and, eq, isNull } from "drizzle-orm";
 import { randomOpaqueId } from "../auth/crypto";
@@ -2312,7 +2316,9 @@ export function createPostgresWorkspaceStore(sql: SqlClient): WorkspaceCatalogSt
       };
     },
 
-    async provisionCoworkerFromDraft(input: ProvisionCoworkerFromDraftInput): Promise<CoworkerDraftWriteResult> {
+    async provisionCoworkerFromDraft(
+      input: ProvisionCoworkerFromDraftInput,
+    ): Promise<CoworkerDraftWriteResult> {
       return sql.begin(async (tx) => {
         const draftRows = await tx<
           Array<{

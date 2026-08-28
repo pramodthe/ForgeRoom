@@ -139,9 +139,7 @@ export function resolveCoworkerDraft(input: ResolveCoworkerDraftInput): Resolved
   const handle = uniqueHandle(baseHandle, input.existingHandles);
   const channelIds =
     input.proposal.requestedChannels.length > 0
-      ? input.assignableChannelIds.filter((id) =>
-          input.proposal.requestedChannels.includes(id),
-        )
+      ? input.assignableChannelIds.filter((id) => input.proposal.requestedChannels.includes(id))
       : input.assignableChannelIds.slice(0, 1);
 
   const toolGrants = resolveTools(input.proposal);
@@ -178,7 +176,12 @@ export function resolveCoworkerDraft(input: ResolveCoworkerDraftInput): Resolved
 
   const policyRevision = P0_COWORKER_POLICY_REVISION;
   const catalogRevision = P0_COWORKER_CATALOG_REVISION;
-  const draftHash = hashCoworkerDraftBody({ proposal, effectivePreview, policyRevision, catalogRevision });
+  const draftHash = hashCoworkerDraftBody({
+    proposal,
+    effectivePreview,
+    policyRevision,
+    catalogRevision,
+  });
 
   return {
     proposal,

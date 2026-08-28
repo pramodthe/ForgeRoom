@@ -680,7 +680,9 @@ export type WorkspaceCatalogStore = {
     confirmIdempotencyKey?: string | null;
     provisionedCoworkerId?: string | null;
   }): Promise<CoworkerDraftRecord | null>;
-  provisionCoworkerFromDraft(input: ProvisionCoworkerFromDraftInput): Promise<CoworkerDraftWriteResult>;
+  provisionCoworkerFromDraft(
+    input: ProvisionCoworkerFromDraftInput,
+  ): Promise<CoworkerDraftWriteResult>;
 };
 
 export function emptyEditableConfig(): CoworkerEditableConfig {
@@ -1514,10 +1516,7 @@ export function createMemoryWorkspaceStore(): WorkspaceCatalogStore {
           return { ok: false, reason: "expired", draft: structuredClone(draft) };
         }
 
-        if (
-          draft.confirmIdempotencyKey === input.idempotencyKey &&
-          draft.provisionedCoworkerId
-        ) {
+        if (draft.confirmIdempotencyKey === input.idempotencyKey && draft.provisionedCoworkerId) {
           const existing = coworkers.get(draft.provisionedCoworkerId);
           if (existing) {
             return {

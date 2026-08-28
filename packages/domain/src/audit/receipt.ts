@@ -49,8 +49,7 @@ export function buildAuditReceipt(snapshot: RunReceiptSnapshot): AuditReceipt {
       receipt_claim: row.receipt_claim,
       ...(row.provider_receipt_hash ? { provider_receipt_hash: row.provider_receipt_hash } : {}),
     })),
-    note:
-      "Application history with declared lineage. Generic tool responses are labeled; only adapter-verified receipts are named as provider proof.",
+    note: "Application history with declared lineage. Generic tool responses are labeled; only adapter-verified receipts are named as provider proof.",
   };
 
   const hashes: Record<string, string> = {

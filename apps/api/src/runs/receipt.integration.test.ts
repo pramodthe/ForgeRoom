@@ -43,9 +43,7 @@ async function seedReceiptLineage(sql: Parameters<typeof seedRuntime>[0]) {
 }
 
 describe("run audit receipt postgres integration", () => {
-  it.skipIf(!process.env.DATABASE_URL)(
-    "returns declared lineage and appends actor-attributed audit events",
-    async () => {
+  it("returns declared lineage and appends actor-attributed audit events", async () => {
     await withMigratedDatabase(async (sql) => {
       await seedRuntime(sql);
       await seedReceiptLineage(sql);
@@ -90,7 +88,7 @@ describe("run audit receipt postgres integration", () => {
     });
   });
 
-  it.skipIf(!process.env.DATABASE_URL)("rejects cross-workspace receipt access", async () => {
+  it("rejects cross-workspace receipt access", async () => {
     await withMigratedDatabase(async (sql) => {
       await seedRuntime(sql);
       const store = createPostgresWorkspaceStore(sql);

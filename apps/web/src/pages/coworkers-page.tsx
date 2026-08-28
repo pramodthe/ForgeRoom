@@ -404,7 +404,11 @@ function PermissionReview({
         />
         <ReviewGroup
           title="Approval policy"
-          items={["No external writes", "No destructive tools", "Read provider data may leave workspace"]}
+          items={[
+            "No external writes",
+            "No destructive tools",
+            "Read provider data may leave workspace",
+          ]}
         />
         <ReviewGroup title="Unavailable / denied in P0" items={denials.slice(0, 6)} denied />
       </div>
