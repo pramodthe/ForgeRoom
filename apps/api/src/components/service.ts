@@ -379,11 +379,7 @@ export function createComponentService(options: {
 
       const result = applied.grant;
 
-      if (
-        result.changed &&
-        applied.sessionRotations.length > 0 &&
-        rotateGrantSessions
-      ) {
+      if (result.changed && applied.sessionRotations.length > 0 && rotateGrantSessions) {
         try {
           await rotateGrantSessions({
             workspaceId,

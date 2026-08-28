@@ -36,7 +36,9 @@ function mapOfferContext(
   };
 }
 
-export function createWorkerComponentToolBridgeAdapters(sql: SqlClient): ComponentToolBridgeAdapters {
+export function createWorkerComponentToolBridgeAdapters(
+  sql: SqlClient,
+): ComponentToolBridgeAdapters {
   return {
     async loadOfferContext(command: OfferAndRecheckComponentToolCommand) {
       const loaded = await loadComponentOfferContext(sql, {
@@ -123,9 +125,7 @@ export async function executeApplyScopedUiInteraction(
 }
 
 export type ComponentToolWorkerCommand =
-  | OfferAndRecheckComponentToolCommand
-  | FinalizeUiInstanceCommand
-  | ApplyScopedUiInteractionCommand;
+  OfferAndRecheckComponentToolCommand | FinalizeUiInstanceCommand | ApplyScopedUiInteractionCommand;
 
 export function isComponentToolWorkerCommand(
   command: InternalWorkerCommand,

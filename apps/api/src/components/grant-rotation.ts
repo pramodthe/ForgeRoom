@@ -7,10 +7,7 @@ import {
 import type { TrueForgeClient } from "@forgeroom/trueforge";
 import type { WorkspaceCatalogStore } from "../workspace/store";
 import { rotateOwnedChannelCoworkerSession } from "../workspace/session-rotation";
-import {
-  connectorsFromCoworker,
-  skillNamesFromCoworker,
-} from "../workspace/session-provision";
+import { connectorsFromCoworker, skillNamesFromCoworker } from "../workspace/session-provision";
 
 type SqlClient = ReturnType<typeof createSql>;
 

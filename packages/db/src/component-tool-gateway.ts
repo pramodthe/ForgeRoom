@@ -18,8 +18,7 @@ export type ComponentOfferContext = {
 };
 
 export type ComponentGatewayResult<T> =
-  | { ok: true; value: T }
-  | { ok: false; code: string; message: string };
+  { ok: true; value: T } | { ok: false; code: string; message: string };
 
 function opaqueId(prefix: string): string {
   return `${prefix}_${randomBytes(10).toString("hex")}`;
@@ -126,11 +125,12 @@ export async function loadComponentOfferContext(
 
   const grantScopeHash = hashGrantScope(
     buildGrantScopePreimage({
-      workspaceId: (
-        await sql<{ workspace_id: string }[]>`
+      workspaceId:
+        (
+          await sql<{ workspace_id: string }[]>`
           SELECT workspace_id FROM channels WHERE id = ${input.channelId} LIMIT 1
         `
-      )[0]?.workspace_id ?? "",
+        )[0]?.workspace_id ?? "",
       channelId: input.channelId,
       agentProfileId: input.coworkerId,
       componentVersionId: input.componentVersionId,
@@ -190,7 +190,9 @@ export async function finalizeOrQuarantineUiInstance(
     outcome: "ready" | "quarantined";
     now?: string;
   },
-): Promise<ComponentGatewayResult<{ uiInstanceId: string; renderRevision: number; status: string }>> {
+): Promise<
+  ComponentGatewayResult<{ uiInstanceId: string; renderRevision: number; status: string }>
+> {
   const now = input.now ?? new Date().toISOString();
 
   return sql.begin(async (tx) => {
@@ -360,10 +362,7 @@ export async function applyScopedUiInteractionWorker(
     if (!row) {
       return { ok: false, code: "not_found", message: "Interaction not found." };
     }
-    if (
-      row.state !== "succeeded" &&
-      row.state !== input.expectedInteractionState
-    ) {
+    if (row.state !== "succeeded" && row.state !== input.expectedInteractionState) {
       return {
         ok: false,
         code: "interaction_state_mismatch",

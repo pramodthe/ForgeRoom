@@ -40,9 +40,7 @@ export type ComponentToolBridgeAdapters = {
     | { ok: true; uiInstanceId: string; renderRevision: number; status: string }
     | { ok: false; code: string; message: string }
   >;
-  applyScopedInteraction: (
-    command: ApplyScopedUiInteractionCommand,
-  ) => Promise<
+  applyScopedInteraction: (command: ApplyScopedUiInteractionCommand) => Promise<
     | {
         ok: true;
         interactionId: string;
@@ -86,11 +84,7 @@ export type FinalizeUiInstanceResult =
   | {
       ok: false;
       kind:
-        | "not_found"
-        | "status_mismatch"
-        | "revision_mismatch"
-        | "conflict"
-        | "validation_failed";
+        "not_found" | "status_mismatch" | "revision_mismatch" | "conflict" | "validation_failed";
       message: string;
     };
 

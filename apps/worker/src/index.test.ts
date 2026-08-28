@@ -155,8 +155,7 @@ describe("standalone worker process", () => {
   }, 60_000);
 
   it("dispatches component tool worker commands when SQL is configured", async () => {
-    const HASH =
-      "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    const HASH = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
     await withMigratedDatabase(async (sql) => {
       await seedRuntime(sql);
       const executed: string[] = [];

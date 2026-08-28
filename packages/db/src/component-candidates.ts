@@ -1,9 +1,6 @@
 import type postgres from "postgres";
 import { componentToolName } from "@forgeroom/domain";
-import {
-  hasActiveComponentGrant,
-  listPublishedComponentVersions,
-} from "./component-registry";
+import { hasActiveComponentGrant, listPublishedComponentVersions } from "./component-registry";
 
 type SqlClient = postgres.Sql;
 
