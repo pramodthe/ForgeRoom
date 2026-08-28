@@ -323,6 +323,7 @@ async function loadUiInstanceReplayBundleFrom(
   let rendererProfileHash = row.descriptor_hash;
   let replayRenderRevision: number | null = null;
   let replayLastGoodRenderRevision: number | null = null;
+  let replayStateRevision: number | null = null;
 
   if (
     requestedRenderRevision !== null ||
@@ -384,6 +385,7 @@ async function loadUiInstanceReplayBundleFrom(
         baseRenderRevision = revision.base_revision;
         rendererProfileHash = revision.renderer_profile_hash ?? rendererProfileHash;
       } else if (revision.revision_kind === "state") {
+        replayStateRevision = revision.revision;
         scopedStateHash = revision.scoped_state_hash;
         scopedState = revision.scoped_state_json;
         baseStateRevision = revision.base_revision;
@@ -420,7 +422,7 @@ async function loadUiInstanceReplayBundleFrom(
     status: row.status,
     currentRenderRevision: replayRenderRevision,
     lastGoodRenderRevision: replayLastGoodRenderRevision,
-    currentStateRevision: row.current_state_revision,
+    currentStateRevision: replayStateRevision,
     renderManifestHash,
     validatedPropsHash,
     scopedStateHash,

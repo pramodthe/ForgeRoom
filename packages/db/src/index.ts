@@ -184,6 +184,15 @@ export {
 } from "./artifact-storage";
 export { loadUiInstanceReplayBundle, toUiInstanceReplayResponse } from "./ui-instances";
 export type { UiInstanceReplayBundle } from "./ui-instances";
+export { issueUiInteractionToken, commitUiInteraction } from "./ui-interactions";
+export type {
+  IssueUiInteractionToken,
+  IssueUiInteractionTokenInput,
+  CommitUiInteractionInput,
+  StoredInteractionResult,
+  UiInteractionDbError,
+  UiInteractionDbResult,
+} from "./ui-interactions";
 export { loadSandboxArtifactDiscoveryBinding } from "./artifact-discovery-binding";
 export type { ArtifactDiscoveryBinding } from "./artifact-discovery-binding";
 export type {
