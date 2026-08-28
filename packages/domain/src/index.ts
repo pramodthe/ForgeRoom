@@ -78,6 +78,7 @@ export {
   listServerOnlyDefinitions,
   P0_CONTROLLED_REGISTRY,
 } from "./components/registry";
+export { componentToolName } from "./components/tool-name";
 export {
   buildApprovalCard,
   evaluateApprovalDecisionGate,

@@ -93,6 +93,14 @@ export type {
   ApplyComponentGrantChangeInput,
   ApplyComponentGrantChangeResult,
 } from "./component-registry";
+export { loadControlledComponentCandidates } from "./component-candidates";
+export type { ControlledComponentCandidateRow } from "./component-candidates";
+export {
+  loadComponentOfferContext,
+  finalizeOrQuarantineUiInstance,
+  applyScopedUiInteractionWorker,
+} from "./component-tool-gateway";
+export type { ComponentOfferContext, ComponentGatewayResult } from "./component-tool-gateway";
 export { recordApprovalDecision, loadApprovalProposalForCard } from "./approval-decision";
 export type {
   ApprovalDecisionCommandInput,

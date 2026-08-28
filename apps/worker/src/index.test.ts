@@ -153,4 +153,52 @@ describe("standalone worker process", () => {
       ).toEqual({ ok: false, reason: "session_busy" });
     });
   }, 60_000);
+
+  it("dispatches component tool worker commands when SQL is configured", async () => {
+    const HASH =
+      "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    await withMigratedDatabase(async (sql) => {
+      await seedRuntime(sql);
+      const executed: string[] = [];
+      const handle = startWorkerProcess({
+        sql,
+        executeCommand: (command) => {
+          executed.push(command.name);
+        },
+      });
+      const offer = await handle.dispatchCommand({
+        schemaVersion: 1,
+        command_id: "offer_1",
+        name: "offer_and_recheck_component_tool",
+        payload: {
+          channel_id: "ch_1",
+          coworker_id: "cw_1",
+          run_step_id: "step_1",
+          agent_turn_id: "turn_1",
+          expected_session_generation: 1,
+          component_version_id: "compv_1",
+          expected_descriptor_hash: HASH,
+          expected_grant_scope_hash: HASH,
+        },
+      });
+      expect(offer.offerAndRecheckComponentTool?.ok).toBe(false);
+      expect(executed).toEqual([]);
+
+      const finalize = await handle.dispatchCommand({
+        schemaVersion: 1,
+        command_id: "finalize_1",
+        name: "finalize_or_quarantine_ui_instance",
+        payload: {
+          ui_instance_id: "ui_1",
+          expected_status: "building",
+          expected_render_revision: null,
+          next_render_revision: 1,
+          render_manifest_hash: HASH,
+          outcome: "ready",
+        },
+      });
+      expect(finalize.finalizeUiInstance?.ok).toBe(true);
+      expect(executed).toEqual(["finalize_or_quarantine_ui_instance"]);
+    });
+  }, 60_000);
 });

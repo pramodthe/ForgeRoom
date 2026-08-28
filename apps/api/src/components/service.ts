@@ -158,8 +158,18 @@ async function ensurePublished(sql: SqlClient, workspaceId: string, userId: stri
   });
 }
 
-export function createComponentService(options: { sql?: SqlClient; workspace: WorkspaceService }) {
-  const { sql, workspace } = options;
+export function createComponentService(options: {
+  sql?: SqlClient;
+  workspace: WorkspaceService;
+  rotateGrantSessions?: (input: {
+    workspaceId: string;
+    coworkerId: string;
+    sessionIds: readonly string[];
+    createdBy: string;
+    granted: boolean;
+  }) => Promise<void>;
+}) {
+  const { sql, workspace, rotateGrantSessions } = options;
 
   return {
     async listWorkspaceComponents(
@@ -368,6 +378,34 @@ export function createComponentService(options: { sql?: SqlClient; workspace: Wo
       }
 
       const result = applied.grant;
+
+      if (
+        result.changed &&
+        applied.sessionRotations.length > 0 &&
+        rotateGrantSessions
+      ) {
+        try {
+          await rotateGrantSessions({
+            workspaceId,
+            coworkerId,
+            sessionIds: applied.sessionRotations,
+            createdBy: session.user.id,
+            granted: command.granted,
+          });
+        } catch (error) {
+          return {
+            ok: false,
+            error: {
+              code: "provider_unavailable",
+              message: "Component grant saved but session rotation failed; retry or refresh.",
+              details: {
+                reason: "session_rotation_failed",
+                message: error instanceof Error ? error.message : String(error),
+              },
+            },
+          };
+        }
+      }
 
       return {
         ok: true,

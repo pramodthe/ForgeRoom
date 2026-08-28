@@ -46,6 +46,11 @@ import {
   createWorkerArtifactDiscoveryLoader,
   createWorkerArtifactPublishAdapter,
 } from "./artifacts";
+import {
+  executeApplyScopedUiInteraction,
+  executeFinalizeOrQuarantineUiInstance,
+  executeOfferAndRecheckComponentTool,
+} from "./component-tools";
 
 export function parseWorkerCommand(input: unknown): InternalWorkerCommand {
   return internalWorkerCommandSchema.parse(input);
@@ -62,6 +67,9 @@ export type WorkerDispatchResult = {
     CreateOrReconcileResponseTurnResult | { ok: false; reason: "unavailable" };
   ingest?: IngestRunEventResult | { ok: false; reason: "unavailable" };
   publishSandboxArtifact?: Awaited<ReturnType<typeof executePublishSandboxArtifactCommand>>;
+  offerAndRecheckComponentTool?: Awaited<ReturnType<typeof executeOfferAndRecheckComponentTool>>;
+  finalizeUiInstance?: Awaited<ReturnType<typeof executeFinalizeOrQuarantineUiInstance>>;
+  applyScopedUiInteraction?: Awaited<ReturnType<typeof executeApplyScopedUiInteraction>>;
 };
 
 export type WorkerProcessOptions = {
@@ -494,6 +502,66 @@ export function startWorkerProcess(options: WorkerProcessOptions | WorkerCommand
           await resolved.executeCommand?.(command);
         }
         return { command, publishSandboxArtifact };
+      }
+
+      if (command.name === "offer_and_recheck_component_tool") {
+        if (!canUseDb) {
+          return {
+            command,
+            offerAndRecheckComponentTool: {
+              ok: false,
+              kind: "not_found",
+              message: "unavailable",
+            },
+          };
+        }
+        sql ??= createSql(resolved.databaseUrl);
+        const offerAndRecheckComponentTool = await executeOfferAndRecheckComponentTool(
+          sql,
+          command,
+        );
+        if (offerAndRecheckComponentTool.ok) {
+          await resolved.executeCommand?.(command);
+        }
+        return { command, offerAndRecheckComponentTool };
+      }
+
+      if (command.name === "finalize_or_quarantine_ui_instance") {
+        if (!canUseDb) {
+          return {
+            command,
+            finalizeUiInstance: {
+              ok: false,
+              kind: "not_found",
+              message: "unavailable",
+            },
+          };
+        }
+        sql ??= createSql(resolved.databaseUrl);
+        const finalizeUiInstance = await executeFinalizeOrQuarantineUiInstance(sql, command);
+        if (finalizeUiInstance.ok) {
+          await resolved.executeCommand?.(command);
+        }
+        return { command, finalizeUiInstance };
+      }
+
+      if (command.name === "apply_scoped_ui_interaction") {
+        if (!canUseDb) {
+          return {
+            command,
+            applyScopedUiInteraction: {
+              ok: false,
+              kind: "not_found",
+              message: "unavailable",
+            },
+          };
+        }
+        sql ??= createSql(resolved.databaseUrl);
+        const applyScopedUiInteraction = await executeApplyScopedUiInteraction(sql, command);
+        if (applyScopedUiInteraction.ok) {
+          await resolved.executeCommand?.(command);
+        }
+        return { command, applyScopedUiInteraction };
       }
 
       await resolved.executeCommand?.(command);
