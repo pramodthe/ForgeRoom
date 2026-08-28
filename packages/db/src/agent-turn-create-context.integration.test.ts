@@ -36,7 +36,7 @@ describe("agent turn create context", () => {
       const interruptId = "intr_ctx";
       const actionBody = actionGrantSchema.parse({
         schemaVersion: 1,
-        id: "ag_complete",
+        id: "ag_complete_ctx",
         workspace_id: "ws_1",
         channel_id: "ch_1",
         surface_id: "ui_1",
