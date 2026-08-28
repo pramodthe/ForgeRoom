@@ -188,6 +188,9 @@ importers:
         specifier: workspace:*
         version: link:../../packages/integrations/ui-components-mcp
     devDependencies:
+      '@forgeroom/domain':
+        specifier: workspace:*
+        version: link:../../packages/domain
       '@types/node':
         specifier: 'catalog:'
         version: 22.20.1

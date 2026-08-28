@@ -13,6 +13,7 @@ import {
   loadAgentTurnCreateContext,
 } from "@forgeroom/db";
 import { actionGrantSchema } from "@forgeroom/contracts";
+import { canonicalizeJson } from "@forgeroom/domain";
 import { createHash } from "node:crypto";
 import { HASH, NOW, seedRuntime, withMigratedDatabase } from "@forgeroom/db/test-harness";
 
@@ -20,7 +21,7 @@ const TEST_NOW = "2020-01-01T00:00:00.000Z";
 const INTERACTION_TOKEN_SECRET = "test-interaction-token-secret";
 
 function sha256(value: unknown): string {
-  return `sha256:${createHash("sha256").update(JSON.stringify(value), "utf8").digest("hex")}`;
+  return `sha256:${createHash("sha256").update(canonicalizeJson(value), "utf8").digest("hex")}`;
 }
 
 describe("standalone worker process", () => {
