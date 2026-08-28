@@ -1,6 +1,7 @@
 import type postgres from "postgres";
 import { dataGrantSchema } from "@forgeroom/contracts";
 import { loadRetainedDataGrantSnapshot } from "./retained-data-grants";
+import { executeUiDataFunctionHandler } from "./ui-data-function-handlers";
 
 type SqlClient = postgres.Sql;
 
@@ -153,13 +154,28 @@ export async function invokeUiDataFunction(
     };
   }
 
-  void input.arguments;
-  void input.actorUserId;
-  void retained;
+  if (retained.dataGrant.data_ref !== input.functionName) {
+    return {
+      ok: false,
+      code: "ui_interaction_not_allowed",
+      message: "DataGrant binding is invalid.",
+    };
+  }
 
-  return {
-    ok: false,
-    code: "ui_interaction_not_allowed",
-    message: "Data-function handler is not registered.",
-  };
+  const data = executeUiDataFunctionHandler(input.functionName, {
+    snapshot: retained.snapshot,
+    dataGrant: retained.dataGrant,
+    arguments: input.arguments,
+  });
+  if (data === null) {
+    return {
+      ok: false,
+      code: "ui_interaction_not_allowed",
+      message: "Data-function handler is not registered.",
+    };
+  }
+
+  void input.actorUserId;
+
+  return { ok: true, data };
 }

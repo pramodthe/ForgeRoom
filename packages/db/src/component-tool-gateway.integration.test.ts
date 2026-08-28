@@ -139,6 +139,67 @@ describe("component tool gateway", () => {
     });
   });
 
+  it("provisions broker DataGrants when a data-function grant exists", async () => {
+    await withMigratedDatabase(async (sql) => {
+      await seedRuntime(sql);
+      await sql`
+        INSERT INTO ui_component_grants (
+          id, component_version_id, workspace_id, channel_id, agent_profile_id, granted_by, granted_at
+        )
+        VALUES ('cg_rows', 'compv_1', 'ws_1', NULL, 'cw_1', 'user_1', ${NOW})
+      `;
+      await sql`
+        INSERT INTO ui_data_function_grants (
+          id, component_version_id, function_name, workspace_id, limits_json, granted_by, granted_at
+        )
+        VALUES ('dfg_rows', 'compv_1', 'rows', 'ws_1', '{"max_rows":10}'::jsonb, 'user_1', ${NOW})
+      `;
+      await sql`
+        UPDATE session_revisions
+        SET effective_config_redacted_json = ${sql.json({
+          component_tool_names: ["ui.dataTable"],
+        })}
+        WHERE id = 'sr_1'
+      `;
+
+      const result = await brokerComponentToolMcpCall(sql, {
+        generationId: "gen_1",
+        stableName: "DataTable",
+        toolCallId: "tc_rows_1",
+        props: {
+          caption: "Results",
+          empty_text: "No rows",
+          columns: [{ key: "record_id", label: "Record" }],
+        },
+        now: NOW,
+      });
+
+      expect(result).toMatchObject({
+        status: "awaiting_component_input",
+        renderRevision: 1,
+      });
+
+      const dataGrants = await sql<
+        { grant_kind: string; data_ref: string | null; max_rows: number | null }[]
+      >`
+        SELECT grant_kind, data_ref, max_rows
+        FROM ui_surface_grants
+        WHERE ui_instance_id = ${result.instanceId}
+          AND grant_kind = 'data'
+      `;
+      expect(dataGrants).toEqual([{ grant_kind: "data", data_ref: "rows", max_rows: 10 }]);
+
+      const revisions = await sql<{ data_snapshot_json: unknown }[]>`
+        SELECT data_snapshot_json
+        FROM ui_instance_revisions
+        WHERE ui_instance_id = ${result.instanceId}
+          AND revision_kind = 'render'
+      `;
+      const snapshot = revisions[0]?.data_snapshot_json;
+      expect(typeof snapshot === "string" ? JSON.parse(snapshot) : snapshot).toEqual({ rows: [] });
+    });
+  });
+
   it("brokers TaskCard with a render grant and channel projection", async () => {
     await withMigratedDatabase(async (sql) => {
       await seedRuntime(sql);

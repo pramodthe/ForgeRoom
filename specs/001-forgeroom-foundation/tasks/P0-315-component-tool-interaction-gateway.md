@@ -68,6 +68,8 @@ implemented.
   instead of silently marking interactions stale.
 - [x] `POST /api/ui-instances/:instanceId/data/:functionName` authorize shell with registry +
   surface DataGrant checks; handlers return typed denial until registered.
+- [x] Broker-time DataGrant provisioning for declared data functions with registry grants.
+- [x] P0 `rows` data-function handler returns bounded retained snapshot reads.
 - [x] P0 route guard: no `/render-capabilities` or P1 confirmation endpoints in ui-instance routes.
 
 - `pnpm --filter @forgeroom/db typecheck`

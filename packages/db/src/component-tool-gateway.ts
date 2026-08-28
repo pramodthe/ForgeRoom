@@ -12,6 +12,7 @@ import {
 import { validatePropsAgainstParameterSchema } from "./ui-interactions";
 import { enqueueComponentInterruptContinuationInTx } from "./component-interrupt-continuation";
 import { appendComponentBrokerChannelProjectionInTx } from "./component-channel-projection";
+import { insertBrokerDataGrants, planBrokerDataGrants } from "./broker-data-grants";
 
 export type SqlConnection = postgres.Sql;
 export type SqlClient = postgres.Sql | postgres.TransactionSql;
@@ -388,6 +389,7 @@ export async function finalizeOrQuarantineUiInstance(
     renderManifestHash: string;
     renderNodeSet?: { nodeId: string }[];
     validatedProps?: Record<string, unknown>;
+    dataSnapshot?: Record<string, unknown> | null;
     outcome: "ready" | "quarantined";
     now?: string;
   },
@@ -407,6 +409,7 @@ async function finalizeOrQuarantineUiInstanceInTx(
     renderManifestHash: string;
     renderNodeSet?: { nodeId: string }[];
     validatedProps?: Record<string, unknown>;
+    dataSnapshot?: Record<string, unknown> | null;
     outcome: "ready" | "quarantined";
     now?: string;
   },
@@ -483,6 +486,8 @@ async function finalizeOrQuarantineUiInstanceInTx(
       payload: renderPayloadHash,
     }),
   );
+  const dataSnapshot = input.dataSnapshot ?? null;
+  const dataSnapshotHash = dataSnapshot === null ? null : hashText(canonicalizeJson(dataSnapshot));
 
   await tx`
       INSERT INTO ui_instance_revisions (
@@ -490,7 +495,7 @@ async function finalizeOrQuarantineUiInstanceInTx(
         renderer_profile_hash, validator_policy_version, render_node_set_json, render_node_set_hash,
         render_payload_json, render_payload_hash, render_manifest_json, manifest_hash,
         validated_props_json, validated_props_hash, accessible_summary, content_hash,
-        validation_state, created_at, promoted_at
+        data_snapshot_json, data_snapshot_hash, validation_state, created_at, promoted_at
       ) VALUES (
         ${revisionId}, ${instance.id}, 'render', ${input.nextRenderRevision},
         ${input.expectedRenderRevision}, ${instance.component_version_id}, ${input.renderManifestHash},
@@ -498,7 +503,9 @@ async function finalizeOrQuarantineUiInstanceInTx(
         ${JSON.stringify(renderPayload)}::jsonb, ${renderPayloadHash},
         ${JSON.stringify(renderManifest)}::jsonb, ${input.renderManifestHash},
         ${JSON.stringify(validatedProps)}::jsonb, ${validatedPropsHash},
-        ${instance.text_alternative}, ${contentHash}, 'valid', ${now}, ${now}
+        ${instance.text_alternative}, ${contentHash},
+        ${dataSnapshot === null ? null : JSON.stringify(dataSnapshot)}::jsonb, ${dataSnapshotHash},
+        'valid', ${now}, ${now}
       )
     `;
 
@@ -1100,6 +1107,15 @@ export async function brokerComponentToolMcpCall(
       now,
     });
 
+    const dataGrantPlan = await planBrokerDataGrants(tx, {
+      workspaceId: context.workspaceId,
+      channelId: context.channelId,
+      coworkerId: context.coworkerId,
+      componentVersionId: version.componentVersionId,
+      stableName: input.stableName,
+      validatedProps: input.props,
+    });
+
     const finalized = await finalizeOrQuarantineUiInstanceInTx(tx, {
       uiInstanceId: created.uiInstanceId,
       expectedStatus: "building",
@@ -1108,6 +1124,7 @@ export async function brokerComponentToolMcpCall(
       renderManifestHash,
       renderNodeSet: buildRenderNodeSet(input.stableName),
       validatedProps: input.props,
+      dataSnapshot: dataGrantPlan.snapshot,
       outcome: "ready",
       now,
     });
@@ -1143,6 +1160,20 @@ export async function brokerComponentToolMcpCall(
         uiInstanceId: created.uiInstanceId,
         stableName: input.stableName,
         grantScopeHash,
+        now,
+      });
+    }
+
+    if (dataGrantPlan.snapshot && dataGrantPlan.grants.length > 0) {
+      await insertBrokerDataGrants(tx, {
+        uiInstanceId: created.uiInstanceId,
+        workspaceId: context.workspaceId,
+        channelId: context.channelId,
+        renderRevision: finalized.value.renderRevision,
+        renderManifestHash,
+        grantScopeHash,
+        snapshot: dataGrantPlan.snapshot,
+        grants: dataGrantPlan.grants,
         now,
       });
     }
