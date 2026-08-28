@@ -10,6 +10,13 @@ export function buildUiComponentsMcpConnectorName(generationId: string): string 
   return `${P0_UI_COMPONENTS_MCP_CONNECTOR_PREFIX}__${generationId}`;
 }
 
+export function isUiComponentsMcpConnectorName(name: string): boolean {
+  return (
+    name === P0_UI_COMPONENTS_MCP_CONNECTOR_NAME ||
+    name.startsWith(`${P0_UI_COMPONENTS_MCP_CONNECTOR_PREFIX}__`)
+  );
+}
+
 export function buildUiComponentsMcpSessionUrl(appOrigin: string, generationId: string): string {
   const base = appOrigin.replace(/\/$/, "");
   return `${base}/api/mcp/ui_components_v1/sessions/${encodeURIComponent(generationId)}`;

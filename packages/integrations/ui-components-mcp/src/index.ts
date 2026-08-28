@@ -4,6 +4,7 @@ export {
   P0_UI_COMPONENTS_MCP_HEADER_NAME,
   buildUiComponentsMcpConnectorName,
   buildUiComponentsMcpSessionUrl,
+  isUiComponentsMcpConnectorName,
 } from "./constants";
 export { deriveUiComponentsMcpSecret } from "./credentials";
 export { listControlledComponentMcpTools, resolveStableNameForMcpTool } from "./tools";

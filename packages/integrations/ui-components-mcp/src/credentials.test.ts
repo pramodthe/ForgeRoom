@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { isUiComponentsMcpConnectorName } from "./constants";
 import { deriveUiComponentsMcpSecret } from "./credentials";
 
 describe("deriveUiComponentsMcpSecret", () => {
@@ -10,5 +11,14 @@ describe("deriveUiComponentsMcpSecret", () => {
     expect(first).toBe(second);
     expect(first).not.toBe(otherGeneration);
     expect(first).toMatch(/^[a-f0-9]{64}$/);
+  });
+});
+
+describe("isUiComponentsMcpConnectorName", () => {
+  it("matches only legacy and per-generation ui component connectors", () => {
+    expect(isUiComponentsMcpConnectorName("ui_components_v1")).toBe(true);
+    expect(isUiComponentsMcpConnectorName("ui_components_v1__gen_1")).toBe(true);
+    expect(isUiComponentsMcpConnectorName("ui_components_v10")).toBe(false);
+    expect(isUiComponentsMcpConnectorName("composio_github")).toBe(false);
   });
 });

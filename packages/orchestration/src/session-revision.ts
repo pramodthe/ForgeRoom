@@ -6,6 +6,7 @@ import {
   type TrueForgeAgentSpec,
   type TrueForgeMcpServerRef,
 } from "@forgeroom/trueforge";
+import { isUiComponentsMcpConnectorName } from "@forgeroom/ui-components-mcp";
 
 export type SessionRevisionSnapshotInput = {
   coworker: {
@@ -71,7 +72,7 @@ function withComponentToolsMcpServer(
     preload: false,
   };
   const existing = (spec.mcp_servers ?? []).filter(
-    (server) => !server.name.startsWith("ui_components_v1"),
+    (server) => !isUiComponentsMcpConnectorName(server.name),
   );
   return {
     ...spec,
