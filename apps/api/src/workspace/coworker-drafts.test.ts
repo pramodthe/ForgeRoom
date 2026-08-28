@@ -178,7 +178,7 @@ describe("coworker drafts API", () => {
     expect(listBody.coworkers).toHaveLength(1);
   });
 
-  it("persists idempotent confirm through postgres", async () => {
+  it.skipIf(!process.env.DATABASE_URL)("persists idempotent confirm through postgres", async () => {
     await withMigratedDatabase(async (sql) => {
       const store = createPostgresWorkspaceStore(sql);
       const { app, env } = await createTestApp(store);
