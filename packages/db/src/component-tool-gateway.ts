@@ -36,6 +36,10 @@ function hashText(value: string): string {
   return `sha256:${createHash("sha256").update(value, "utf8").digest("hex")}`;
 }
 
+function grantExpiresAt(now: string): string {
+  return new Date(Date.parse(now) + 24 * 60 * 60 * 1000).toISOString();
+}
+
 function readEffectiveConfig(value: unknown): Record<string, unknown> {
   if (value && typeof value === "object" && !Array.isArray(value)) {
     return value as Record<string, unknown>;
@@ -720,6 +724,33 @@ function isInteractiveComponent(stableName: string): boolean {
   return definition.declaredInteractionIntents.length > 0 || definition.confirmation !== "none";
 }
 
+async function hasActiveComponentGrant(
+  sql: SqlClient,
+  input: {
+    workspaceId: string;
+    channelId: string;
+    coworkerId: string;
+    componentVersionId: string;
+    now: string;
+  },
+): Promise<boolean> {
+  const rows = await sql<{ id: string }[]>`
+    SELECT id
+    FROM ui_component_grants
+    WHERE component_version_id = ${input.componentVersionId}
+      AND workspace_id = ${input.workspaceId}
+      AND revoked_at IS NULL
+      AND (
+        channel_id IS NULL OR channel_id = ${input.channelId}
+      )
+      AND (
+        agent_profile_id IS NULL OR agent_profile_id = ${input.coworkerId}
+      )
+    LIMIT 1
+  `;
+  return rows.length > 0;
+}
+
 async function setupInteractiveBrokerArtifacts(
   sql: SqlClient,
   input: {
@@ -741,6 +772,8 @@ async function setupInteractiveBrokerArtifacts(
   const primaryIntent = definition?.declaredInteractionIntents[0] ?? "interact";
   const inputSchema = definition?.parameterSchema ?? {};
   const inputSchemaHash = hashText(canonicalizeJson(inputSchema));
+  const componentKind = definition?.kind ?? "table";
+  const grantExpiresAtValue = grantExpiresAt(input.now);
   const renderGrantId = opaqueId("rg");
   await sql`
     INSERT INTO ui_surface_grants (
@@ -748,8 +781,8 @@ async function setupInteractiveBrokerArtifacts(
       limits_json, grant_scope_hash, issued_by, expires_at, created_at
     )
     VALUES (
-      ${renderGrantId}, ${input.uiInstanceId}, 'render', 1, 'registry_v1', '["table"]'::jsonb,
-      '{}'::jsonb, ${input.grantScopeHash}, 'application_policy', ${input.now}, ${input.now}
+      ${renderGrantId}, ${input.uiInstanceId}, 'render', 1, 'registry_v1', ${JSON.stringify([componentKind])}::jsonb,
+      '{}'::jsonb, ${input.grantScopeHash}, 'application_policy', ${grantExpiresAtValue}, ${input.now}
     )
   `;
   await sql`UPDATE ui_instances SET render_grant_id = ${renderGrantId} WHERE id = ${input.uiInstanceId}`;
@@ -764,7 +797,7 @@ async function setupInteractiveBrokerArtifacts(
     VALUES (
       ${actionGrantId}, ${input.uiInstanceId}, 'action', 1, ${input.renderRevision}, ${input.renderManifestHash},
       ${primaryIntent}, ${primaryIntent}, 'local_state', ${JSON.stringify(inputSchema)}::jsonb, ${inputSchemaHash},
-      '["root"]'::jsonb, ${input.grantScopeHash}, 3, 0, 'application_policy', ${input.now}, ${input.now}
+      '["root"]'::jsonb, ${input.grantScopeHash}, 3, 0, 'application_policy', ${grantExpiresAtValue}, ${input.now}
     )
   `;
 
@@ -794,49 +827,6 @@ export async function brokerComponentToolMcpCall(
 ): Promise<ComponentToolMcpBrokerResult> {
   const now = input.now ?? new Date().toISOString();
   const componentName = componentToolName(input.stableName);
-  const existingRows = await sql<
-    {
-      id: string;
-      status: string;
-      current_render_revision: number | null;
-      text_alternative: string;
-    }[]
-  >`
-    SELECT id, status, current_render_revision, text_alternative
-    FROM ui_instances
-    WHERE tool_call_id = ${input.toolCallId}
-    LIMIT 1
-  `;
-  const existing = existingRows[0];
-  if (existing) {
-    if (existing.status === "ready") {
-      if (isInteractiveComponent(input.stableName)) {
-        return {
-          status: "awaiting_component_input",
-          instanceId: existing.id,
-          renderRevision: existing.current_render_revision,
-          textAlternative: existing.text_alternative,
-          componentName,
-        };
-      }
-      return {
-        status: "ready",
-        instanceId: existing.id,
-        renderRevision: existing.current_render_revision,
-        textAlternative: existing.text_alternative,
-        componentName,
-      };
-    }
-    if (existing.status === "building") {
-      return {
-        status: "awaiting_component_input",
-        instanceId: existing.id,
-        renderRevision: existing.current_render_revision,
-        textAlternative: existing.text_alternative,
-        componentName,
-      };
-    }
-  }
 
   const context = await loadComponentToolGenerationContext(sql, input.generationId);
   if (!context) {
@@ -872,32 +862,6 @@ export async function brokerComponentToolMcpCall(
     };
   }
 
-  const grantScopeHash = hashGrantScope(
-    buildGrantScopePreimage({
-      workspaceId: context.workspaceId,
-      channelId: context.channelId,
-      agentProfileId: context.coworkerId,
-      componentVersionId: version.componentVersionId,
-    }),
-  );
-  const offer = await loadComponentOfferContext(sql, {
-    channelId: context.channelId,
-    coworkerId: context.coworkerId,
-    expectedSessionGeneration: context.generation,
-    componentVersionId: version.componentVersionId,
-    expectedDescriptorHash: version.descriptorHash,
-    expectedGrantScopeHash: grantScopeHash,
-  });
-  if (!offer.ok || !offer.value.hasActiveGrant) {
-    return {
-      status: "quarantined",
-      instanceId: "",
-      renderRevision: null,
-      textAlternative: componentName,
-      componentName,
-    };
-  }
-
   const validation = validateRegistryProps(input.stableName, input.props);
   if (!validation.ok) {
     return {
@@ -909,45 +873,135 @@ export async function brokerComponentToolMcpCall(
     };
   }
 
-  const activeTurnRows = await sql<
-    {
-      agent_turn_id: string;
-      run_step_id: string;
-      run_id: string;
-      source_event_id: string;
-    }[]
-  >`
-    SELECT
-      t.id AS agent_turn_id,
-      t.run_step_id,
-      rs.run_id,
-      m.event_id AS source_event_id
-    FROM agent_turns AS t
-    JOIN run_steps AS rs ON rs.id = t.run_step_id
-    JOIN runs AS r ON r.id = rs.run_id
-    JOIN messages AS m ON m.id = r.source_message_id
-    WHERE t.channel_agent_session_id = ${context.channelAgentSessionId}
-      AND t.session_generation_id = ${input.generationId}
-      AND t.state IN ('acquiring', 'creating', 'streaming', 'resuming')
-    ORDER BY t.started_at DESC NULLS LAST
-    LIMIT 1
-  `;
-  const activeTurn = activeTurnRows[0];
-  if (!activeTurn) {
-    return {
-      status: "quarantined",
-      instanceId: "",
-      renderRevision: null,
-      textAlternative: "No active turn is bound to this session generation.",
-      componentName,
-    };
-  }
-
+  const grantScopeHash = hashGrantScope(
+    buildGrantScopePreimage({
+      workspaceId: context.workspaceId,
+      channelId: context.channelId,
+      agentProfileId: context.coworkerId,
+      componentVersionId: version.componentVersionId,
+    }),
+  );
   const textAlternative = readTextAlternative(input.stableName, input.props);
   const renderManifestHash = hashText(canonicalizeJson(input.props));
   const interactive = isInteractiveComponent(input.stableName);
 
   return sql.begin(async (tx) => {
+    const existingRows = await tx<
+      {
+        id: string;
+        status: string;
+        current_render_revision: number | null;
+        text_alternative: string;
+      }[]
+    >`
+      SELECT ui.id, ui.status, ui.current_render_revision, ui.text_alternative
+      FROM ui_instances AS ui
+      JOIN agent_turns AS t ON t.id = ui.agent_turn_id
+      WHERE ui.tool_call_id = ${input.toolCallId}
+        AND t.session_generation_id = ${input.generationId}
+      FOR UPDATE OF ui
+      LIMIT 1
+    `;
+    const existing = existingRows[0];
+    if (existing) {
+      const grantStillActive = await hasActiveComponentGrant(tx, {
+        workspaceId: context.workspaceId,
+        channelId: context.channelId,
+        coworkerId: context.coworkerId,
+        componentVersionId: version.componentVersionId,
+        now,
+      });
+      if (!grantStillActive) {
+        return {
+          status: "quarantined" as const,
+          instanceId: "",
+          renderRevision: null,
+          textAlternative: componentName,
+          componentName,
+        };
+      }
+      if (existing.status === "ready") {
+        if (interactive) {
+          return {
+            status: "awaiting_component_input" as const,
+            instanceId: existing.id,
+            renderRevision: existing.current_render_revision,
+            textAlternative: existing.text_alternative,
+            componentName,
+          };
+        }
+        return {
+          status: "ready" as const,
+          instanceId: existing.id,
+          renderRevision: existing.current_render_revision,
+          textAlternative: existing.text_alternative,
+          componentName,
+        };
+      }
+      if (existing.status === "building") {
+        return {
+          status: "awaiting_component_input" as const,
+          instanceId: existing.id,
+          renderRevision: existing.current_render_revision,
+          textAlternative: existing.text_alternative,
+          componentName,
+        };
+      }
+    }
+
+    const offer = await loadComponentOfferContext(tx, {
+      channelId: context.channelId,
+      coworkerId: context.coworkerId,
+      expectedSessionGeneration: context.generation,
+      componentVersionId: version.componentVersionId,
+      expectedDescriptorHash: version.descriptorHash,
+      expectedGrantScopeHash: grantScopeHash,
+    });
+    if (!offer.ok || !offer.value.hasActiveGrant) {
+      return {
+        status: "quarantined" as const,
+        instanceId: "",
+        renderRevision: null,
+        textAlternative: componentName,
+        componentName,
+      };
+    }
+
+    const activeTurnRows = await tx<
+      {
+        agent_turn_id: string;
+        run_step_id: string;
+        run_id: string;
+        source_event_id: string;
+      }[]
+    >`
+      SELECT
+        t.id AS agent_turn_id,
+        t.run_step_id,
+        rs.run_id,
+        m.event_id AS source_event_id
+      FROM agent_turns AS t
+      JOIN run_steps AS rs ON rs.id = t.run_step_id
+      JOIN runs AS r ON r.id = rs.run_id
+      JOIN messages AS m ON m.id = r.source_message_id
+      WHERE t.channel_agent_session_id = ${context.channelAgentSessionId}
+        AND t.session_generation_id = ${input.generationId}
+        AND t.state IN ('acquiring', 'creating', 'streaming', 'resuming')
+      ORDER BY t.started_at DESC NULLS LAST
+      FOR UPDATE OF t
+      LIMIT 1
+    `;
+    const activeTurn = activeTurnRows[0];
+    if (!activeTurn) {
+      return {
+        status: "quarantined" as const,
+        instanceId: "",
+        renderRevision: null,
+        textAlternative: "No active turn is bound to this session generation.",
+        componentName,
+      };
+    }
+
     const created = await createBuildingComponentUiInstance(tx, {
       workspaceId: context.workspaceId,
       channelId: context.channelId,
