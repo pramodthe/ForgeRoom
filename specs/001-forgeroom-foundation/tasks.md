@@ -34,7 +34,7 @@ Each task file is authoritative for its status and evidence. Keep this index and
 | [x] | [P0-210](./tasks/P0-210-agui-compatibility-spike.md) | Freeze AG-UI and prove bridge | done | P0-000, P0-101 |
 | [x] | [P0-211](./tasks/P0-211-trueforge-agui-adapter.md) | TrueForge-to-AG-UI adapter | done | P0-102, P0-203, P0-210 |
 | [x] | [P0-212](./tasks/P0-212-agui-persistence-state-replay.md) | AG-UI persistence and replay | done | P0-103, P0-107, P0-211 |
-| [ ] | [P0-213](./tasks/P0-213-conversational-coworker-drafts.md) | Conversational CoworkerDraft provisioning | ready | P0-106, P0-208 |
+| [x] | [P0-213](./tasks/P0-213-conversational-coworker-drafts.md) | Conversational CoworkerDraft provisioning | done | P0-106, P0-208 |
 | [x] | [P0-301](./tasks/P0-301-composio-session.md) | Composio direct-tools session | done | P0-000, P0-101 |
 | [x] | [P0-302](./tasks/P0-302-manifest-verification.md) | Connector/AgentSpec verification | done | P0-201, P0-301 |
 | [x] | [P0-303](./tasks/P0-303-tool-policies.md) | Curated ToolPolicyDefinitions | done | P0-000, P0-302 |
