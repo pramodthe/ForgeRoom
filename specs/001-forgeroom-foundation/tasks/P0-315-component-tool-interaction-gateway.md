@@ -59,6 +59,10 @@ implemented.
 - [x] Component-interrupt continuation processor: `loadAgentTurnCreateContext`, response-only
   `createOrReconcileComponentContinuationTurn`, worker `create_or_reconcile_turn` branch, and
   `markComponentInterruptContinued` (`continued_at` / `state = continued`).
+- [x] Broker channel projection: `forgeroom.controlled_ui.v1` `ACTIVITY_SNAPSHOT` on the durable
+  channel timeline after MCP broker finalize.
+- [x] Universal render grants for every brokered instance; manifest render-node ids (`node_1`) replace
+  hardcoded `"root"` in revisions and ActionGrants.
 
 - `pnpm --filter @forgeroom/db typecheck`
 - `pnpm --filter @forgeroom/db exec vitest run src/ui-interactions.integration.test.ts`

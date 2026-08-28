@@ -2,6 +2,8 @@ import { createHash, randomBytes } from "node:crypto";
 import type postgres from "postgres";
 import {
   buildGrantScopePreimage,
+  buildRenderNodeSet,
+  allowedRenderNodeIds,
   canonicalizeJson,
   componentToolName,
   getRegistryDefinition,
@@ -9,6 +11,7 @@ import {
 } from "@forgeroom/domain";
 import { validatePropsAgainstParameterSchema } from "./ui-interactions";
 import { enqueueComponentInterruptContinuationInTx } from "./component-interrupt-continuation";
+import { appendComponentBrokerChannelProjectionInTx } from "./component-channel-projection";
 
 export type SqlConnection = postgres.Sql;
 export type SqlClient = postgres.Sql | postgres.TransactionSql;
@@ -136,6 +139,7 @@ export async function loadPublishedComponentVersionForStableName(
   descriptorHash: string;
   exposure: "agent_tool" | "server_only";
   modelDescription: string;
+  semanticVersion: string;
 } | null> {
   const rows = await sql<
     {
@@ -144,9 +148,10 @@ export async function loadPublishedComponentVersionForStableName(
       descriptor_hash: string;
       exposure: "agent_tool" | "server_only";
       model_description: string;
+      semantic_version: string;
     }[]
   >`
-    SELECT v.id, c.stable_name, v.descriptor_hash, v.exposure, v.model_description
+    SELECT v.id, c.stable_name, v.descriptor_hash, v.exposure, v.model_description, v.semantic_version
     FROM ui_component_versions AS v
     JOIN ui_components AS c ON c.id = v.component_id
     WHERE c.workspace_id = ${input.workspaceId}
@@ -165,6 +170,7 @@ export async function loadPublishedComponentVersionForStableName(
     descriptorHash: row.descriptor_hash,
     exposure: row.exposure,
     modelDescription: row.model_description,
+    semanticVersion: row.semantic_version,
   };
 }
 
@@ -185,7 +191,7 @@ export async function createBuildingComponentUiInstance(
     textAlternative: string;
     now?: string;
   },
-): Promise<{ uiInstanceId: string }> {
+): Promise<{ uiInstanceId: string; activityMessageId: string }> {
   const now = input.now ?? new Date().toISOString();
   const uiInstanceId = opaqueId("ui");
   const activityMessageId = opaqueId("act");
@@ -215,7 +221,7 @@ export async function createBuildingComponentUiInstance(
       ${now}
     )
   `;
-  return { uiInstanceId };
+  return { uiInstanceId, activityMessageId };
 }
 
 export async function loadComponentOfferContext(
@@ -380,6 +386,7 @@ export async function finalizeOrQuarantineUiInstance(
     expectedRenderRevision: number | null;
     nextRenderRevision: number;
     renderManifestHash: string;
+    renderNodeSet?: { nodeId: string }[];
     validatedProps?: Record<string, unknown>;
     outcome: "ready" | "quarantined";
     now?: string;
@@ -398,6 +405,7 @@ async function finalizeOrQuarantineUiInstanceInTx(
     expectedRenderRevision: number | null;
     nextRenderRevision: number;
     renderManifestHash: string;
+    renderNodeSet?: { nodeId: string }[];
     validatedProps?: Record<string, unknown>;
     outcome: "ready" | "quarantined";
     now?: string;
@@ -416,12 +424,22 @@ async function finalizeOrQuarantineUiInstanceInTx(
       render_grant_id: string | null;
       text_alternative: string;
       validated_props_json: Record<string, unknown> | null;
+      stable_name: string;
     }[]
   >`
-      SELECT id, status, current_render_revision, component_version_id, render_grant_id, text_alternative
-      FROM ui_instances
-      WHERE id = ${input.uiInstanceId}
-      FOR UPDATE
+      SELECT
+        ui.id,
+        ui.status,
+        ui.current_render_revision,
+        ui.component_version_id,
+        ui.render_grant_id,
+        ui.text_alternative,
+        c.stable_name
+      FROM ui_instances AS ui
+      JOIN ui_component_versions AS v ON v.id = ui.component_version_id
+      JOIN ui_components AS c ON c.id = v.component_id
+      WHERE ui.id = ${input.uiInstanceId}
+      FOR UPDATE OF ui
     `;
   const instance = rows[0];
   if (!instance) {
@@ -443,7 +461,7 @@ async function finalizeOrQuarantineUiInstanceInTx(
   }
 
   const revisionId = opaqueId("uirev");
-  const renderNodeSet = [{ nodeId: "root" }];
+  const renderNodeSet = input.renderNodeSet ?? buildRenderNodeSet(instance.stable_name);
   const renderNodeSetHash = hashText(canonicalizeJson(renderNodeSet));
   const validatedProps = input.validatedProps ?? { schemaVersion: 1 };
   const validatedPropsHash = hashText(canonicalizeJson(validatedProps));
@@ -745,6 +763,33 @@ async function hasActiveComponentGrant(
   return rows.length > 0;
 }
 
+async function setupRenderGrant(
+  sql: SqlClient,
+  input: {
+    uiInstanceId: string;
+    stableName: string;
+    grantScopeHash: string;
+    now: string;
+  },
+): Promise<string> {
+  const definition = getRegistryDefinition(input.stableName);
+  const componentKind = definition?.kind ?? "table";
+  const grantExpiresAtValue = grantExpiresAt(input.now);
+  const renderGrantId = opaqueId("rg");
+  await sql`
+    INSERT INTO ui_surface_grants (
+      id, ui_instance_id, grant_kind, policy_revision, rail, allowed_component_types_json,
+      limits_json, grant_body_redacted_json, grant_scope_hash, issued_by, expires_at, created_at
+    )
+    VALUES (
+      ${renderGrantId}, ${input.uiInstanceId}, 'render', 1, 'registry_v1', ${JSON.stringify([componentKind])}::jsonb,
+      '{}'::jsonb, '{}'::jsonb, ${input.grantScopeHash}, 'application_policy', ${grantExpiresAtValue}, ${input.now}
+    )
+  `;
+  await sql`UPDATE ui_instances SET render_grant_id = ${renderGrantId} WHERE id = ${input.uiInstanceId}`;
+  return renderGrantId;
+}
+
 async function setupInteractiveBrokerArtifacts(
   sql: SqlClient,
   input: {
@@ -768,20 +813,15 @@ async function setupInteractiveBrokerArtifacts(
   const primaryIntent = definition?.declaredInteractionIntents[0] ?? "interact";
   const inputSchema = definition?.parameterSchema ?? {};
   const inputSchemaHash = hashText(canonicalizeJson(inputSchema));
-  const componentKind = definition?.kind ?? "table";
   const grantExpiresAtValue = grantExpiresAt(input.now);
-  const renderGrantId = opaqueId("rg");
-  await sql`
-    INSERT INTO ui_surface_grants (
-      id, ui_instance_id, grant_kind, policy_revision, rail, allowed_component_types_json,
-      limits_json, grant_body_redacted_json, grant_scope_hash, issued_by, expires_at, created_at
-    )
-    VALUES (
-      ${renderGrantId}, ${input.uiInstanceId}, 'render', 1, 'registry_v1', ${JSON.stringify([componentKind])}::jsonb,
-      '{}'::jsonb, '{}'::jsonb, ${input.grantScopeHash}, 'application_policy', ${grantExpiresAtValue}, ${input.now}
-    )
-  `;
-  await sql`UPDATE ui_instances SET render_grant_id = ${renderGrantId} WHERE id = ${input.uiInstanceId}`;
+  const renderNodeIds = allowedRenderNodeIds(input.stableName);
+
+  await setupRenderGrant(sql, {
+    uiInstanceId: input.uiInstanceId,
+    stableName: input.stableName,
+    grantScopeHash: input.grantScopeHash,
+    now: input.now,
+  });
 
   const actionGrantId = opaqueId("ag");
   const interruptId = opaqueId("intr");
@@ -804,7 +844,7 @@ async function setupInteractiveBrokerArtifacts(
     handler_key: "controlled_ui.complete_component_interrupt.v1",
     input_schema: inputSchema,
     input_schema_hash: inputSchemaHash,
-    allowed_render_node_ids: ["root"],
+    allowed_render_node_ids: renderNodeIds,
     requires_recent_auth: false,
     requires_trusted_confirmation: false,
     max_uses: 1,
@@ -823,7 +863,7 @@ async function setupInteractiveBrokerArtifacts(
       ${actionGrantId}, ${input.uiInstanceId}, 'action', 1, ${input.renderRevision}, ${input.renderManifestHash},
       ${primaryIntent}, 'controlled_ui.complete_component_interrupt.v1', 'complete_component_interrupt',
       ${JSON.stringify(inputSchema)}::jsonb, ${inputSchemaHash},
-      '["root"]'::jsonb, ${interruptId}, ${JSON.stringify(actionGrantBody)}::jsonb,
+      ${JSON.stringify(renderNodeIds)}::jsonb, ${interruptId}, ${JSON.stringify(actionGrantBody)}::jsonb,
       ${input.grantScopeHash}, 1, 0, 'application_policy', ${grantExpiresAtValue}, ${input.now}
     )
   `;
@@ -1013,13 +1053,15 @@ export async function brokerComponentToolMcpCall(
         run_step_id: string;
         run_id: string;
         source_event_id: string;
+        source_message_id: string;
       }[]
     >`
       SELECT
         t.id AS agent_turn_id,
         t.run_step_id,
         rs.run_id,
-        m.event_id AS source_event_id
+        m.event_id AS source_event_id,
+        r.source_message_id
       FROM agent_turns AS t
       JOIN run_steps AS rs ON rs.id = t.run_step_id
       JOIN runs AS r ON r.id = rs.run_id
@@ -1064,6 +1106,7 @@ export async function brokerComponentToolMcpCall(
       expectedRenderRevision: null,
       nextRenderRevision: 1,
       renderManifestHash,
+      renderNodeSet: buildRenderNodeSet(input.stableName),
       validatedProps: input.props,
       outcome: "ready",
       now,
@@ -1095,6 +1138,33 @@ export async function brokerComponentToolMcpCall(
         logicalThreadId: context.logicalThreadId,
         now,
       });
+    } else {
+      await setupRenderGrant(tx, {
+        uiInstanceId: created.uiInstanceId,
+        stableName: input.stableName,
+        grantScopeHash,
+        now,
+      });
+    }
+
+    await appendComponentBrokerChannelProjectionInTx(tx, {
+      channelId: context.channelId,
+      coworkerId: context.coworkerId,
+      logicalThreadId: context.logicalThreadId,
+      applicationRunId: activeTurn.run_id,
+      runStepId: activeTurn.run_step_id,
+      agentTurnId: activeTurn.agent_turn_id,
+      sourceMessageId: activeTurn.source_message_id,
+      uiInstanceId: created.uiInstanceId,
+      activityMessageId: created.activityMessageId,
+      stableName: input.stableName,
+      componentVersion: version.semanticVersion,
+      renderRevision: finalized.value.renderRevision,
+      textAlternative,
+      now,
+    });
+
+    if (interactive) {
       return {
         status: "awaiting_component_input" as const,
         instanceId: created.uiInstanceId,

@@ -89,6 +89,11 @@ export {
   listServerOnlyDefinitions,
   P0_CONTROLLED_REGISTRY,
 } from "./components/registry";
+export {
+  allowedRenderNodeIds,
+  buildRenderNodeSet,
+  primaryRenderNodeId,
+} from "./components/render-nodes";
 export { componentToolName, stableNameFromComponentToolName } from "./components/tool-name";
 export {
   auditReceiptBodyHash,
