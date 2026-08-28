@@ -553,12 +553,14 @@ export function createWorkspaceService(options?: {
   trueforgeClient?: TrueForgeClient;
   /** Postgres client for run stop/steer (P0-204). */
   sql?: ReturnType<typeof createSql>;
+  apiEnv?: import("../env").ApiEnv;
 }): WorkspaceService {
   const store = options?.store ?? createMemoryWorkspaceStore();
   const now = options?.now ?? (() => new Date());
   const eventHub = options?.eventHub ?? createChannelEventHub();
   const trueforgeClient = options?.trueforgeClient;
   const sql = options?.sql;
+  const apiEnv = options?.apiEnv;
 
   function publish(result: { envelope: AgentChannelEnvelope }): void {
     eventHub.publish(result.envelope);
@@ -1723,6 +1725,8 @@ export function createWorkspaceService(options?: {
               coworker,
               createdBy: session.user.id,
               client: trueforgeClient,
+              ...(apiEnv ? { apiEnv } : {}),
+              ...(sql ? { sql } : {}),
             });
           }
           const joinedAt = now().toISOString();
@@ -3306,6 +3310,7 @@ export function createWorkspaceService(options?: {
                 },
                 pinnedSkillNames: skillNamesFromCoworker(updated),
                 client: trueforgeClient,
+                ...(apiEnv ? { apiEnv } : {}),
                 now: updatedAt,
                 hasActiveTurn: activeTurn !== null,
                 activeTurnId: activeTurn?.agentTurnId ?? null,

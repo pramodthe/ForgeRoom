@@ -51,11 +51,11 @@ implemented.
   and concurrent-commit serialization.
 - [x] Authenticated channel membership, Origin/CSRF mutation guards, closed request schemas, and
   controlled `provider_unavailable` error translation.
+- [x] Component offer/recheck, finalize/quarantine, and scoped-interaction worker commands.
+- [x] Component grant changes rotate offered-tool session revisions.
 - [ ] `server_read` retained DataGrant resolution.
 - [ ] `complete_component_interrupt` CAS resolution and same-RunStep continuation enqueue.
-- [ ] Component tool broker, render-time validation, and multi-run continuation wiring.
-
-Focused verification completed on 2026-08-27:
+- [ ] TrueForge `ui_components_v1` MCP bridge and noninteractive broker tool-result path.
 
 - `pnpm --filter @forgeroom/db typecheck`
 - `pnpm --filter @forgeroom/db exec vitest run src/ui-interactions.integration.test.ts`

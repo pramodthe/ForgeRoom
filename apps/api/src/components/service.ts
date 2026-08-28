@@ -75,6 +75,20 @@ function idempotencyKeyHash(key: string): string {
   return `sha256:${createHash("sha256").update(key).digest("hex")}`;
 }
 
+async function markSessionRotationsApplied(
+  sql: SqlClient,
+  input: { workspaceId: string; coworkerId: string; idempotencyKeyHash: string },
+): Promise<void> {
+  await sql`
+    UPDATE audit_events
+    SET redacted_payload_json = redacted_payload_json || ${sql.json({ session_rotations_applied: true })}
+    WHERE workspace_id = ${input.workspaceId}
+      AND action IN ('component.grant', 'component.revoke')
+      AND redacted_payload_json->>'coworker_id' = ${input.coworkerId}
+      AND redacted_payload_json->>'idempotency_key_hash' = ${input.idempotencyKeyHash}
+  `;
+}
+
 function parseAuditPayload(payload: unknown): Record<string, unknown> | null {
   if (!payload || typeof payload !== "object") {
     if (typeof payload === "string") {
@@ -158,8 +172,18 @@ async function ensurePublished(sql: SqlClient, workspaceId: string, userId: stri
   });
 }
 
-export function createComponentService(options: { sql?: SqlClient; workspace: WorkspaceService }) {
-  const { sql, workspace } = options;
+export function createComponentService(options: {
+  sql?: SqlClient;
+  workspace: WorkspaceService;
+  rotateGrantSessions?: (input: {
+    workspaceId: string;
+    coworkerId: string;
+    sessionIds: readonly string[];
+    createdBy: string;
+    granted: boolean;
+  }) => Promise<void>;
+}) {
+  const { sql, workspace, rotateGrantSessions } = options;
 
   return {
     async listWorkspaceComponents(
@@ -291,93 +315,157 @@ export function createComponentService(options: { sql?: SqlClient; workspace: Wo
       }
 
       const keyHash = idempotencyKeyHash(command.idempotency_key);
-      const [priorAudit] = await sql<{ redacted_payload_json: unknown }[]>`
-        SELECT redacted_payload_json
-        FROM audit_events
-        WHERE workspace_id = ${workspaceId}
-          AND action IN ('component.grant', 'component.revoke')
-          AND redacted_payload_json->>'coworker_id' = ${coworkerId}
-          AND redacted_payload_json->>'idempotency_key_hash' = ${keyHash}
-        ORDER BY created_at DESC
-        LIMIT 1
-      `;
-      if (priorAudit) {
-        const payload = parseAuditPayload(priorAudit.redacted_payload_json);
-        if (payload) {
-          const replayComponent = componentFromAuditPayload(payload);
-          const grantId = payload.grant_id;
-          const action = payload.action;
-          const sessionRotations = payload.session_rotations;
-          if (
-            typeof grantId === "string" &&
-            (action === "granted" || action === "revoked" || action === "noop") &&
-            replayComponent &&
-            Array.isArray(sessionRotations) &&
-            sessionRotations.every((row) => typeof row === "string")
-          ) {
+      await sql`SELECT pg_advisory_lock(hashtext(${keyHash}))`;
+      try {
+        const [priorAudit] = await sql<{ redacted_payload_json: unknown }[]>`
+          SELECT redacted_payload_json
+          FROM audit_events
+          WHERE workspace_id = ${workspaceId}
+            AND action IN ('component.grant', 'component.revoke')
+            AND redacted_payload_json->>'coworker_id' = ${coworkerId}
+            AND redacted_payload_json->>'idempotency_key_hash' = ${keyHash}
+          ORDER BY created_at DESC
+          LIMIT 1
+        `;
+        if (priorAudit) {
+          const payload = parseAuditPayload(priorAudit.redacted_payload_json);
+          if (payload) {
+            const replayComponent = componentFromAuditPayload(payload);
+            const grantId = payload.grant_id;
+            const action = payload.action;
+            const sessionRotations = payload.session_rotations;
+            const sessionRotationsApplied = payload.session_rotations_applied === true;
+            if (
+              typeof grantId === "string" &&
+              (action === "granted" || action === "revoked" || action === "noop") &&
+              replayComponent &&
+              Array.isArray(sessionRotations) &&
+              sessionRotations.every((row) => typeof row === "string")
+            ) {
+              if (sessionRotations.length > 0 && rotateGrantSessions && !sessionRotationsApplied) {
+                try {
+                  await rotateGrantSessions({
+                    workspaceId,
+                    coworkerId,
+                    sessionIds: sessionRotations,
+                    createdBy: session.user.id,
+                    granted: action === "granted",
+                  });
+                  await markSessionRotationsApplied(sql, {
+                    workspaceId,
+                    coworkerId,
+                    idempotencyKeyHash: keyHash,
+                  });
+                } catch (error) {
+                  return {
+                    ok: false,
+                    error: {
+                      code: "provider_unavailable",
+                      message:
+                        "Component grant saved but session rotation failed; retry or refresh.",
+                      details: {
+                        reason: "session_rotation_failed",
+                        message: error instanceof Error ? error.message : String(error),
+                      },
+                    },
+                  };
+                }
+              }
+              return {
+                ok: true,
+                value: {
+                  grant_id: grantId,
+                  action,
+                  component: replayComponent,
+                  session_rotations: sessionRotations,
+                },
+              };
+            }
+          }
+        }
+
+        let applied;
+        try {
+          applied = await applyComponentGrantChange(sql, {
+            grantInput: {
+              componentVersionId: match.id,
+              workspaceId,
+              channelId: null,
+              agentProfileId: coworkerId,
+              grantedBy: session.user.id,
+              granted: command.granted,
+            },
+            audit: {
+              workspaceId,
+              actorUserId: session.user.id,
+              action: command.granted ? "component.grant" : "component.revoke",
+              targetType: "ui_component_grant",
+              targetId: "",
+              payload: {
+                coworker_id: coworkerId,
+                component_version_id: match.id,
+                stable_name: match.stableName,
+                descriptor_hash: match.descriptorHash,
+                granted: command.granted,
+                idempotency_key_hash: keyHash,
+                component: disclosed,
+              },
+            },
+            sessionAgentProfileId: coworkerId,
+          });
+        } catch (error) {
+          return {
+            ok: false,
+            error: {
+              code: "forbidden",
+              message: error instanceof Error ? error.message : "Component grant rejected.",
+            },
+          };
+        }
+
+        const result = applied.grant;
+
+        if (result.changed && applied.sessionRotations.length > 0 && rotateGrantSessions) {
+          try {
+            await rotateGrantSessions({
+              workspaceId,
+              coworkerId,
+              sessionIds: applied.sessionRotations,
+              createdBy: session.user.id,
+              granted: command.granted,
+            });
+            await markSessionRotationsApplied(sql, {
+              workspaceId,
+              coworkerId,
+              idempotencyKeyHash: keyHash,
+            });
+          } catch (error) {
             return {
-              ok: true,
-              value: {
-                grant_id: grantId,
-                action,
-                component: replayComponent,
-                session_rotations: sessionRotations,
+              ok: false,
+              error: {
+                code: "provider_unavailable",
+                message: "Component grant saved but session rotation failed; retry or refresh.",
+                details: {
+                  reason: "session_rotation_failed",
+                  message: error instanceof Error ? error.message : String(error),
+                },
               },
             };
           }
         }
-      }
 
-      let applied;
-      try {
-        applied = await applyComponentGrantChange(sql, {
-          grantInput: {
-            componentVersionId: match.id,
-            workspaceId,
-            channelId: null,
-            agentProfileId: coworkerId,
-            grantedBy: session.user.id,
-            granted: command.granted,
-          },
-          audit: {
-            workspaceId,
-            actorUserId: session.user.id,
-            action: command.granted ? "component.grant" : "component.revoke",
-            targetType: "ui_component_grant",
-            targetId: "",
-            payload: {
-              coworker_id: coworkerId,
-              component_version_id: match.id,
-              stable_name: match.stableName,
-              descriptor_hash: match.descriptorHash,
-              granted: command.granted,
-              idempotency_key_hash: keyHash,
-              component: disclosed,
-            },
-          },
-          sessionAgentProfileId: coworkerId,
-        });
-      } catch (error) {
         return {
-          ok: false,
-          error: {
-            code: "forbidden",
-            message: error instanceof Error ? error.message : "Component grant rejected.",
+          ok: true,
+          value: {
+            grant_id: result.grantId,
+            action: result.action,
+            component: disclosed,
+            session_rotations: applied.sessionRotations,
           },
         };
+      } finally {
+        await sql`SELECT pg_advisory_unlock(hashtext(${keyHash}))`;
       }
-
-      const result = applied.grant;
-
-      return {
-        ok: true,
-        value: {
-          grant_id: result.grantId,
-          action: result.action,
-          component: disclosed,
-          session_rotations: applied.sessionRotations,
-        },
-      };
     },
   };
 }

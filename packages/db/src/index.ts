@@ -93,6 +93,23 @@ export type {
   ApplyComponentGrantChangeInput,
   ApplyComponentGrantChangeResult,
 } from "./component-registry";
+export { loadControlledComponentCandidates } from "./component-candidates";
+export type { ControlledComponentCandidateRow } from "./component-candidates";
+export {
+  loadComponentOfferContext,
+  loadComponentToolGenerationContext,
+  loadPublishedComponentVersionForStableName,
+  createBuildingComponentUiInstance,
+  brokerComponentToolMcpCall,
+  finalizeOrQuarantineUiInstance,
+  applyScopedUiInteractionWorker,
+} from "./component-tool-gateway";
+export type {
+  ComponentOfferContext,
+  ComponentGatewayResult,
+  ComponentToolGenerationContext,
+  ComponentToolMcpBrokerResult,
+} from "./component-tool-gateway";
 export { recordApprovalDecision, loadApprovalProposalForCard } from "./approval-decision";
 export type {
   ApprovalDecisionCommandInput,
@@ -175,7 +192,11 @@ export {
 } from "./artifact-storage";
 export { loadUiInstanceReplayBundle, toUiInstanceReplayResponse } from "./ui-instances";
 export type { UiInstanceReplayBundle } from "./ui-instances";
-export { issueUiInteractionToken, commitUiInteraction } from "./ui-interactions";
+export {
+  issueUiInteractionToken,
+  commitUiInteraction,
+  validatePropsAgainstParameterSchema,
+} from "./ui-interactions";
 export type {
   IssueUiInteractionToken,
   IssueUiInteractionTokenInput,

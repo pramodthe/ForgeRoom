@@ -7,7 +7,9 @@ import { errorResponse } from "./http";
 import { createWorkspaceService, type WorkspaceService } from "./workspace/service";
 import { mountWorkspaceRoutes } from "./workspace/routes";
 import { createComponentService, type ComponentService } from "./components/service";
+import { rotateComponentGrantSessions } from "./components/grant-rotation";
 import { mountComponentRoutes } from "./components/routes";
+import { createPostgresWorkspaceStore } from "./workspace/postgres-store";
 import { createApprovalService, type ApprovalService } from "./approvals/service";
 import { mountApprovalRoutes } from "./approvals/routes";
 import { createConnectionService, type ConnectionService } from "./connections/service";
@@ -41,6 +43,24 @@ export function createApiApp(options?: {
       ? createComponentService({
           workspace,
           ...(options?.sql ? { sql: options.sql } : {}),
+          ...(options?.sql && options.trueforgeClient
+            ? {
+                rotateGrantSessions: async (input) => {
+                  const sql = options.sql!;
+                  const store = createPostgresWorkspaceStore(sql);
+                  await rotateComponentGrantSessions({
+                    sql,
+                    store,
+                    client: options.trueforgeClient!,
+                    workspaceId: input.workspaceId,
+                    coworkerId: input.coworkerId,
+                    sessionIds: input.sessionIds,
+                    createdBy: input.createdBy,
+                    reason: input.granted ? "component_grant" : "component_revoke",
+                  });
+                },
+              }
+            : {}),
         })
       : undefined);
   const approvals =

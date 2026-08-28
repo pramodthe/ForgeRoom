@@ -1,7 +1,12 @@
 import type { CompiledSessionRevision } from "@forgeroom/orchestration/session";
 import { provisionChannelCoworkerSession } from "@forgeroom/orchestration/session";
+import { intersectEffectiveComponentTools } from "@forgeroom/orchestration/capability-intersection";
+import { loadControlledComponentCandidates, type createSql } from "@forgeroom/db";
 import { loadTrueForgeClientFromEnv, type TrueForgeClient } from "@forgeroom/trueforge";
 import type { ChannelAgentSessionRecord, CoworkerRecord, WorkspaceCatalogStore } from "./store";
+import type { ApiEnv } from "../env";
+
+type SqlClient = ReturnType<typeof createSql>;
 
 export type SessionRevisionRecord = {
   id: string;
@@ -119,6 +124,8 @@ export async function ensureCoworkerChannelSession(input: {
   createdBy: string;
   client?: TrueForgeClient;
   env?: NodeJS.ProcessEnv;
+  apiEnv?: ApiEnv;
+  sql?: SqlClient;
 }): Promise<{
   logicalSession: ChannelAgentSessionRecord;
   revision: CompiledSessionRevision;
@@ -203,6 +210,15 @@ export async function ensureCoworkerChannelSession(input: {
   }
 
   const client = input.client ?? loadTrueForgeClientFromEnv(input.env ?? process.env);
+  const componentToolNames = input.sql
+    ? intersectEffectiveComponentTools(
+        await loadControlledComponentCandidates(input.sql, {
+          workspaceId: input.workspaceId,
+          channelId: input.channelId,
+          agentProfileId: input.coworker.id,
+        }),
+      ).map((row) => row.toolName)
+    : [];
   const provisioned = await provisionChannelCoworkerSession(client, {
     channelAgentSessionId: afterUpsert.id,
     generation: 1,
@@ -221,6 +237,7 @@ export async function ensureCoworkerChannelSession(input: {
     workspaceId: input.workspaceId,
     connectors: connectorsFromCoworker(input.coworker),
     skillNames: skillNamesFromCoworker(input.coworker),
+    componentToolNames,
     createdBy: input.createdBy,
   });
 
