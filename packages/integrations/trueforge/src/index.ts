@@ -28,6 +28,7 @@ export type { AgentSpecPolicyExpectation, AgentSpecPolicyFinding } from "./agent
 export { TrueForgeClient, loadTrueForgeClientFromEnv } from "./client";
 export {
   composioConnectorMcpRef,
+  deleteHeaderAuthMcpServer,
   listMcpServerTools,
   mcpToolNames,
   registerHeaderAuthMcpServer,

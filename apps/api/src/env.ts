@@ -25,6 +25,7 @@ export type ApiEnv = {
   composioConnectedAccountId: string | null;
   composioAuthConfigId: string | null;
   composioBaseUrl: string | null;
+  uiComponentsMcpSecret: string;
 };
 
 function readPort(value: string | undefined): number {
@@ -75,6 +76,13 @@ export function loadApiEnv(env: NodeJS.ProcessEnv = process.env): ApiEnv {
     throw new Error("PAUSE_PAYLOAD_ENCRYPTION_SECRET is required in production");
   }
 
+  const uiComponentsMcpSecret =
+    env.UI_COMPONENTS_MCP_SECRET?.trim() ||
+    (nodeEnv === "production" ? "" : pausePayloadEncryptionSecret);
+  if (nodeEnv === "production" && !uiComponentsMcpSecret) {
+    throw new Error("UI_COMPONENTS_MCP_SECRET is required in production");
+  }
+
   return {
     nodeEnv,
     host: env.HOST ?? "0.0.0.0",
@@ -114,5 +122,6 @@ export function loadApiEnv(env: NodeJS.ProcessEnv = process.env): ApiEnv {
     composioConnectedAccountId: env.COMPOSIO_CONNECTED_ACCOUNT_ID?.trim() || null,
     composioAuthConfigId: env.COMPOSIO_AUTH_CONFIG_ID?.trim() || null,
     composioBaseUrl: env.COMPOSIO_BASE_URL?.trim() || null,
+    uiComponentsMcpSecret,
   };
 }

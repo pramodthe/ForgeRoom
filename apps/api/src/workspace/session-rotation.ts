@@ -29,6 +29,11 @@ import {
   sandboxEnabledFromCoworker,
   standingInstructionsFromCoworker,
 } from "./session-provision";
+import type { ApiEnv } from "../env";
+import {
+  registerUiComponentsMcpForGeneration,
+  unregisterUiComponentsMcpForGeneration,
+} from "../mcp/ui-components-registration";
 
 export type RotateOwnedSessionInput = {
   sql: SessionRotationSqlClient;
@@ -49,6 +54,7 @@ export type RotateOwnedSessionInput = {
   activeRunStepId?: string | null;
   client?: TrueForgeClient;
   env?: NodeJS.ProcessEnv;
+  apiEnv?: ApiEnv;
   now?: string;
 };
 
@@ -91,11 +97,12 @@ export async function rotateOwnedChannelCoworkerSession(
 
   let swapped = false;
   let newGenerationId: string | null = null;
+  let registeredMcpGenerationId: string | null = null;
+  const client = input.client ?? loadTrueForgeClientFromEnv(input.env ?? process.env);
   try {
     if (begun.requestActiveTurnCancellation && input.activeRunStepId) {
       const stop = await requestRunStepStop(input.sql, { runStepId: input.activeRunStepId, now });
       if (stop.ok && stop.decision.callCancel) {
-        const client = input.client ?? loadTrueForgeClientFromEnv(input.env ?? process.env);
         if (stop.trueforgeSessionId) {
           await client.cancelSession(stop.trueforgeSessionId);
         }
@@ -112,8 +119,6 @@ export async function rotateOwnedChannelCoworkerSession(
         now,
       });
     }
-
-    const client = input.client ?? loadTrueForgeClientFromEnv(input.env ?? process.env);
 
     const rotated = await rotateChannelCoworkerSession(client, {
       channelAgentSessionId: input.channelAgentSessionId,
@@ -142,6 +147,15 @@ export async function rotateOwnedChannelCoworkerSession(
       hasActiveTurn: input.hasActiveTurn ?? false,
       mcpInFlightKnownTerminal: input.mcpInFlightKnownTerminal ?? null,
     });
+
+    if (input.apiEnv && rotated.effectiveComponentTools.length > 0) {
+      await registerUiComponentsMcpForGeneration(client, {
+        env: input.apiEnv,
+        generationId: rotated.generation.id,
+        componentToolNames: rotated.effectiveComponentTools,
+      });
+      registeredMcpGenerationId = rotated.generation.id;
+    }
 
     const swap = await atomicSwapSessionGeneration(input.sql, {
       channelAgentSessionId: input.channelAgentSessionId,
@@ -193,6 +207,18 @@ export async function rotateOwnedChannelCoworkerSession(
       cancelRequested: begun.requestActiveTurnCancellation,
     };
   } catch (error) {
+    if (registeredMcpGenerationId) {
+      try {
+        await unregisterUiComponentsMcpForGeneration(client, {
+          generationId: registeredMcpGenerationId,
+        });
+      } catch (cleanupError) {
+        console.error("ui_components_mcp connector cleanup failed after rotation error", {
+          generationId: registeredMcpGenerationId,
+          error: cleanupError instanceof Error ? cleanupError.message : String(cleanupError),
+        });
+      }
+    }
     await abortSessionRotation(input.sql, {
       channelAgentSessionId: input.channelAgentSessionId,
       restoreGenerationId: begun.previousGenerationId,

@@ -54,6 +54,24 @@ describe("registerHeaderAuthMcpServer", () => {
     expect(configured.manifest.auth?.headers["x-api-key"]).toContain("REDACTED");
   });
 
+  it("DELETEs a configured MCP connector by name", async () => {
+    const fetchImpl = vi.fn(async (input: string | URL, init?: RequestInit) => {
+      expect(String(input)).toBe(
+        "http://trueforge.test/api/v1/settings/mcp-servers/ui_components_v1__gen_1",
+      );
+      expect(init?.method).toBe("DELETE");
+      return new Response(null, { status: 204 });
+    });
+
+    const client = new TrueForgeClient({
+      baseUrl: "http://trueforge.test",
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+
+    await client.deleteHeaderAuthMcpServer("ui_components_v1__gen_1");
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
   it("lists connector tool names for allowlist comparison", async () => {
     const fetchImpl = vi.fn(async () => {
       return new Response(
