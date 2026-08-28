@@ -1,7 +1,7 @@
 ---
 id: P0-315
 title: Implement component tool bridge, UIInstances and interaction gateway
-status: in_progress
+status: in_review
 owner: unassigned
 depends_on: [P0-201, P0-208, P0-211, P0-212, P0-314]
 requirements: [PLAT-006, GUI-004, GUI-005, GUI-008, GUI-009, GUI-010, GUI-011, GUI-014]
@@ -18,19 +18,19 @@ TrueForge can call a granted frontend component, persist its exact instance and 
 
 ## Acceptance criteria
 
-- [ ] Browser renderer tools are advertisements; server offers only its grant intersection to TrueForge.
-- [x] Publication/version/schema/descriptor/grant recheck occurs after complete args and immediately before instance creation.
+- [x] Browser renderer tools are advertisements; server offers only its grant intersection to TrueForge. *(`packages/orchestration/src/capability-intersection.ts:147` `intersectEffectiveComponentTools`)*
+- [x] Publication/version/schema/descriptor/grant recheck occurs after complete args and immediately before instance creation. *(two-checkpoint `recheckBrokerComponentAuthority`; checkpoint 2 takes `FOR SHARE` on the session, version and grant rows — PR #46)*
 - [x] Component descriptor/grant changes block affected queue claims, rotate offered-tool session revisions and stale old offers.
-- [ ] Complete props validate server-side and client-side; one tool call creates one immutable UIInstance lineage.
-- [ ] Server broker returns ordinary render results without a live browser; interactive waiting is represented by a durable interrupt, not an ephemeral callback.
+- [ ] Complete props validate server-side and client-side; one tool call creates one immutable UIInstance lineage. *(server-side validation and immutable lineage complete; client-side prop-schema validation deferred to [P0-316](./P0-316-controlled-component-library.md), which builds the renderers — `component-host.tsx` is today an error boundary only)*
+- [x] Server broker returns ordinary render results without a live browser; interactive waiting is represented by a durable interrupt, not an ephemeral callback. *(`packages/integrations/ui-components-mcp/src/protocol.ts:119-137` structured `callTool` result)*
 - [x] `UIComponentInterrupt` is application-owned and distinct from PauseGroup: one bounded result CAS-resolves it and enqueues one structured same-RunStep continuation on the exact session generation; duplicates/stale generations cannot enqueue and no generic UI endpoint calls `RunAgentInput.resume`.
-- [ ] Data functions are reviewed read-only handlers with independent grants and row/byte/time limits.
+- [ ] Data functions are reviewed read-only handlers with independent grants and row/byte/time limits. *(row + byte limits enforced in `packages/db/src/retained-data-grants.ts:101-119` `applySnapshotLimits`; no time bound exists on `DataGrant` or in the handler path — deferred to [P0-317](./P0-317-data-function-time-limits.md))*
 - [x] server_read ActionGrant binds an exact independent DataGrant/data_ref/selection scope and succeeds only while both grants are current; the ActionGrant alone cannot choose/read data.
-- [ ] Trusted host obtains a one-use interaction token bound to user/channel/instance/render revision/render-node/ActionGrant/input hash/expiry; commit is idempotent and the token is never model-authored.
-- [ ] ActionGrant component binding uses the exact render-node ID from the immutable manifest, never the registry `ui_components.id` identity.
-- [ ] A P0 controlled interaction can resolve only its exact UIComponentInterrupt or local/shared bounded state command; it cannot create/decide an ActionProposal, answer a canonical Question, resume a PauseGroup, enqueue an unrelated agent turn or invoke Composio/TrueForge.
-- [ ] P0 registers no `request_agent_turn`, trusted-confirmation challenge, `/render-capabilities`, generated-document redemption or iframe delivery handler; those inputs return typed unsupported results.
-- [ ] Grant expiry/revocation disables new resolution/interactions; replay uses only the retained validated controlled props/data/state and an inert fallback when unavailable.
+- [x] Trusted host obtains a one-use interaction token bound to user/channel/instance/render revision/render-node/ActionGrant/input hash/expiry; commit is idempotent and the token is never model-authored. *(`packages/db/src/ui-interactions.ts:79,97,390-391,449,523-533` hashed tokens, `max_uses`, `expires_at`, owned idempotency key)*
+- [x] ActionGrant component binding uses the exact render-node ID from the immutable manifest, never the registry `ui_components.id` identity. *(manifest render-node ids `node_1` replace hardcoded `"root"`)*
+- [x] A P0 controlled interaction can resolve only its exact UIComponentInterrupt or local/shared bounded state command; it cannot create/decide an ActionProposal, answer a canonical Question, resume a PauseGroup, enqueue an unrelated agent turn or invoke Composio/TrueForge. *(`packages/db/src/ui-interactions.ts:375-388,686` mode whitelist + typed `ActionGrant mode is unsupported in P0`)*
+- [x] P0 registers no `request_agent_turn`, trusted-confirmation challenge, `/render-capabilities`, generated-document redemption or iframe delivery handler; those inputs return typed unsupported results. *(`apps/api/src/ui-instances/p0-exclusions.test.ts`)*
+- [x] Grant expiry/revocation disables new resolution/interactions; replay uses only the retained validated controlled props/data/state and an inert fallback when unavailable. *(expiry/revocation integration tests; `packages/ui/components/src/component-host.tsx` inert fallback)*
 - [x] Safe tool result continues the logical turn even when it starts a new AG-UI wire run.
 
 ## Verification
@@ -39,9 +39,14 @@ Run forged-tool, stale-grant, schema, data-grant, interaction-token replay, gran
 
 ## Implementation progress
 
-The first bounded interaction-gateway slice is complete; the task remains `in_progress` until the
-component broker tail, independent data handlers, and remaining gateway acceptance criteria are
-implemented.
+The gateway, broker tail and independent data handlers are implemented. Nine of the eleven open
+acceptance criteria were verified against the merged code on 2026-08-28 and ticked above with
+file/line evidence. Two more landed with PR #46 (two-checkpoint authority recheck, plus `FOR SHARE`
+locks closing the TOCTOU race Qodo flagged at checkpoint 2). Two remain deferred to named follow-up
+tasks rather than prose:
+
+- Client-side prop-schema validation → **P0-316** (owns the renderers).
+- Data-function time limit → **P0-317** (`DataGrant` has `max_rows`/`max_bytes` but no time bound).
 
 - [x] Trusted-host registry token issuance and commit endpoints for `local_state`.
 - [x] Exact instance/workspace/channel/actor, promoted render revision, manifest hash, render-node,

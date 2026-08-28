@@ -1,7 +1,7 @@
 ---
 id: P0-318
 title: Save a successful Run as a reviewed private skill
-status: blocked
+status: ready
 owner: unassigned
 depends_on: [P0-104, P0-106, P0-206, P0-208, P0-403]
 requirements: [SK-001, SK-002, SK-003, SK-004, SK-005]

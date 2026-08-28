@@ -1,7 +1,7 @@
 ---
 id: P0-405
 title: Build Work, Artifacts and Context tabs
-status: blocked
+status: ready
 owner: unassigned
 depends_on: [P0-108, P0-109, P0-312, P0-403]
 requirements: [ME-001, ME-003, TR-001, TR-002, SB-004, SB-005]
