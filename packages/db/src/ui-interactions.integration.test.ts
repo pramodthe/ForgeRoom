@@ -112,6 +112,25 @@ describe("UI interaction gateway", () => {
         now: TEST_NOW,
       });
       expect(issuanceRetry).toEqual(issued);
+      const concurrentIssuance = await Promise.all([
+        issueUiInteractionToken(sql, {
+          instanceId: "ui_1",
+          workspaceId: "ws_1",
+          actorUserId: "user_1",
+          request,
+          interactionTokenSecret: INTERACTION_TOKEN_SECRET,
+          now: TEST_NOW,
+        }),
+        issueUiInteractionToken(sql, {
+          instanceId: "ui_1",
+          workspaceId: "ws_1",
+          actorUserId: "user_1",
+          request,
+          interactionTokenSecret: INTERACTION_TOKEN_SECRET,
+          now: TEST_NOW,
+        }),
+      ]);
+      expect(concurrentIssuance).toEqual([issued, issued]);
 
       const committed = await commitUiInteraction(sql, {
         instanceId: "ui_1",

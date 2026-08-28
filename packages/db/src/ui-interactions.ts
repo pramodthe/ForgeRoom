@@ -77,6 +77,14 @@ function hashJson(value: unknown): string {
   return hashText(canonicalizeJson(value));
 }
 
+function canonicalJsonEqual(left: unknown, right: unknown): boolean {
+  try {
+    return canonicalizeJson(left) === canonicalizeJson(right);
+  } catch {
+    return false;
+  }
+}
+
 const TOKEN_CIPHERTEXT_PREFIX = "enc:ui-interaction:v1:";
 
 function deriveInteractionTokenKey(secret: string): Buffer {
@@ -224,14 +232,11 @@ function matchesInputSchema(value: unknown, schema: Record<string, unknown>): bo
   }
   if (
     Array.isArray(schema.enum) &&
-    !schema.enum.some((candidate) => canonicalizeJson(candidate) === canonicalizeJson(value))
+    !schema.enum.some((candidate) => canonicalJsonEqual(candidate, value))
   ) {
     return false;
   }
-  if (
-    typeof schema.const !== "undefined" &&
-    canonicalizeJson(schema.const) !== canonicalizeJson(value)
-  ) {
+  if (typeof schema.const !== "undefined" && !canonicalJsonEqual(schema.const, value)) {
     return false;
   }
 
@@ -430,6 +435,20 @@ export async function issueUiInteractionToken(
         ok: false,
         error: { code: "ui_interaction_not_allowed", message: "Surface binding is invalid." },
       };
+    }
+
+    // Serialize issuance for one ActionGrant even when no idempotency row
+    // exists yet, so concurrent first attempts cannot race the unique key.
+    const grantLocks = await tx<{ id: string }[]>`
+      SELECT id
+      FROM ui_surface_grants
+      WHERE id = ${request.actionGrantId}
+        AND ui_instance_id = ${instance.id}
+        AND grant_kind = 'action'
+      FOR UPDATE
+    `;
+    if (!grantLocks[0]) {
+      return { ok: false, error: { code: "not_found", message: "ActionGrant not found." } };
     }
 
     const priorRows = await tx<
