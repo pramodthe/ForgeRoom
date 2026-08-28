@@ -325,6 +325,29 @@ export function createComponentService(options: {
             Array.isArray(sessionRotations) &&
             sessionRotations.every((row) => typeof row === "string")
           ) {
+            if (sessionRotations.length > 0 && rotateGrantSessions) {
+              try {
+                await rotateGrantSessions({
+                  workspaceId,
+                  coworkerId,
+                  sessionIds: sessionRotations,
+                  createdBy: session.user.id,
+                  granted: action === "granted",
+                });
+              } catch (error) {
+                return {
+                  ok: false,
+                  error: {
+                    code: "provider_unavailable",
+                    message: "Component grant saved but session rotation failed; retry or refresh.",
+                    details: {
+                      reason: "session_rotation_failed",
+                      message: error instanceof Error ? error.message : String(error),
+                    },
+                  },
+                };
+              }
+            }
             return {
               ok: true,
               value: {

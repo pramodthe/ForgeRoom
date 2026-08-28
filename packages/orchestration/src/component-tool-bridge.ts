@@ -33,7 +33,9 @@ export type ComponentOfferContext = {
 export type ComponentToolBridgeAdapters = {
   loadOfferContext: (
     command: OfferAndRecheckComponentToolCommand,
-  ) => Promise<ComponentOfferContext | null>;
+  ) => Promise<
+    { ok: true; context: ComponentOfferContext } | { ok: false; code: string; message: string }
+  >;
   finalizeUiInstance: (
     command: FinalizeUiInstanceCommand,
   ) => Promise<
@@ -112,10 +114,23 @@ export async function executeOfferAndRecheckComponentToolCommand(
   adapters: ComponentToolBridgeAdapters,
   command: OfferAndRecheckComponentToolCommand,
 ): Promise<OfferAndRecheckResult> {
-  const context = await adapters.loadOfferContext(command);
-  if (!context) {
-    return { ok: false, kind: "not_found", message: "Component offer context not found." };
+  const loaded = await adapters.loadOfferContext(command);
+  if (!loaded.ok) {
+    const kind =
+      loaded.code === "stale_generation"
+        ? "stale_generation"
+        : loaded.code === "descriptor_mismatch"
+          ? "descriptor_mismatch"
+          : loaded.code === "grant_scope_mismatch"
+            ? "grant_scope_mismatch"
+            : "not_found";
+    return {
+      ok: false,
+      kind,
+      message: loaded.message,
+    };
   }
+  const context = loaded.context;
   if (context.exposure === "server_only") {
     return {
       ok: false,

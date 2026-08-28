@@ -20,19 +20,22 @@ type SqlClient = ReturnType<typeof createSql>;
 
 function mapOfferContext(
   result: Awaited<ReturnType<typeof loadComponentOfferContext>>,
-): ComponentOfferContext | null {
+): { ok: true; context: ComponentOfferContext } | { ok: false; code: string; message: string } {
   if (!result.ok) {
-    return null;
+    return { ok: false, code: result.code, message: result.message };
   }
   return {
-    sessionId: result.value.sessionId,
-    generationId: result.value.generationId,
-    generation: result.value.generation,
-    offeredComponentToolNames: result.value.offeredComponentToolNames,
-    stableName: result.value.stableName,
-    descriptorHash: result.value.descriptorHash,
-    exposure: result.value.exposure,
-    hasActiveGrant: result.value.hasActiveGrant,
+    ok: true,
+    context: {
+      sessionId: result.value.sessionId,
+      generationId: result.value.generationId,
+      generation: result.value.generation,
+      offeredComponentToolNames: result.value.offeredComponentToolNames,
+      stableName: result.value.stableName,
+      descriptorHash: result.value.descriptorHash,
+      exposure: result.value.exposure,
+      hasActiveGrant: result.value.hasActiveGrant,
+    },
   };
 }
 
@@ -48,6 +51,8 @@ export function createWorkerComponentToolBridgeAdapters(
         componentVersionId: command.payload.component_version_id,
         expectedDescriptorHash: command.payload.expected_descriptor_hash,
         expectedGrantScopeHash: command.payload.expected_grant_scope_hash,
+        runStepId: command.payload.run_step_id,
+        agentTurnId: command.payload.agent_turn_id,
       });
       return mapOfferContext(loaded);
     },

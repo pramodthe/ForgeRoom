@@ -247,6 +247,9 @@ export async function seedRuntime(sql: postgres.Sql): Promise<void> {
     )
   `;
   await sql`
+    UPDATE ui_components SET current_published_version_id = 'compv_1' WHERE id = 'comp_1'
+  `;
+  await sql`
     INSERT INTO ui_instances (
       id, workspace_id, channel_id, run_id, run_step_id, agent_turn_id, logical_thread_id,
       tool_call_id, component_version_id, activity_message_id, source_event_id, creator_agent_id,

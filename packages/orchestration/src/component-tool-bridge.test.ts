@@ -12,17 +12,20 @@ describe("component tool bridge", () => {
   const adapters: ComponentToolBridgeAdapters = {
     async loadOfferContext(command) {
       if (command.payload.component_version_id !== "compv_1") {
-        return null;
+        return { ok: false, code: "not_found", message: "Component version not found." };
       }
       return {
-        sessionId: "cas_1",
-        generationId: "gen_1",
-        generation: command.payload.expected_session_generation,
-        offeredComponentToolNames: ["ui.dataTable"],
-        stableName: "DataTable",
-        descriptorHash: command.payload.expected_descriptor_hash,
-        exposure: "agent_tool",
-        hasActiveGrant: true,
+        ok: true,
+        context: {
+          sessionId: "cas_1",
+          generationId: "gen_1",
+          generation: command.payload.expected_session_generation,
+          offeredComponentToolNames: ["ui.dataTable"],
+          stableName: "DataTable",
+          descriptorHash: command.payload.expected_descriptor_hash,
+          exposure: "agent_tool",
+          hasActiveGrant: true,
+        },
       };
     },
     async finalizeUiInstance(command) {
@@ -70,10 +73,10 @@ describe("component tool bridge", () => {
       ...adapters,
       async loadOfferContext(command) {
         const base = await adapters.loadOfferContext(command);
-        if (!base) {
+        if (!base.ok) {
           return base;
         }
-        return { ...base, offeredComponentToolNames: [] };
+        return { ok: true, context: { ...base.context, offeredComponentToolNames: [] } };
       },
     };
     const result = await executeOfferAndRecheckComponentToolCommand(staleAdapters, {
