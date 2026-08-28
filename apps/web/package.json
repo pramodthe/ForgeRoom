@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:prototype": "vite --mode prototype",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "build": "vite build",
@@ -13,6 +14,7 @@
   "dependencies": {
     "@forgeroom/ag-ui": "workspace:*",
     "@forgeroom/contracts": "workspace:*",
+    "@forgeroom/domain": "workspace:*",
     "@forgeroom/orchestration": "workspace:*",
     "@forgeroom/ui-components": "workspace:*",
     "@radix-ui/react-slot": "^1.2.3",

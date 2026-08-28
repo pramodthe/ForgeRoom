@@ -29,8 +29,7 @@ import type { WorkspaceService } from "../workspace/service";
 type SqlClient = ReturnType<typeof createSql>;
 
 export type ArtifactServiceResult<T> =
-  | { ok: true; value: T }
-  | { ok: false; error: { code: ErrorCode; message: string } };
+  { ok: true; value: T } | { ok: false; error: { code: ErrorCode; message: string } };
 
 export type PublishArtifactInput = {
   id?: string;
@@ -96,9 +95,7 @@ export type ArtifactService = {
   >;
   publishArtifact(
     input: PublishArtifactInput,
-  ): Promise<
-    ArtifactServiceResult<{ artifact: Artifact; created: boolean; storageKey: string }>
-  >;
+  ): Promise<ArtifactServiceResult<{ artifact: Artifact; created: boolean; storageKey: string }>>;
 };
 
 export function createArtifactService(options: {

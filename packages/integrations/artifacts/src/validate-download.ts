@@ -28,9 +28,7 @@ function normalizeMime(value: string): string {
   return value.split(";")[0]?.trim().toLowerCase() ?? "";
 }
 
-export function isAllowedArtifactMimeType(
-  mimeType: string,
-): mimeType is P0AllowedArtifactMimeType {
+export function isAllowedArtifactMimeType(mimeType: string): mimeType is P0AllowedArtifactMimeType {
   const normalized = normalizeMime(mimeType);
   return (P0_ALLOWED_ARTIFACT_MIME_TYPES as readonly string[]).includes(normalized);
 }
@@ -43,7 +41,9 @@ export function isForbiddenArtifactMimeType(mimeType: string): boolean {
 export function validateDiscoveredArtifactDownload(input: {
   discovery: DiscoveredSandboxArtifact;
   content: Buffer;
-}): { ok: true; value: ValidatedArtifactDownload } | { ok: false; reason: ArtifactDownloadValidationFailure } {
+}):
+  | { ok: true; value: ValidatedArtifactDownload }
+  | { ok: false; reason: ArtifactDownloadValidationFailure } {
   const { discovery, content } = input;
   const validatedPath = validateSandboxArtifactPath(discovery.sandboxPath);
   if (!validatedPath.ok) {

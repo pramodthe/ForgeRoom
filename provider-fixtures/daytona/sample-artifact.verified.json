@@ -38,7 +38,13 @@
   },
   "trueforgeWireMapping": {
     "status": "verified",
-    "wireTypes": ["sandbox.created", "sandbox.file", "model.message", "tool.response", "assistant.message"],
+    "wireTypes": [
+      "sandbox.created",
+      "sandbox.file",
+      "model.message",
+      "tool.response",
+      "assistant.message"
+    ],
     "applicationEvents": [
       "sandbox.created",
       "sandbox.command_started",

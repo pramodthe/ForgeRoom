@@ -13,6 +13,8 @@ import {
   channelUpdateCommandSchema,
   coworkerDisableCommandSchema,
   coworkerUpdateCommandSchema,
+  taskCreateCommandSchema,
+  taskUpdateCommandSchema,
 } from "@forgeroom/contracts";
 import { randomOpaqueId } from "../auth/crypto";
 import type { AuthService } from "../auth/service";
@@ -33,9 +35,13 @@ function fail(c: Context, error: WorkspaceServiceError) {
       ? 404
       : error.code === "forbidden"
         ? 403
-        : error.code === "conflict"
-          ? 409
-          : 400;
+        : error.code === "provider_unavailable"
+          ? 503
+          : error.code === "conflict"
+            ? 409
+            : error.code === "stale_task_revision" || error.code === "task_transition_not_allowed"
+              ? 409
+              : 400;
   const failure = errorResponse(error.code, error.message, {
     status,
     details: ("details" in error ? error.details : undefined) as SafeJsonObject | undefined,
@@ -738,6 +744,70 @@ export function mountWorkspaceRoutes(
       { status: 404 },
     );
     return c.json(failure.body, failure.status);
+  });
+
+  app.post("/api/channels/:channelId/tasks", async (c) => {
+    const authed = await requireMutationSession(c, env, auth);
+    if (authed instanceof Response) return authed;
+    const channelId = requireParam(c, "channelId");
+    if (channelId instanceof Response) return channelId;
+    const parsed = taskCreateCommandSchema.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) {
+      const failure = errorResponse("validation_failed", "Invalid task create command.", {
+        status: 400,
+      });
+      return c.json(failure.body, failure.status);
+    }
+    const result = await workspace.createTask(authed.session, channelId, parsed.data);
+    if (!result.ok) return fail(c, result.error);
+    return okJson(c, { task: result.value }, 201);
+  });
+
+  app.get("/api/channels/:channelId/tasks", async (c) => {
+    const authed = await requireSession(c, env, auth);
+    if (authed instanceof Response) return authed;
+    const channelId = requireParam(c, "channelId");
+    if (channelId instanceof Response) return channelId;
+    const result = await workspace.listTasks(authed.session, channelId);
+    if (!result.ok) return fail(c, result.error);
+    return okJson(c, { tasks: result.value }, 200);
+  });
+
+  app.get("/api/tasks/:taskId", async (c) => {
+    const authed = await requireSession(c, env, auth);
+    if (authed instanceof Response) return authed;
+    const taskId = requireParam(c, "taskId");
+    if (taskId instanceof Response) return taskId;
+    const result = await workspace.getTask(authed.session, taskId);
+    if (!result.ok) return fail(c, result.error);
+    return okJson(c, { task: result.value }, 200);
+  });
+
+  app.patch("/api/tasks/:taskId", async (c) => {
+    const authed = await requireMutationSession(c, env, auth);
+    if (authed instanceof Response) return authed;
+    const taskId = requireParam(c, "taskId");
+    if (taskId instanceof Response) return taskId;
+    const parsed = taskUpdateCommandSchema.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) {
+      const failure = errorResponse("validation_failed", "Invalid task update command.", {
+        status: 400,
+      });
+      return c.json(failure.body, failure.status);
+    }
+    const result = await workspace.updateTask(authed.session, taskId, parsed.data);
+    if (!result.ok) return fail(c, result.error);
+    return okJson(c, { task: result.value }, 200);
+  });
+
+  app.get("/api/tasks/:taskId/history", async (c) => {
+    const authed = await requireSession(c, env, auth);
+    if (authed instanceof Response) return authed;
+    const taskId = requireParam(c, "taskId");
+    if (taskId instanceof Response) return taskId;
+    const result = await workspace.listTaskHistory(authed.session, taskId);
+    if (!result.ok) return fail(c, result.error);
+    return okJson(c, { revisions: result.value }, 200);
   });
 
   app.post("/api/runs/:runId/cancel", async (c) => {

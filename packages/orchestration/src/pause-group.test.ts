@@ -13,9 +13,12 @@ const HASH = `sha256:${"ab".repeat(32)}`;
 
 const stubAdapter: ApprovalRedactionAdapter = {
   redactApproval: (toolName, args) => {
-    const record =
-      args && typeof args === "object" ? (args as Record<string, unknown>) : {};
-    const { token: _t, access_token: _a, ...safe } = record as Record<string, unknown> & {
+    const record = args && typeof args === "object" ? (args as Record<string, unknown>) : {};
+    const {
+      token: _t,
+      access_token: _a,
+      ...safe
+    } = record as Record<string, unknown> & {
       token?: unknown;
       access_token?: unknown;
     };
@@ -52,7 +55,13 @@ describe("buildPauseGroupCapturePlan", () => {
           id: "ra_approval",
           tool_name: "GITHUB_ADD_LABELS_TO_AN_ISSUE",
           tool_call_id: "tc_1",
-          arguments: { owner: "org", repo: "repo", issue_number: 1, labels: ["x"], token: "secret" },
+          arguments: {
+            owner: "org",
+            repo: "repo",
+            issue_number: 1,
+            labels: ["x"],
+            token: "secret",
+          },
         },
         {
           type: "tool.response_required",

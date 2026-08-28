@@ -21,7 +21,12 @@
   "agUiResume": {
     "enabled": true,
     "via": "pause_group_service",
-    "rejects": ["forged_interrupt_ids", "decision_bearing_payloads", "partial_resume", "incomplete_group"]
+    "rejects": [
+      "forged_interrupt_ids",
+      "decision_bearing_payloads",
+      "partial_resume",
+      "incomplete_group"
+    ]
   },
   "ciphertextExpiry": {
     "recoveryWindow": "24h_after_completed_or_reconciled",

@@ -5,11 +5,7 @@ import type { TrueForgeClient, TrueForgeTurn, TrueForgeTurnEvent } from "@forger
  * Only policy-approved safe fields — never raw tool bodies or credentials.
  */
 export type ProjectedToolActivityEvent = {
-  normalizedType:
-    | "tool.started"
-    | "tool.succeeded"
-    | "tool.failed"
-    | "connection.blocked";
+  normalizedType: "tool.started" | "tool.succeeded" | "tool.failed" | "connection.blocked";
   payloadRedacted: Record<string, unknown>;
 };
 
@@ -63,8 +59,7 @@ export type RealReadDispatchAdapters = {
    * Implementations must observe the literal tool slug (reject meta wrappers).
    */
   invokeViaTrueForge: () =>
-    | TrueForgeDirectToolObservation
-    | Promise<TrueForgeDirectToolObservation>;
+    TrueForgeDirectToolObservation | Promise<TrueForgeDirectToolObservation>;
   assertDirectTool: (observedToolName: string) => void;
   buildSafeSummary: (input: {
     coworkerId: string;
@@ -354,10 +349,7 @@ export function extractDirectToolObservationFromTrueForgeEvents(input: {
       if (name) {
         observedToolName = name;
       }
-      toolCallId =
-        readString(event.tool_call_id) ??
-        readString(event.toolCallId) ??
-        toolCallId;
+      toolCallId = readString(event.tool_call_id) ?? readString(event.toolCallId) ?? toolCallId;
       rawResult = event.result ?? event.output ?? event.content ?? event.data ?? rawResult;
       if (!argumentsPayload) {
         const args = event.arguments ?? event.args;

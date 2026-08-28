@@ -9,8 +9,7 @@ import type { P0ComposioDirectToolSlug } from "./types";
  */
 export const P0_COMPOSIO_DESCRIPTOR_HASHES = {
   GITHUB_GET_AN_ISSUE: "c5b2dac56410d0576d400324aee0cd1d53a5ebc167f1a6b6f3066822c827ba1e",
-  GITHUB_ADD_LABELS_TO_AN_ISSUE:
-    "ff40ac2f1e6015f6aa280e2056790551ba651b6a755651c130af181846a02855",
+  GITHUB_ADD_LABELS_TO_AN_ISSUE: "ff40ac2f1e6015f6aa280e2056790551ba651b6a755651c130af181846a02855",
   GITHUB_REMOVE_A_LABEL_FROM_AN_ISSUE:
     "b6c618fc6702ea82bffe53605ed5ef93c5cf41ff7a02fe24d7c9e034a59d6bbb",
 } as const satisfies Record<P0ComposioDirectToolSlug, string>;

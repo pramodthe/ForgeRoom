@@ -12,10 +12,7 @@ import {
 } from "./sandbox-p0-contract";
 
 export type SandboxApplicationEventType =
-  | "sandbox.created"
-  | "sandbox.command_started"
-  | "sandbox.command_completed"
-  | "sandbox.failed";
+  "sandbox.created" | "sandbox.command_started" | "sandbox.command_completed" | "sandbox.failed";
 
 export type SandboxCommandState = "creating" | "running" | "completed" | "failed";
 
@@ -110,10 +107,7 @@ export function extractToolCallsFromModelMessage(
         ? (row.tool_info as Record<string, unknown>)
         : null;
     const name =
-      readString(fn?.name) ??
-      readString(toolInfo?.name) ??
-      readString(row.name) ??
-      "unknown_tool";
+      readString(fn?.name) ?? readString(toolInfo?.name) ?? readString(row.name) ?? "unknown_tool";
     const toolInfoType = readString(toolInfo?.type);
     const isMcp = toolInfoType === "mcp";
     const isSandboxCommand = !isMcp && isSandboxCommandToolName(name);
@@ -271,7 +265,9 @@ export function assertSandboxEnabledToolPolicy(input: {
   }
 }
 
-export function evaluateCredentialCanary(envKeyListing: readonly string[]): CredentialCanaryProbeResult {
+export function evaluateCredentialCanary(
+  envKeyListing: readonly string[],
+): CredentialCanaryProbeResult {
   const presentKeys = P0_SANDBOX_CREDENTIAL_CANARY_ENV_KEYS.filter((key) =>
     envKeyListing.includes(key),
   );
@@ -280,8 +276,7 @@ export function evaluateCredentialCanary(envKeyListing: readonly string[]): Cred
 
 export function evaluateEgressProbe(httpCode: string | null): EgressProbeResult {
   const normalized = httpCode?.trim() ?? "";
-  const openEgress =
-    normalized.startsWith("2") || normalized === "301" || normalized === "302";
+  const openEgress = normalized.startsWith("2") || normalized === "301" || normalized === "302";
   return {
     probeUrl: P0_SANDBOX_EGRESS_PROBE_URL,
     httpCode: normalized.length > 0 ? normalized : null,
@@ -378,10 +373,7 @@ export class DaytonaProbeClient {
   }
 
   async probeCredentialCanary(sandbox: DaytonaSandboxRecord): Promise<CredentialCanaryProbeResult> {
-    const executed = await this.executeCommand(
-      sandbox,
-      "printenv | cut -d= -f1 | sort",
-    );
+    const executed = await this.executeCommand(sandbox, "printenv | cut -d= -f1 | sort");
     const keys = executed.result.split(/\s+/).filter(Boolean);
     return evaluateCredentialCanary(keys);
   }
@@ -398,10 +390,7 @@ export class DaytonaProbeClient {
   async writeFixtureDemoLines(sandbox: DaytonaSandboxRecord): Promise<void> {
     const b64 = Buffer.from(P0_SANDBOX_FIXTURE_DEMO_LINES, "utf8").toString("base64");
     const path = `/home/daytona/${P0_SANDBOX_FIXTURE_REMOTE_PATH}`;
-    const executed = await this.executeCommand(
-      sandbox,
-      `echo ${b64} | base64 -d > ${path}`,
-    );
+    const executed = await this.executeCommand(sandbox, `echo ${b64} | base64 -d > ${path}`);
     if (executed.exitCode !== 0) {
       throw new Error(`fixture write failed (exit ${executed.exitCode})`);
     }
@@ -409,10 +398,7 @@ export class DaytonaProbeClient {
 
   async readFixtureSha256(sandbox: DaytonaSandboxRecord): Promise<string> {
     const path = `/home/daytona/${P0_SANDBOX_FIXTURE_REMOTE_PATH}`;
-    const executed = await this.executeCommand(
-      sandbox,
-      `sha256sum ${path} | cut -d' ' -f1`,
-    );
+    const executed = await this.executeCommand(sandbox, `sha256sum ${path} | cut -d' ' -f1`);
     return executed.result.trim();
   }
 

@@ -9,7 +9,9 @@ function collapseSlashes(value: string): string {
   return value.replace(/\/+/g, "/");
 }
 
-function resolveSandboxPath(relativePath: string): { sandboxPath: string; relativePath: string } | null {
+function resolveSandboxPath(
+  relativePath: string,
+): { sandboxPath: string; relativePath: string } | null {
   const trimmed = relativePath.trim();
   if (!trimmed || trimmed.includes("\\") || trimmed.includes("\0")) {
     return null;
@@ -83,7 +85,8 @@ function resolveSandboxCommandState(
 ): ArtifactDiscoveryBinding["sandboxCommandState"] {
   let state: ArtifactDiscoveryBinding["sandboxCommandState"] = "creating";
   for (const event of events) {
-    const eventSandboxId = readString(event.payload.sandbox_id) ?? readString(event.payload.sandboxId);
+    const eventSandboxId =
+      readString(event.payload.sandbox_id) ?? readString(event.payload.sandboxId);
     if (eventSandboxId !== sandboxId) {
       continue;
     }

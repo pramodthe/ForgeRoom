@@ -318,10 +318,7 @@ function evaluateGate(input: {
   | {
       ok: false;
       reason:
-        | "decision_already_recorded"
-        | "expired_proposal"
-        | "stale_proposal"
-        | "forbidden_state";
+        "decision_already_recorded" | "expired_proposal" | "stale_proposal" | "forbidden_state";
       markState?: "expired" | "stale";
     } {
   const { snapshot, command, nowIso } = input;

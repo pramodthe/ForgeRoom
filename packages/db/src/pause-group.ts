@@ -154,10 +154,7 @@ export async function persistPauseGroupCapture(
       return { ok: false, reason: "generation_mismatch" };
     }
 
-    if (
-      turn.trueforge_turn_id &&
-      turn.trueforge_turn_id !== input.trueforgeTurnId
-    ) {
+    if (turn.trueforge_turn_id && turn.trueforge_turn_id !== input.trueforgeTurnId) {
       return { ok: false, reason: "trueforge_turn_mismatch" };
     }
 
@@ -242,9 +239,7 @@ export async function persistPauseGroupCapture(
       };
     }
 
-    if (
-      !["streaming", "creating", "required_actions", "acquiring"].includes(turn.state)
-    ) {
+    if (!["streaming", "creating", "required_actions", "acquiring"].includes(turn.state)) {
       return { ok: false, reason: "state_mismatch" };
     }
 

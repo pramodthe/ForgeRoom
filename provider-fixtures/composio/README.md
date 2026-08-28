@@ -13,16 +13,16 @@ Exact application slugs, direct-tool names, connected-account IDs and descriptor
 
 ## Files
 
-| File                              | Status                                       |
-| --------------------------------- | -------------------------------------------- |
-| `applications.candidate.json`     | Verified github toolkit (probe 2026-08-26)   |
-| `tools.candidate.json`            | Verified read/write/reconcile slugs + hashes |
-| `accounts.verified.json`          | Redacted suffix `nizY` only                  |
-| `accounts.redacted.template.json` | Suffix template only                         |
+| File                              | Status                                            |
+| --------------------------------- | ------------------------------------------------- |
+| `applications.candidate.json`     | Verified github toolkit (probe 2026-08-26)        |
+| `tools.candidate.json`            | Verified read/write/reconcile slugs + hashes      |
+| `accounts.verified.json`          | Redacted suffix `nizY` only                       |
+| `accounts.redacted.template.json` | Suffix template only                              |
 | `session.verified.json`           | P0-301 hosted MCP direct-tools session (redacted) |
-| `preflight.verified.json`         | P0-302 connector/AgentSpec verification evidence |
-| `tool-policies.verified.json`     | P0-303 curated ToolPolicyDefinition evidence |
-| `real-read.verified.json`         | P0-305 real Composio read path evidence      |
+| `preflight.verified.json`         | P0-302 connector/AgentSpec verification evidence  |
+| `tool-policies.verified.json`     | P0-303 curated ToolPolicyDefinition evidence      |
+| `real-read.verified.json`         | P0-305 real Composio read path evidence           |
 | `pause-group.verified.json`       | P0-306 PauseGroup/RequiredAction capture evidence |
 | `connections.verified.json`       | P0-304 Connections status/Test/Reconnect evidence |
-| `descriptors/manifest.json`       | SHA-256 hashes from live descriptor export   |
+| `descriptors/manifest.json`       | SHA-256 hashes from live descriptor export        |

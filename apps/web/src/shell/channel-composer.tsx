@@ -69,14 +69,14 @@ export function ChannelComposer({
   }
 
   return (
-    <footer className="border-t border-zinc-200 p-4">
-      <div className="space-y-3">
-        <label className="block text-sm font-medium text-zinc-700" htmlFor="channel-composer">
+    <footer className="border-t border-zinc-200 bg-white px-4 py-3">
+      <div className="space-y-2">
+        <label className="sr-only" htmlFor="channel-composer">
           Message
         </label>
         <textarea
           id="channel-composer"
-          className="min-h-[88px] w-full resize-y rounded border border-zinc-300 px-3 py-2 text-sm text-zinc-900 shadow-sm focus:border-zinc-500 focus:outline-none"
+          className="min-h-[58px] w-full resize-none rounded-xl border border-zinc-200 bg-zinc-50/60 px-3 py-2.5 text-sm text-zinc-900 shadow-sm outline-none transition focus:border-violet-300 focus:bg-white focus:ring-2 focus:ring-violet-100"
           placeholder="Write a message… Use @coworker or @team when multiple coworkers are in the channel."
           value={body}
           disabled={disabled || submitting}
@@ -93,17 +93,15 @@ export function ChannelComposer({
           }}
         />
 
-        <RecipientPreview preview={preview} blockReason={blockReason} />
+        <RecipientPreview preview={preview} blockReason={body.trim() ? blockReason : null} />
 
         {error ? <p className="text-sm text-red-700">{error}</p> : null}
 
         <div className="flex items-center justify-between gap-3">
-          <p className="text-xs text-zinc-500">
-            ⌘/Ctrl + Enter to send. File attachments are not supported in P0.
-          </p>
+          <p className="text-[11px] text-zinc-400">Use @coworker or @team · ⌘/Ctrl + Enter</p>
           <button
             type="button"
-            className="rounded bg-zinc-900 px-3 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-zinc-400"
+            className="rounded-lg bg-zinc-950 px-4 py-2 text-xs font-semibold text-white shadow-sm disabled:cursor-not-allowed disabled:bg-zinc-300"
             disabled={!canSend}
             onClick={() => void handleSend()}
           >

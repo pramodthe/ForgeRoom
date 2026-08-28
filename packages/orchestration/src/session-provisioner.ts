@@ -1,9 +1,6 @@
 import { randomBytes } from "node:crypto";
 import type { TrueForgeClient, TrueForgeSession } from "@forgeroom/trueforge";
-import {
-  assertAgentSpecPolicyHealthy,
-  verifyCompiledAgentSpecPolicy,
-} from "@forgeroom/trueforge";
+import { assertAgentSpecPolicyHealthy, verifyCompiledAgentSpecPolicy } from "@forgeroom/trueforge";
 import {
   compileSessionRevision,
   type CompiledSessionRevision,

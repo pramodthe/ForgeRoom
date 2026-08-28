@@ -9,10 +9,7 @@ import {
   toPersistedAgUiEvent,
 } from "@forgeroom/ag-ui";
 import type { SessionResponse } from "@forgeroom/contracts";
-import {
-  type ComposioSessionClient,
-  verifyP0ManifestForDispatch,
-} from "@forgeroom/composio";
+import { type ComposioSessionClient, verifyP0ManifestForDispatch } from "@forgeroom/composio";
 import {
   claimPauseGroupResume,
   completePauseResume,
@@ -339,8 +336,7 @@ export function createAgUiRunService(options: {
             previousTrueforgeTurnId: claim.previousTrueforgeTurnId,
             responses: loaded.plaintext.responses,
             localTrueforgeResumeTurnId: loaded.trueforgeResumeTurnId,
-            forceReconcile:
-              !loaded.trueforgeResumeTurnId || loaded.state === "uncertain",
+            forceReconcile: !loaded.trueforgeResumeTurnId || loaded.state === "uncertain",
           },
         );
 

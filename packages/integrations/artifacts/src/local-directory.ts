@@ -9,12 +9,18 @@ import {
 
 function resolveObjectPath(rootDir: string, storageKey: string): string {
   if (storageKey.includes("..") || storageKey.startsWith("/") || storageKey.includes("\\")) {
-    throw new ArtifactStorageKeyError("invalid_storage_key", "storage key contains forbidden path segments");
+    throw new ArtifactStorageKeyError(
+      "invalid_storage_key",
+      "storage key contains forbidden path segments",
+    );
   }
   const root = resolve(rootDir);
   const full = resolve(root, storageKey);
   if (full !== root && !full.startsWith(`${root}${sep}`)) {
-    throw new ArtifactStorageKeyError("storage_key_escape", "storage key resolves outside the storage root");
+    throw new ArtifactStorageKeyError(
+      "storage_key_escape",
+      "storage key resolves outside the storage root",
+    );
   }
   return full;
 }
@@ -35,18 +41,20 @@ export function createLocalDirectoryArtifactStorage(
       assertStorageKeyMatchesScope(input.storageKey, input.workspaceId, input.channelId);
       const objectPath = resolveObjectPath(rootDir, input.storageKey);
       await mkdir(dirname(objectPath), { recursive: true });
-      await writeFile(objectPath, input.content, { flag: "wx" }).catch(async (error: NodeJS.ErrnoException) => {
-        if (error.code !== "EEXIST") {
-          throw error;
-        }
-        const existing = await readFile(objectPath);
-        if (!existing.equals(input.content)) {
-          throw new ArtifactStorageKeyError(
-            "invalid_storage_key",
-            "storage key already contains different content",
-          );
-        }
-      });
+      await writeFile(objectPath, input.content, { flag: "wx" }).catch(
+        async (error: NodeJS.ErrnoException) => {
+          if (error.code !== "EEXIST") {
+            throw error;
+          }
+          const existing = await readFile(objectPath);
+          if (!existing.equals(input.content)) {
+            throw new ArtifactStorageKeyError(
+              "invalid_storage_key",
+              "storage key already contains different content",
+            );
+          }
+        },
+      );
     },
 
     async get(input) {
@@ -96,8 +104,6 @@ export function loadArtifactStorageFromEnv(
 ): ArtifactStorageAdapter {
   const configured = env.ARTIFACT_STORAGE_DIR?.trim();
   const rootDir =
-    configured && configured.length > 0
-      ? configured
-      : resolve(process.cwd(), ".data", "artifacts");
+    configured && configured.length > 0 ? configured : resolve(process.cwd(), ".data", "artifacts");
   return createLocalDirectoryArtifactStorage({ rootDir });
 }

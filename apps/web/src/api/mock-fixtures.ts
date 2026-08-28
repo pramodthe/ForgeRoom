@@ -1,5 +1,6 @@
 import {
   channelSchema,
+  channelTimelineMessagesResponseSchema,
   connectionStatusSchema,
   coworkerProfileSchema,
   sha256Schema,
@@ -29,6 +30,19 @@ function parseConnectionFixture(value: ConnectionFixture): ConnectionFixture {
 }
 
 export const MOCK_WORKSPACE_ID = DEMO_WORKSPACE_ID;
+
+export const MOCK_SESSION = {
+  request_id: "req_fixture_001",
+  user: {
+    id: "user_owner_001",
+    email: "owner@example.test",
+    display_name: "Pramod",
+    role: "owner" as const,
+  },
+  workspace_id: MOCK_WORKSPACE_ID,
+  csrf_token: "fixture_csrf_token",
+  expires_at: "2099-01-01T00:00:00.000Z",
+};
 
 export const MOCK_CHANNELS = channelSchema.array().parse([
   {
@@ -191,6 +205,76 @@ export const MOCK_CONNECTIONS: ConnectionFixture[] = [
 
 export const DEFAULT_CHANNEL_ID = MOCK_CHANNELS[0]?.id ?? "ch_general_001";
 
+export const MOCK_CHANNEL_MESSAGES = channelTimelineMessagesResponseSchema.array().parse([
+  {
+    schemaVersion: 1,
+    channel_id: "ch_general_001",
+    messages: [
+      {
+        schemaVersion: 1,
+        id: "msg_demo_request",
+        channel_id: "ch_general_001",
+        channel_sequence: 1,
+        author_type: "human",
+        author_id: "user_owner_001",
+        body: "@team Review this week's support operations and prepare a clear action plan.",
+        parent_message_id: null,
+        created_at: "2026-08-27T16:02:00.000Z",
+      },
+      {
+        schemaVersion: 1,
+        id: "msg_demo_analyst",
+        channel_id: "ch_general_001",
+        channel_sequence: 4,
+        author_type: "coworker",
+        author_id: "cw_analyst_002",
+        body: "I reviewed 428 support conversations. Resolution time improved, but billing and onboarding now account for most escalations.",
+        parent_message_id: "msg_demo_request",
+        created_at: "2026-08-27T16:02:12.000Z",
+      },
+      {
+        schemaVersion: 1,
+        id: "msg_demo_operator",
+        channel_id: "ch_general_001",
+        channel_sequence: 9,
+        author_type: "coworker",
+        author_id: "cw_operator_001",
+        body: "I turned the findings into an operating plan. One external update needs your approval before I can finish.",
+        parent_message_id: "msg_demo_request",
+        created_at: "2026-08-27T16:02:26.000Z",
+      },
+    ],
+  },
+  {
+    schemaVersion: 1,
+    channel_id: "ch_ops_002",
+    messages: [
+      {
+        schemaVersion: 1,
+        id: "msg_ops_1",
+        channel_id: "ch_ops_002",
+        channel_sequence: 1,
+        author_type: "human",
+        author_id: "user_owner_001",
+        body: "@operator Check connector health and summarize anything that needs attention.",
+        parent_message_id: null,
+        created_at: "2026-08-26T18:00:00.000Z",
+      },
+      {
+        schemaVersion: 1,
+        id: "msg_ops_2",
+        channel_id: "ch_ops_002",
+        channel_sequence: 3,
+        author_type: "coworker",
+        author_id: "cw_operator_001",
+        body: "GitHub and the sandbox are healthy. The Composio connection should be reverified before the demo.",
+        parent_message_id: "msg_ops_1",
+        created_at: "2026-08-26T18:00:15.000Z",
+      },
+    ],
+  },
+]);
+
 export function assertMockFixturesValid(): void {
   channelSchema.array().parse(MOCK_CHANNELS);
   coworkerProfileSchema.array().parse(MOCK_COWORKERS);
@@ -200,4 +284,5 @@ export function assertMockFixturesValid(): void {
   for (const connection of MOCK_CONNECTIONS) {
     parseConnectionFixture(connection);
   }
+  channelTimelineMessagesResponseSchema.array().parse(MOCK_CHANNEL_MESSAGES);
 }

@@ -96,8 +96,7 @@ export type ApplicationResumeIntentAdapterResult = {
 export type DeterministicWriteDispatchAdapters = {
   assertApprovalRequired: () => void;
   preflight: () =>
-    | DeterministicWritePreflightAdapterResult
-    | Promise<DeterministicWritePreflightAdapterResult>;
+    DeterministicWritePreflightAdapterResult | Promise<DeterministicWritePreflightAdapterResult>;
   evaluateBindings: () => WriteBindingFreshnessAdapterResult;
   gateExecution: (input: {
     bindingsFresh: boolean;
@@ -109,8 +108,7 @@ export type DeterministicWriteDispatchAdapters = {
    * Must observe the literal write tool (reject meta wrappers).
    */
   invokeWriteViaTrueForge: () =>
-    | TrueForgeDirectToolObservation
-    | Promise<TrueForgeDirectToolObservation>;
+    TrueForgeDirectToolObservation | Promise<TrueForgeDirectToolObservation>;
   assertDirectWriteTool: (observedToolName: string) => void;
   classifyProviderOutcome: (input: {
     observation: TrueForgeDirectToolObservation;
@@ -121,8 +119,7 @@ export type DeterministicWriteDispatchAdapters = {
    * Must never re-issue the write tool.
    */
   reconcileViaRead: () =>
-    | WriteReconciliationAdapterResult
-    | Promise<WriteReconciliationAdapterResult>;
+    WriteReconciliationAdapterResult | Promise<WriteReconciliationAdapterResult>;
   buildSafeSummary: (input: {
     coworkerId: string;
     accountSuffix: string;
@@ -445,8 +442,7 @@ export async function dispatchApprovalGatedDeterministicWrite(
         events,
         summary: {
           ...summary,
-          receipt:
-            summary.receiptClaim === "verified_provider_receipt" ? summary.receipt : null,
+          receipt: summary.receiptClaim === "verified_provider_receipt" ? summary.receipt : null,
           resultSummary: events[1]!.payloadRedacted.result_summary as string,
         },
         resumeIntent,
@@ -513,8 +509,7 @@ export async function dispatchApprovalGatedDeterministicWrite(
     ok: false,
     kind: "reconciled_failed",
     events,
-    reason:
-      outcome.proposalState === "failed" ? "provider_failed" : "reconciliation_mismatch",
+    reason: outcome.proposalState === "failed" ? "provider_failed" : "reconciliation_mismatch",
     providerCalls: 1,
     automaticRetry: false,
     proposalState: "reconciled_failed",

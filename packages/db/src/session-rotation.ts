@@ -112,10 +112,7 @@ export type RecordMcpRotationOutcomeInput = {
 };
 
 type TurnQueueInputType =
-  | "normal"
-  | "pause_group_response"
-  | "component_interaction_response"
-  | "correction";
+  "normal" | "pause_group_response" | "component_interaction_response" | "correction";
 
 /** Keep in sync with @forgeroom/orchestration/session-rotation decideQueueItemRebind. */
 function mayRebindQueueItem(inputType: TurnQueueInputType): boolean {
@@ -162,11 +159,7 @@ export async function beginSessionRotation(
   input: BeginSessionRotationInput,
 ): Promise<BeginSessionRotationResult> {
   const now = input.now ?? new Date().toISOString();
-  const isRestriction = isRestrictionChange(
-    input.reason,
-    input.previousTools,
-    input.nextTools,
-  );
+  const isRestriction = isRestrictionChange(input.reason, input.previousTools, input.nextTools);
   const requestActiveTurnCancellation = isRestriction && input.hasActiveTurn;
   const staleUnresolvedActions = isRestriction;
 
@@ -522,10 +515,7 @@ export async function abortSessionRotation(
       return;
     }
 
-    if (
-      input.abortGenerationId &&
-      session.current_generation_id === input.abortGenerationId
-    ) {
+    if (input.abortGenerationId && session.current_generation_id === input.abortGenerationId) {
       await tx`
         UPDATE channel_agent_session_generations
         SET state = 'failed', retired_at = ${now}
@@ -577,7 +567,8 @@ export async function recordMcpRotationOutcome(
   sql: SqlClient,
   input: RecordMcpRotationOutcomeInput,
 ): Promise<{
-  outcome: { kind: "completed"; honest: true } | { kind: "unknown"; honest: true; needsAttention: true };
+  outcome:
+    { kind: "completed"; honest: true } | { kind: "unknown"; honest: true; needsAttention: true };
   denyByClaim: false;
 }> {
   const outcome =

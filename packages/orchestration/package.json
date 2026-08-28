@@ -11,6 +11,7 @@
     "./turn-creation": "./src/turn-creation.ts",
     "./create-or-reconcile-turn": "./src/create-or-reconcile-turn.ts",
     "./create-or-reconcile-response-turn": "./src/create-or-reconcile-response-turn.ts",
+    "./router": "./src/router.ts",
     "./pause-resume": "./src/pause-resume.ts",
     "./stop-correction": "./src/stop-correction.ts",
     "./multi-agent-run": "./src/multi-agent-run.ts",

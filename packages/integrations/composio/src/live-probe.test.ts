@@ -33,9 +33,7 @@ describe.runIf(hasLiveEnv)("Composio live hosted MCP probe", () => {
     expect(evidence.manageConnectionsEnabled).toBe(false);
     expect(evidence.multiAccountEnabled).toBe(false);
     expect(JSON.stringify(evidence)).not.toContain(process.env.COMPOSIO_API_KEY!);
-    expect(JSON.stringify(evidence)).not.toContain(
-      process.env.COMPOSIO_CONNECTED_ACCOUNT_ID!,
-    );
+    expect(JSON.stringify(evidence)).not.toContain(process.env.COMPOSIO_CONNECTED_ACCOUNT_ID!);
   }, 60_000);
 });
 
@@ -117,9 +115,7 @@ describe.runIf(hasLiveEnv)("P0-305 live real read", () => {
     expect(evidence.targetDisplay).toBe("pramodthe/ForgeRoom#35");
     expect(evidence.rawResultBodyPresent).toBe(false);
     expect(JSON.stringify(evidence)).not.toContain(process.env.COMPOSIO_API_KEY!);
-    expect(JSON.stringify(evidence)).not.toContain(
-      process.env.COMPOSIO_CONNECTED_ACCOUNT_ID!,
-    );
+    expect(JSON.stringify(evidence)).not.toContain(process.env.COMPOSIO_CONNECTED_ACCOUNT_ID!);
     // Raw execute payload must not appear in the safe summary object.
     expect(JSON.stringify(summary)).not.toContain("COMPOSIO_API_KEY");
     if (typeof executed.raw === "object" && executed.raw && "data" in executed.raw) {
@@ -146,6 +142,9 @@ describe.runIf(hasLiveEnv)("P0-304 live connections status/test", () => {
 
     const client = loadComposioSessionClientFromEnv();
     const account = await client.getConnectedAccountDetails();
+    if (!account) {
+      throw new Error("Composio connected account response omitted account id");
+    }
     expect(account.status.toUpperCase()).toBe("ACTIVE");
     expect(account.scopes.length).toBeGreaterThan(0);
 
@@ -192,6 +191,9 @@ describe.runIf(hasReconnectEnv)("P0-304 live Connect Link reconnect", () => {
     expect(link.redirectUrl).toMatch(/^https:\/\//);
     expect(link.expiresAt).toBeTruthy();
     const pinned = await client.getConnectedAccountDetails();
+    if (!pinned) {
+      throw new Error("Composio connected account response omitted account id");
+    }
     const gate = evaluatePinnedConnectionGate({
       account: pinned,
       expectedConnectedAccountId: process.env.COMPOSIO_CONNECTED_ACCOUNT_ID!,
@@ -346,8 +348,7 @@ describe.runIf(hasLiveEnv)("P0-309 live approval-gated deterministic write", () 
           issueNumber: 35,
           display: "pramodthe/ForgeRoom#35",
         },
-        expectedEffect:
-          "Add label(s) [forgeroom-p0-probe] to GitHub issue pramodthe/ForgeRoom#35",
+        expectedEffect: "Add label(s) [forgeroom-p0-probe] to GitHub issue pramodthe/ForgeRoom#35",
       },
       reconciliationRawResult: reconcileRead.raw,
       writeRawResult: executed.raw,
@@ -378,8 +379,6 @@ describe.runIf(hasLiveEnv)("P0-309 live approval-gated deterministic write", () 
     expect(evidence.reconciliationFinalState).toBe("reconciled_succeeded");
     expect(evidence.rawResultBodyPresent).toBe(false);
     expect(JSON.stringify(evidence)).not.toContain(process.env.COMPOSIO_API_KEY!);
-    expect(JSON.stringify(evidence)).not.toContain(
-      process.env.COMPOSIO_CONNECTED_ACCOUNT_ID!,
-    );
+    expect(JSON.stringify(evidence)).not.toContain(process.env.COMPOSIO_CONNECTED_ACCOUNT_ID!);
   }, 180_000);
 });

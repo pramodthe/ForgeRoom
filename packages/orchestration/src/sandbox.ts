@@ -7,10 +7,7 @@ import type {
 /** Application run events projected for channel timeline / persistence. */
 export type ProjectedSandboxRunEvent = {
   normalizedType:
-    | "sandbox.created"
-    | "sandbox.command_started"
-    | "sandbox.command_completed"
-    | "sandbox.failed";
+    "sandbox.created" | "sandbox.command_started" | "sandbox.command_completed" | "sandbox.failed";
   payloadRedacted: Record<string, unknown>;
 };
 

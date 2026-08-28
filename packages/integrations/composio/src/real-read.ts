@@ -1,7 +1,4 @@
-import {
-  compareAccountHealth,
-  type ConnectedAccountHealth,
-} from "./manifest-verification";
+import { compareAccountHealth, type ConnectedAccountHealth } from "./manifest-verification";
 import {
   findForbiddenSurfaces,
   P0_COMPOSIO_DIRECT_TOOLS,
@@ -20,7 +17,8 @@ import { ToolPolicyError } from "./tool-policies/types";
 import type { P0ComposioDirectToolSlug } from "./types";
 
 /** Frozen P0 real-read tool (demo.md / OD-003). */
-export const P0_COMPOSIO_READ_TOOL = "GITHUB_GET_AN_ISSUE" as const satisfies P0ComposioDirectToolSlug;
+export const P0_COMPOSIO_READ_TOOL =
+  "GITHUB_GET_AN_ISSUE" as const satisfies P0ComposioDirectToolSlug;
 
 export type ReadPreflightFailureReason =
   | "expired_account"
@@ -73,8 +71,7 @@ export type ReadDispatchPreflightFailure = {
 };
 
 export type ReadDispatchPreflightResult =
-  | ReadDispatchPreflightSuccess
-  | ReadDispatchPreflightFailure;
+  ReadDispatchPreflightSuccess | ReadDispatchPreflightFailure;
 
 export type ComposioToolExecuteRequest = {
   toolSlug: string;
@@ -123,10 +120,7 @@ export function preflightExactReadDispatch(
     return failure("account_mismatch", toolSlug, accountSuffix, findingKinds, "blocked_connection");
   }
 
-  const accountFindings = compareAccountHealth(
-    input.account,
-    input.expectedToolkit ?? "github",
-  );
+  const accountFindings = compareAccountHealth(input.account, input.expectedToolkit ?? "github");
   for (const finding of accountFindings) {
     findingKinds.push(finding.kind);
   }
@@ -218,11 +212,7 @@ function failure(
 export function isComposioAuthFailure(raw: unknown, httpStatus?: number): boolean {
   if (httpStatus === 401 || httpStatus === 403) {
     const text =
-      typeof raw === "string"
-        ? raw
-        : raw && typeof raw === "object"
-          ? JSON.stringify(raw)
-          : "";
+      typeof raw === "string" ? raw : raw && typeof raw === "object" ? JSON.stringify(raw) : "";
     if (/expired|unauthorized|invalid.?token|reauth|reconnect|oauth|auth/i.test(text)) {
       return true;
     }
@@ -236,9 +226,7 @@ export function isComposioAuthFailure(raw: unknown, httpStatus?: number): boolea
   }
   const root = raw as Record<string, unknown>;
   const error =
-    root.error && typeof root.error === "object"
-      ? (root.error as Record<string, unknown>)
-      : root;
+    root.error && typeof root.error === "object" ? (root.error as Record<string, unknown>) : root;
   const message = String(error.message ?? error.error ?? root.message ?? "");
   const code = String(error.code ?? root.code ?? "");
   return /expired|token.?expired|unauthorized|reauth|reconnect|invalid.?grant|oauth/i.test(
@@ -263,9 +251,7 @@ export function buildSafeReadResultSummary(input: {
   const target = policy.extractTarget(input.arguments);
   const redactedArguments = policy.redactArguments(input.arguments);
   const receipt = policy.verifyReceipt?.(input.rawResult, input.arguments) ?? null;
-  const resultSummary =
-    receipt?.summary ??
-    `Safe read summary for ${target.display}`;
+  const resultSummary = receipt?.summary ?? `Safe read summary for ${target.display}`;
 
   const rawSerialized =
     input.rawResult === undefined || input.rawResult === null

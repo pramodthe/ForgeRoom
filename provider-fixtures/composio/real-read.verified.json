@@ -3,14 +3,7 @@
   "status": "verified",
   "ownerTask": "P0-305",
   "probeDate": "2026-08-27",
-  "decisionRefs": [
-    "ADR-003",
-    "OD-003",
-    "TL-001",
-    "TL-004",
-    "TL-008",
-    "RUN-005"
-  ],
+  "decisionRefs": ["ADR-003", "OD-003", "TL-001", "TL-004", "TL-008", "RUN-005"],
   "note": "Redacted real-read evidence. Secrets, full account IDs, and raw tool bodies absent.",
   "preflight": {
     "exactAccountRequired": true,
@@ -33,20 +26,9 @@
     "connector": "composio_github"
   },
   "normalizedEvent": {
-    "types": [
-      "tool.started",
-      "tool.succeeded"
-    ],
-    "attribution": [
-      "coworker_id",
-      "tool_name",
-      "account_suffix"
-    ],
-    "safeRequestFields": [
-      "target",
-      "redacted_arguments",
-      "risk_class"
-    ],
+    "types": ["tool.started", "tool.succeeded"],
+    "attribution": ["coworker_id", "tool_name", "account_suffix"],
+    "safeRequestFields": ["target", "redacted_arguments", "risk_class"],
     "resultSummaryPresent": true,
     "rawResultBodyPresent": false,
     "credentialsPresent": false

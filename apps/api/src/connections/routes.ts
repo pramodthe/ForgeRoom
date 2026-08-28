@@ -5,11 +5,7 @@ import { randomOpaqueId } from "../auth/crypto";
 import type { AuthService } from "../auth/service";
 import type { ApiEnv } from "../env";
 import { errorResponse } from "../http";
-import {
-  requireMutationSession,
-  requireParam,
-  requireSession,
-} from "../http-guards";
+import { requireMutationSession, requireParam, requireSession } from "../http-guards";
 import {
   parseConnectionReconnectCommand,
   parseConnectionTestCommand,

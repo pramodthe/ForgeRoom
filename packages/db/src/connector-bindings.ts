@@ -52,9 +52,7 @@ export async function ensureP0ConnectorBinding(
   const now = new Date().toISOString();
 
   // Never mutate another workspace's row on the globally fixed P0 connection id.
-  const existing = await sql<
-    { id: string; workspace_id: string }[]
-  >`
+  const existing = await sql<{ id: string; workspace_id: string }[]>`
     SELECT id, workspace_id
     FROM connector_bindings
     WHERE id = ${input.connectionId}
@@ -130,8 +128,7 @@ export async function loadConnectorBinding(
   sql: SqlClient,
   input: { connectionId: string; workspaceId: string },
 ): Promise<
-  | { ok: true; row: ConnectorBindingRow }
-  | { ok: false; reason: "not_found" | "forbidden" }
+  { ok: true; row: ConnectorBindingRow } | { ok: false; reason: "not_found" | "forbidden" }
 > {
   const rows = await sql`
     SELECT

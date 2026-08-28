@@ -1,7 +1,4 @@
-export {
-  describeArtifactStorageBoundary,
-  type ArtifactStorageBoundary,
-} from "./boundary";
+export { describeArtifactStorageBoundary, type ArtifactStorageBoundary } from "./boundary";
 export { hashArtifactContent, sha256Hex } from "./hash";
 export {
   createLocalDirectoryArtifactStorage,
