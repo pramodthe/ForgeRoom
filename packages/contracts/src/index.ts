@@ -150,6 +150,7 @@ export type {
   TaskRevision,
   TaskGrant,
   TaskStatus,
+  TaskRecordOperation,
   TaskCreateCommand,
   TaskUpdateCommand,
 } from "./tasks";
@@ -342,7 +343,7 @@ export {
   persistedMessagesSnapshotEventSchema,
   persistedAssistantSnapshotMessageSchema,
 } from "./events";
-export type { AgentChannelEnvelope, P0PersistedAguiEvent } from "./events";
+export type { AgentChannelEnvelope, P0PersistedAguiEvent, ApplicationSourceName } from "./events";
 export type PersistedMessagesSnapshotEvent = import("zod").infer<
   typeof import("./events").persistedMessagesSnapshotEventSchema
 >;

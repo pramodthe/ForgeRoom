@@ -1,4 +1,5 @@
 import type { TrueForgeMcpServerRef } from "./types";
+import { TrueForgeHttpError } from "./http-error";
 
 export type TrueForgeMcpServerManifest = {
   type: "remote";
@@ -82,10 +83,17 @@ export async function deleteHeaderAuthMcpServer(
   if (!name.trim()) {
     throw new Error("MCP server name is required");
   }
-  await client.requestJson<unknown>(
-    "DELETE",
-    `/api/v1/settings/mcp-servers/${encodeURIComponent(name.trim())}`,
-  );
+  try {
+    await client.requestJson<unknown>(
+      "DELETE",
+      `/api/v1/settings/mcp-servers/${encodeURIComponent(name.trim())}`,
+    );
+  } catch (error) {
+    if (error instanceof TrueForgeHttpError && error.status === 404) {
+      return;
+    }
+    throw error;
+  }
 }
 
 /** List tools exposed by a configured MCP connector (`GET /api/v1/mcp-servers/{name}/tools`). */

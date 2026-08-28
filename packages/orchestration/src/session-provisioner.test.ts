@@ -39,6 +39,35 @@ describe("compileSessionRevision", () => {
     expect(revision.effectiveSpecHash.startsWith("sha256:")).toBe(true);
     expect(revision.approvalPolicyHash.startsWith("sha256:")).toBe(true);
   });
+
+  it("makes otherwise-identical provider specs unique per session generation", () => {
+    const input = {
+      coworker: {
+        id: "cw_1",
+        handle: "operator",
+        name: "Operator",
+        title: "Ops",
+        configRevision: 1,
+        modelPreset: "openai/gpt-5-4-mini",
+        sandboxEnabled: false,
+      },
+      channelId: "ch_1",
+      workspaceId: "ws_1",
+      createdBy: "user_1",
+    };
+    const first = compileSessionRevision({
+      ...input,
+      providerSessionCorrelationId: "casg_1",
+    });
+    const second = compileSessionRevision({
+      ...input,
+      providerSessionCorrelationId: "casg_2",
+    });
+
+    expect(first.effectiveSpecHash).not.toBe(second.effectiveSpecHash);
+    expect(first.agentSpec.instructions).toContain("session_generation=casg_1");
+    expect(second.agentSpec.instructions).toContain("session_generation=casg_2");
+  });
 });
 
 describe("provisionChannelCoworkerSession", () => {
@@ -163,5 +192,96 @@ describe("provisionChannelCoworkerSession", () => {
 
     expect(provisionedB.trueforgeSession.id).toBe("tf_sess_beta");
     expect(provisionedB.trueforgeSession.id).not.toBe(provisioned.trueforgeSession.id);
+  });
+
+  it("reuses the provider session after a create response is lost", async () => {
+    let capturedSpec: Record<string, unknown> | null = null;
+    let postCalls = 0;
+    const fetchImpl = vi.fn(async (request: string | URL, init?: RequestInit) => {
+      const url = String(request);
+      if (init?.method === "POST" && url.endsWith("/api/v1/sessions")) {
+        postCalls += 1;
+        const body = JSON.parse(String(init.body)) as {
+          agent: { spec: Record<string, unknown> };
+        };
+        capturedSpec = body.agent.spec;
+        throw new Error("simulated response loss after provider create");
+      }
+      const session = {
+        id: "tf_sess_reconciled",
+        agent: { type: "inline", spec: capturedSpec },
+        title: null,
+        created_by: "local",
+        created_at: "2026-08-28T00:00:01.000Z",
+        updated_at: "2026-08-28T00:00:01.000Z",
+      };
+      const unrelatedLaterSession = {
+        ...session,
+        id: "tf_sess_unrelated_later",
+        created_at: "2026-08-28T00:10:00.000Z",
+        updated_at: "2026-08-28T00:10:00.000Z",
+      };
+      if (init?.method === "GET" && url.includes("/api/v1/sessions?")) {
+        return new Response(
+          JSON.stringify({
+            data: [session, unrelatedLaterSession],
+            pagination: { next_page_token: null },
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      if (init?.method === "GET" && url.endsWith("/api/v1/sessions/tf_sess_reconciled")) {
+        return new Response(JSON.stringify({ data: session }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      throw new Error(`unexpected TrueForge request: ${init?.method ?? "GET"} ${url}`);
+    });
+    const client = new TrueForgeClient({
+      baseUrl: "http://trueforge.test",
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+    const baseInput = {
+      channelAgentSessionId: "cas_reconcile",
+      generation: 2,
+      generationId: "casg_reconcile",
+      sourceConfigRevision: 2,
+      coworker: {
+        id: "cw_1",
+        handle: "operator",
+        name: "Operator",
+        title: "Ops",
+        configRevision: 1,
+        modelPreset: "openai/gpt-5-4-mini",
+        sandboxEnabled: false,
+      },
+      channelId: "ch_1",
+      workspaceId: "ws_1",
+      createdBy: "user_1",
+    };
+
+    await expect(
+      provisionChannelCoworkerSession(client, {
+        ...baseInput,
+        providerReconciliation: {
+          operationId: "audit_1:cas_reconcile",
+          startedAt: "2026-08-28T00:00:00.000Z",
+          reconcile: false,
+        },
+      }),
+    ).rejects.toThrow("simulated response loss");
+
+    const reconciled = await provisionChannelCoworkerSession(client, {
+      ...baseInput,
+      providerReconciliation: {
+        operationId: "audit_1:cas_reconcile",
+        startedAt: "2026-08-28T00:00:00.000Z",
+        reconcile: true,
+      },
+    });
+
+    expect(reconciled.trueforgeSession.id).toBe("tf_sess_reconciled");
+    expect(postCalls).toBe(1);
   });
 });

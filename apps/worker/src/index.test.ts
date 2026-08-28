@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { executeClaimQueueItem, startWorkerProcess } from "./index";
+import { describe, expect, it, vi } from "vitest";
+import { executeClaimQueueItem, executeIngestTrueForgeEvent, startWorkerProcess } from "./index";
 import { claimTurnQueueItem, enqueueTurnQueueItem } from "@forgeroom/db";
 import { NOW, seedRuntime, withMigratedDatabase } from "@forgeroom/db/test-harness";
 
@@ -198,6 +198,75 @@ describe("standalone worker process", () => {
       });
       expect(finalize.finalizeUiInstance?.ok).toBe(true);
       expect(executed).toEqual(["finalize_or_quarantine_ui_instance"]);
+    });
+  }, 60_000);
+
+  it("retries retired MCP cleanup when a terminal event is redelivered", async () => {
+    await withMigratedDatabase(async (sql) => {
+      await seedRuntime(sql);
+      await sql`
+        INSERT INTO channel_agent_session_generations (
+          id, channel_agent_session_id, generation, agent_version_id, session_revision_id,
+          trueforge_session_id, effective_spec_hash, approval_policy_hash, state, created_at
+        ) VALUES (
+          'gen_2', 'cas_1', 2, 'av_1', 'sr_1', 'tf_sess_2',
+          ${"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+          ${"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+          'ready', ${NOW}
+        )
+      `;
+      await sql`
+        UPDATE channel_agent_sessions SET current_generation_id = 'gen_2' WHERE id = 'cas_1'
+      `;
+      await sql`
+        UPDATE channel_agent_session_generations
+        SET state = 'retired', retired_at = ${NOW}
+        WHERE id = 'gen_1'
+      `;
+
+      let failFirstDelete = true;
+      const deleteHeaderAuthMcpServer = vi.fn(async () => {
+        if (failFirstDelete) {
+          failFirstDelete = false;
+          throw new Error("transient connector deletion failure");
+        }
+      });
+      const command = {
+        schemaVersion: 1 as const,
+        command_id: "cmd_terminal_cleanup",
+        name: "ingest_trueforge_event" as const,
+        payload: {
+          run_id: "run_1",
+          run_step_id: "step_1",
+          agent_turn_id: "turn_1",
+          expected_turn_state: "streaming" as const,
+          session_generation_id: "gen_1",
+          expected_session_generation: 1,
+          upstream_event_id: "event_terminal_cleanup",
+          upstream_event_type: "turn.done",
+          event_payload: { state: { status: "done" } },
+        },
+      };
+
+      const first = await executeIngestTrueForgeEvent(sql, command, {
+        trueforge: { deleteHeaderAuthMcpServer },
+      });
+      expect(first.ok).toBe(true);
+      expect(deleteHeaderAuthMcpServer).toHaveBeenCalledTimes(1);
+
+      const replay = await executeIngestTrueForgeEvent(sql, command, {
+        trueforge: { deleteHeaderAuthMcpServer },
+      });
+      expect(replay).toEqual({ ok: false, reason: "state_mismatch" });
+      expect(deleteHeaderAuthMcpServer).toHaveBeenCalledTimes(2);
+
+      const cleanupAudits = await sql<{ count: string }[]>`
+        SELECT count(*)::text AS count
+        FROM audit_events
+        WHERE action = 'session.mcp_connector_deleted'
+          AND target_id = 'gen_1'
+      `;
+      expect(cleanupAudits[0]?.count).toBe("1");
     });
   }, 60_000);
 });

@@ -23,6 +23,12 @@ export type RotateChannelCoworkerSessionInput = {
   nextGeneration: number;
   /** Monotonic SessionRevision ordinal (max existing + 1). */
   sourceConfigRevision: number;
+  generationId?: string;
+  providerReconciliation?: {
+    operationId: string;
+    startedAt: string;
+    reconcile: boolean;
+  };
   agentVersionId?: string | null;
   capability: CapabilityIntersectionInput;
   componentCandidates?: readonly ControlledComponentCandidate[];
@@ -78,6 +84,7 @@ export async function rotateChannelCoworkerSession(
   const provisioned = await provisionChannelCoworkerSession(client, {
     channelAgentSessionId: input.channelAgentSessionId,
     generation: input.nextGeneration,
+    ...(input.generationId ? { generationId: input.generationId } : {}),
     agentVersionId: input.agentVersionId,
     coworker: input.coworker,
     channelId: input.channelId,
@@ -90,6 +97,9 @@ export async function rotateChannelCoworkerSession(
     componentToolNames,
     skillNames: pinnedSkills,
     sourceConfigRevision: input.sourceConfigRevision,
+    ...(input.providerReconciliation
+      ? { providerReconciliation: input.providerReconciliation }
+      : {}),
     createdBy: input.createdBy,
   });
 

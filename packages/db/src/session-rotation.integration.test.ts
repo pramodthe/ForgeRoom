@@ -6,6 +6,7 @@ import {
   beginSessionRotation,
   completeSessionRotation,
   listDrainableRetiredSessionGenerationIds,
+  recordSessionGenerationMcpConnectorDeleted,
   recordMcpRotationOutcome,
 } from "./session-rotation";
 import { HASH, NOW, seedRuntime, withMigratedDatabase } from "./test-harness";
@@ -464,6 +465,27 @@ describe("session rotation", () => {
         )
       `;
 
+      expect(await listDrainableRetiredSessionGenerationIds(sql, "cas_1")).toEqual([]);
+
+      await sql`
+        UPDATE agent_turns
+        SET state = 'completed', completed_at = ${NOW}
+        WHERE id = 'turn_uncertain'
+      `;
+      expect(await listDrainableRetiredSessionGenerationIds(sql, "cas_1")).toEqual(["gen_1"]);
+
+      expect(
+        await recordSessionGenerationMcpConnectorDeleted(sql, {
+          generationId: "gen_1",
+          now: NOW,
+        }),
+      ).toBe(true);
+      expect(
+        await recordSessionGenerationMcpConnectorDeleted(sql, {
+          generationId: "gen_1",
+          now: NOW,
+        }),
+      ).toBe(false);
       expect(await listDrainableRetiredSessionGenerationIds(sql, "cas_1")).toEqual([]);
     });
   }, 60_000);

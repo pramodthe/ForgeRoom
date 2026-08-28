@@ -55,9 +55,11 @@ implemented.
 - [x] Component grant changes rotate offered-tool session revisions.
 - [ ] `server_read` retained DataGrant resolution.
 - [ ] `complete_component_interrupt` CAS resolution and same-RunStep continuation enqueue.
-- [ ] TrueForge `ui_components_v1` MCP bridge and noninteractive broker tool-result path.
+- [x] TrueForge `ui_components_v1` MCP bridge and noninteractive broker tool-result path.
 
 - `pnpm --filter @forgeroom/db typecheck`
 - `pnpm --filter @forgeroom/db exec vitest run src/ui-interactions.integration.test.ts`
 - `pnpm --filter @forgeroom/api exec vitest run src/ui-instances/ui-instances.test.ts`
+- `pnpm --filter @forgeroom/api exec vitest run src/components/component.test.ts`
+- `pnpm lint && pnpm typecheck && pnpm test && pnpm build`
 - Qodo fast pre-PR review: clean after the reliability fixes.

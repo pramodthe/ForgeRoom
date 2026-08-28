@@ -72,6 +72,21 @@ describe("registerHeaderAuthMcpServer", () => {
     expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 
+  it("treats an already-absent MCP connector as successfully deleted", async () => {
+    const client = new TrueForgeClient({
+      baseUrl: "http://trueforge.test",
+      fetchImpl: (async () =>
+        new Response(JSON.stringify({ error: { message: "connector not found" } }), {
+          status: 404,
+          headers: { "Content-Type": "application/json" },
+        })) as unknown as typeof fetch,
+    });
+
+    await expect(
+      client.deleteHeaderAuthMcpServer("ui_components_v1__already_gone"),
+    ).resolves.toBeUndefined();
+  });
+
   it("lists connector tool names for allowlist comparison", async () => {
     const fetchImpl = vi.fn(async () => {
       return new Response(

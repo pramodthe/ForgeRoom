@@ -2,6 +2,7 @@ import type {
   CreateSessionInput,
   CreateTurnInput,
   TrueForgeClientOptions,
+  ListSessionsInput,
   TrueForgeSession,
   TrueForgeTurn,
   TrueForgeTurnEvent,
@@ -16,6 +17,7 @@ import {
   deleteHeaderAuthMcpServer as deleteHeaderAuthMcpServerImpl,
   registerHeaderAuthMcpServer as registerHeaderAuthMcpServerImpl,
 } from "./mcp-connector";
+import { TrueForgeHttpError } from "./http-error";
 
 function trimTrailingSlash(url: string): string {
   return url.replace(/\/+$/, "");
@@ -48,6 +50,25 @@ export class TrueForgeClient {
       `/api/v1/sessions/${encodeURIComponent(sessionId)}`,
     );
     return unwrapSession(payload);
+  }
+
+  async listSessions(
+    options: ListSessionsInput = {},
+  ): Promise<{ sessions: TrueForgeSession[]; nextPageToken: string | null }> {
+    const params = new URLSearchParams();
+    params.set("limit", String(options.limit ?? 25));
+    params.set("order", options.order ?? "asc");
+    if (options.pageToken) {
+      params.set("page_token", options.pageToken);
+    }
+    if (options.startTimestamp) {
+      params.set("start_timestamp", options.startTimestamp);
+    }
+    if (options.endTimestamp) {
+      params.set("end_timestamp", options.endTimestamp);
+    }
+    const payload = await this.requestJson<unknown>("GET", `/api/v1/sessions?${params}`);
+    return unwrapSessionList(payload);
   }
 
   async createTurn(sessionId: string, input: CreateTurnInput): Promise<TrueForgeTurn> {
@@ -216,7 +237,7 @@ export class TrueForgeClient {
         typeof (parsed as { error?: { message?: unknown } }).error?.message === "string"
           ? (parsed as { error: { message: string } }).error.message
           : `TrueForge ${method} ${path} failed (${response.status})`;
-      throw new Error(message);
+      throw new TrueForgeHttpError(message, { status: response.status, method, path });
     }
     return parsed as T;
   }
@@ -238,6 +259,23 @@ function unwrapSession(payload: unknown): TrueForgeSession {
     created_by: String(row.created_by ?? ""),
     created_at: String(row.created_at ?? ""),
     updated_at: String(row.updated_at ?? ""),
+  };
+}
+
+function unwrapSessionList(payload: unknown): {
+  sessions: TrueForgeSession[];
+  nextPageToken: string | null;
+} {
+  const root = payload && typeof payload === "object" ? (payload as Record<string, unknown>) : {};
+  const data = Array.isArray(root.data) ? root.data : [];
+  const pagination =
+    root.pagination && typeof root.pagination === "object"
+      ? (root.pagination as Record<string, unknown>)
+      : {};
+  return {
+    sessions: data.map((row) => unwrapSession(row)),
+    nextPageToken:
+      typeof pagination.next_page_token === "string" ? pagination.next_page_token : null,
   };
 }
 

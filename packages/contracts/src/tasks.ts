@@ -157,5 +157,6 @@ export const taskCreateCommandSchema = z
 export type TaskRecordV1 = z.infer<typeof taskRecordV1Schema>;
 export type TaskRevision = z.infer<typeof taskRevisionSchema>;
 export type TaskGrant = z.infer<typeof taskGrantSchema>;
+export type TaskRecordOperation = z.infer<typeof taskRecordOperationSchema>;
 export type TaskCreateCommand = z.infer<typeof taskCreateCommandSchema>;
 export type TaskUpdateCommand = z.infer<typeof taskUpdateCommandSchema>;

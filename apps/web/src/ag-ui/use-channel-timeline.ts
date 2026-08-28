@@ -5,6 +5,7 @@ import { isFixtureMode } from "../api/mode";
 import {
   channelTimelineReducer,
   initialChannelTimelineState,
+  orderedTimelineItems,
   orderedTimelineMessages,
 } from "./channel-timeline-reducer";
 
@@ -122,7 +123,9 @@ export function useChannelTimeline(input: {
   return {
     connection,
     messages: useMemo(() => orderedTimelineMessages(state), [state]),
+    items: useMemo(() => orderedTimelineItems(state), [state]),
     runs: state.runs,
+    activityState: state.activityState,
     mergeMessages,
   };
 }

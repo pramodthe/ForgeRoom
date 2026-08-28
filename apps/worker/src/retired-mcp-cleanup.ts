@@ -1,4 +1,8 @@
-import { listDrainableRetiredSessionGenerationIds, type createSql } from "@forgeroom/db";
+import {
+  listDrainableRetiredSessionGenerationIds,
+  recordSessionGenerationMcpConnectorDeleted,
+  type createSql,
+} from "@forgeroom/db";
 import { unregisterUiComponentsMcpServer } from "@forgeroom/ui-components-mcp";
 import type { TrueForgeClient } from "@forgeroom/trueforge";
 
@@ -13,6 +17,7 @@ export async function drainRetiredUiComponentsMcpForSession(
   for (const generationId of generationIds) {
     try {
       await unregisterUiComponentsMcpServer(client, { generationId });
+      await recordSessionGenerationMcpConnectorDeleted(sql, { generationId });
     } catch (cleanupError) {
       console.error("ui_components_mcp connector cleanup failed", {
         channelAgentSessionId,

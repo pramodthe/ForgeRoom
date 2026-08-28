@@ -206,25 +206,23 @@ export async function executeIngestTrueForgeEvent(
     event,
     turnDoneOutcome,
   });
-  if (ingest.ok && options?.trueforge) {
-    const terminal =
-      ingest.normalizedType === "turn.done" ||
-      ingest.normalizedType === "turn.error" ||
-      ingest.normalizedType === "turn.failed" ||
-      ingest.normalizedType === "session.error";
-    if (terminal) {
-      try {
-        await drainRetiredUiComponentsMcpForAgentTurn(
-          sql,
-          options.trueforge,
-          command.payload.agent_turn_id,
-        );
-      } catch (cleanupError) {
-        console.error("ui_components_mcp connector cleanup lookup failed after terminal ingest", {
-          agentTurnId: command.payload.agent_turn_id,
-          error: cleanupError instanceof Error ? cleanupError.message : String(cleanupError),
-        });
-      }
+  const terminal =
+    event.normalizedType === "turn.done" ||
+    event.normalizedType === "turn.error" ||
+    event.normalizedType === "turn.failed" ||
+    event.normalizedType === "session.error";
+  if (terminal && options?.trueforge) {
+    try {
+      await drainRetiredUiComponentsMcpForAgentTurn(
+        sql,
+        options.trueforge,
+        command.payload.agent_turn_id,
+      );
+    } catch (cleanupError) {
+      console.error("ui_components_mcp connector cleanup lookup failed after terminal ingest", {
+        agentTurnId: command.payload.agent_turn_id,
+        error: cleanupError instanceof Error ? cleanupError.message : String(cleanupError),
+      });
     }
   }
   return ingest;

@@ -26,6 +26,7 @@ export {
 } from "./agent-spec-verification";
 export type { AgentSpecPolicyExpectation, AgentSpecPolicyFinding } from "./agent-spec-verification";
 export { TrueForgeClient, loadTrueForgeClientFromEnv } from "./client";
+export { TrueForgeHttpError } from "./http-error";
 export {
   composioConnectorMcpRef,
   deleteHeaderAuthMcpServer,
@@ -77,6 +78,7 @@ export type {
 export type {
   CreateSessionInput,
   CreateTurnInput,
+  ListSessionsInput,
   PreviousTurnIdInput,
   TrueForgeAgentSpec,
   TrueForgeClientOptions,

@@ -58,6 +58,9 @@ export function createApiApp(options?: {
                     sessionIds: input.sessionIds,
                     createdBy: input.createdBy,
                     reason: input.granted ? "component_grant" : "component_revoke",
+                    operationId: input.operationId,
+                    operationStartedAt: input.operationStartedAt,
+                    reconcile: input.reconcile,
                     ...(env ? { apiEnv: env } : {}),
                   });
                 },

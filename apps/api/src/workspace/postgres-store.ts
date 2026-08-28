@@ -14,6 +14,7 @@ import {
   taskGrants,
   workspaceCommandReceipts,
 } from "@forgeroom/db";
+import type { TaskStatus } from "@forgeroom/contracts";
 import { and, eq, isNull } from "drizzle-orm";
 import { randomOpaqueId } from "../auth/crypto";
 import { clampEventLimit } from "./event-read";
@@ -158,7 +159,7 @@ function mapGrant(row: typeof taskGrants.$inferSelect): TaskGrantRecord {
       ? (row.allowedFieldsJson as string[])
       : [],
     allowedTransitionsJson: Array.isArray(row.allowedTransitionsJson)
-      ? (row.allowedTransitionsJson as string[])
+      ? (row.allowedTransitionsJson as Array<{ from: TaskStatus; to: TaskStatus }>)
       : [],
     policyRevision: row.policyRevision,
     grantedBy: row.grantedBy,

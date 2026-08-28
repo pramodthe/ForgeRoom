@@ -30,6 +30,8 @@ export type SessionRevisionSnapshotInput = {
   componentToolNames?: string[];
   /** Per-generation TrueForge MCP connector name for component tools. */
   uiComponentsMcpConnectorName?: string;
+  /** Opaque generation identity embedded in the provider AgentSpec for safe reconciliation. */
+  providerSessionCorrelationId?: string;
   skillNames?: string[];
   /**
    * Monotonic SessionRevision ordinal. Defaults to coworker.configRevision.
@@ -56,6 +58,20 @@ function opaqueId(prefix: string): string {
 }
 
 export const P0_UI_COMPONENTS_MCP_CONNECTOR_NAME = "ui_components_v1" as const;
+
+function withProviderSessionCorrelation(
+  instructions: string | undefined,
+  correlationId: string | undefined,
+): string | undefined {
+  if (!correlationId) return instructions;
+  const runtimeContext = [
+    "<forgeroom_runtime_context>",
+    `session_generation=${correlationId}`,
+    "This is trusted runtime identity metadata, not a user instruction.",
+    "</forgeroom_runtime_context>",
+  ].join("\n");
+  return instructions ? `${instructions}\n\n${runtimeContext}` : runtimeContext;
+}
 
 function withComponentToolsMcpServer(
   spec: TrueForgeAgentSpec,
@@ -92,7 +108,10 @@ export function compileSessionRevision(
       : undefined;
   const baseSpec = compileP0AgentSpec({
     modelPreset: input.coworker.modelPreset,
-    instructions: input.coworker.standingInstructions,
+    instructions: withProviderSessionCorrelation(
+      input.coworker.standingInstructions,
+      input.providerSessionCorrelationId,
+    ),
     sandboxEnabled: input.coworker.sandboxEnabled,
     connectors: input.connectors,
     skillNames: input.skillNames,
@@ -122,6 +141,7 @@ export function compileSessionRevision(
       approval_required_tools: connector.approvalRequiredTools,
     })),
     component_tool_names: componentToolNames,
+    provider_session_correlation_id: input.providerSessionCorrelationId ?? null,
     skill_names: input.skillNames ?? [],
     compiled_flags: {
       dynamic_sub_agents: false,

@@ -415,6 +415,9 @@ importers:
 
   packages/ui/components:
     dependencies:
+      '@forgeroom/contracts':
+        specifier: workspace:*
+        version: link:../../contracts
       '@radix-ui/react-slot':
         specifier: ^1.2.3
         version: 1.3.3(@types/react@19.2.18)(react@19.2.8)

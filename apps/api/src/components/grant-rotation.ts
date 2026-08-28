@@ -1,6 +1,7 @@
 import {
   findRemoteActiveTurnForSession,
   loadControlledComponentCandidates,
+  loadCurrentSessionComponentToolNames,
   type createSql,
   type SessionRotationReason,
 } from "@forgeroom/db";
@@ -23,6 +24,11 @@ export async function rotateComponentGrantSessions(input: {
   reason: Extract<SessionRotationReason, "component_grant" | "component_revoke">;
   apiEnv?: ApiEnv;
   now?: string;
+  /** Stable work identity supplied by the component grant audit. */
+  operationId: string;
+  operationStartedAt: string;
+  /** True when recovery is reconciling a previously started operation. */
+  reconcile: boolean;
 }): Promise<void> {
   const coworker = await input.store.getCoworker(input.coworkerId);
   if (!coworker || coworker.workspaceId !== input.workspaceId) {
@@ -48,6 +54,21 @@ export async function rotateComponentGrantSessions(input: {
       channelId: session.channelId,
       agentProfileId: input.coworkerId,
     });
+    const desiredComponentTools = componentCandidates
+      .filter(
+        (candidate) =>
+          candidate.published && candidate.activeGrant && candidate.exposure === "agent_tool",
+      )
+      .map((candidate) => candidate.toolName)
+      .sort();
+    const currentComponentTools = await loadCurrentSessionComponentToolNames(input.sql, sessionId);
+    if (
+      currentComponentTools &&
+      currentComponentTools.length === desiredComponentTools.length &&
+      currentComponentTools.every((toolName, index) => toolName === desiredComponentTools[index])
+    ) {
+      continue;
+    }
     const activeTurn = await findRemoteActiveTurnForSession(input.sql, sessionId);
     await rotateOwnedChannelCoworkerSession({
       sql: input.sql,
@@ -71,6 +92,9 @@ export async function rotateComponentGrantSessions(input: {
       hasActiveTurn: activeTurn !== null,
       activeTurnId: activeTurn?.agentTurnId ?? null,
       activeRunStepId: activeTurn?.runStepId ?? null,
+      operationId: input.operationId,
+      operationStartedAt: input.operationStartedAt,
+      reconcileProviderSession: input.reconcile,
       ...(input.apiEnv ? { apiEnv: input.apiEnv } : {}),
     });
   }

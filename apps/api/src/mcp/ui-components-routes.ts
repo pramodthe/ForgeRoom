@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { Hono } from "hono";
 import {
   brokerComponentToolMcpCall,
@@ -11,10 +12,29 @@ import {
   parseJsonRpcMessage,
   verifyUiComponentsMcpSecret,
 } from "@forgeroom/ui-components-mcp";
+import { canonicalizeJson } from "@forgeroom/domain";
 import type { ApiEnv } from "../env";
 import { errorResponse } from "../http";
 
 type SqlClient = ReturnType<typeof createSql>;
+
+export function buildMcpToolCallId(input: {
+  generationId: string;
+  requestId: string | number;
+  toolName: string;
+  stableName: string;
+  props: Record<string, unknown>;
+}): string {
+  const fingerprint = canonicalizeJson({
+    request_id_type: typeof input.requestId,
+    request_id: input.requestId,
+    tool_name: input.toolName,
+    stable_name: input.stableName,
+    props: input.props,
+  });
+  const digest = createHash("sha256").update(fingerprint, "utf8").digest("hex");
+  return `tc_mcp_${input.generationId}_${digest}`;
+}
 
 export function mountUiComponentsMcpRoutes(
   app: Hono,
@@ -75,7 +95,13 @@ export function mountUiComponentsMcpRoutes(
         const result = await brokerComponentToolMcpCall(input.sql, {
           generationId,
           stableName,
-          toolCallId: `tc_mcp_${generationId}_${String(requestId).replace(/[^a-zA-Z0-9_-]/g, "_")}`,
+          toolCallId: buildMcpToolCallId({
+            generationId,
+            requestId,
+            toolName,
+            stableName,
+            props,
+          }),
           props,
         });
         return {

@@ -1,10 +1,21 @@
 import type { CompiledSessionRevision } from "@forgeroom/orchestration/session";
-import { provisionChannelCoworkerSession } from "@forgeroom/orchestration/session";
+import {
+  createSessionGenerationId,
+  provisionChannelCoworkerSession,
+} from "@forgeroom/orchestration/session";
 import { intersectEffectiveComponentTools } from "@forgeroom/orchestration/capability-intersection";
-import { loadControlledComponentCandidates, type createSql } from "@forgeroom/db";
+import {
+  loadControlledComponentCandidates,
+  nextSessionRevisionOrdinal,
+  type createSql,
+} from "@forgeroom/db";
 import { loadTrueForgeClientFromEnv, type TrueForgeClient } from "@forgeroom/trueforge";
 import type { ChannelAgentSessionRecord, CoworkerRecord, WorkspaceCatalogStore } from "./store";
 import type { ApiEnv } from "../env";
+import {
+  registerUiComponentsMcpForGeneration,
+  unregisterUiComponentsMcpForGeneration,
+} from "../mcp/ui-components-registration";
 
 type SqlClient = ReturnType<typeof createSql>;
 
@@ -219,58 +230,91 @@ export async function ensureCoworkerChannelSession(input: {
         }),
       ).map((row) => row.toolName)
     : [];
-  const provisioned = await provisionChannelCoworkerSession(client, {
-    channelAgentSessionId: afterUpsert.id,
-    generation: 1,
-    agentVersionId: input.coworker.currentVersionId,
-    coworker: {
-      id: input.coworker.id,
-      handle: input.coworker.handle,
-      name: input.coworker.name,
-      title: input.coworker.title,
-      configRevision: input.coworker.configRevision,
-      standingInstructions: standingInstructionsFromCoworker(input.coworker),
-      modelPreset: modelPresetFromCoworker(input.coworker),
-      sandboxEnabled: sandboxEnabledFromCoworker(input.coworker),
-    },
-    channelId: input.channelId,
-    workspaceId: input.workspaceId,
-    connectors: connectorsFromCoworker(input.coworker),
-    skillNames: skillNamesFromCoworker(input.coworker),
-    componentToolNames,
-    createdBy: input.createdBy,
-  });
+  const generationId = createSessionGenerationId();
+  const sourceConfigRevision = input.sql
+    ? await nextSessionRevisionOrdinal(input.sql, input.coworker.id)
+    : input.coworker.configRevision;
+  let componentConnectorRegistrationAttempted = false;
+  try {
+    if (componentToolNames.length > 0) {
+      if (!input.apiEnv) {
+        throw new Error("UI components MCP registration requires the API environment");
+      }
+      componentConnectorRegistrationAttempted = true;
+      await registerUiComponentsMcpForGeneration(client, {
+        env: input.apiEnv,
+        generationId,
+        componentToolNames,
+      });
+    }
 
-  const revision: SessionRevisionRecord = {
-    id: provisioned.revision.id,
-    agentProfileId: provisioned.revision.agentProfileId,
-    sourceConfigRevision: provisioned.revision.sourceConfigRevision,
-    effectiveConfigRedactedJson: provisioned.revision.effectiveConfigRedacted,
-    effectiveSpecHash: provisioned.revision.effectiveSpecHash,
-    approvalPolicyHash: provisioned.revision.approvalPolicyHash,
-    createdBy: provisioned.revision.createdBy,
-    createdAt: provisioned.revision.createdAt,
-  };
-  const generation: ChannelAgentSessionGenerationRecord = {
-    ...provisioned.generation,
-    channelAgentSessionId: afterUpsert.id,
-    activeTurnId: null,
-  };
-  const pointed: ChannelAgentSessionRecord = {
-    ...afterUpsert,
-    currentGenerationId: generation.id,
-    updatedAt: now,
-  };
-  await input.store.persistProvisionedSession({
-    logicalSession: pointed,
-    revision,
-    generation,
-  });
+    const provisioned = await provisionChannelCoworkerSession(client, {
+      channelAgentSessionId: afterUpsert.id,
+      generation: 1,
+      generationId,
+      agentVersionId: input.coworker.currentVersionId,
+      coworker: {
+        id: input.coworker.id,
+        handle: input.coworker.handle,
+        name: input.coworker.name,
+        title: input.coworker.title,
+        configRevision: input.coworker.configRevision,
+        standingInstructions: standingInstructionsFromCoworker(input.coworker),
+        modelPreset: modelPresetFromCoworker(input.coworker),
+        sandboxEnabled: sandboxEnabledFromCoworker(input.coworker),
+      },
+      channelId: input.channelId,
+      workspaceId: input.workspaceId,
+      connectors: connectorsFromCoworker(input.coworker),
+      skillNames: skillNamesFromCoworker(input.coworker),
+      componentToolNames,
+      sourceConfigRevision,
+      createdBy: input.createdBy,
+    });
 
-  return {
-    logicalSession: pointed,
-    revision: provisioned.revision,
-    trueforgeSessionId: provisioned.trueforgeSession.id,
-    generationId: generation.id,
-  };
+    const revision: SessionRevisionRecord = {
+      id: provisioned.revision.id,
+      agentProfileId: provisioned.revision.agentProfileId,
+      sourceConfigRevision: provisioned.revision.sourceConfigRevision,
+      effectiveConfigRedactedJson: provisioned.revision.effectiveConfigRedacted,
+      effectiveSpecHash: provisioned.revision.effectiveSpecHash,
+      approvalPolicyHash: provisioned.revision.approvalPolicyHash,
+      createdBy: provisioned.revision.createdBy,
+      createdAt: provisioned.revision.createdAt,
+    };
+    const generation: ChannelAgentSessionGenerationRecord = {
+      ...provisioned.generation,
+      channelAgentSessionId: afterUpsert.id,
+      activeTurnId: null,
+    };
+    const pointed: ChannelAgentSessionRecord = {
+      ...afterUpsert,
+      currentGenerationId: generation.id,
+      updatedAt: now,
+    };
+    await input.store.persistProvisionedSession({
+      logicalSession: pointed,
+      revision,
+      generation,
+    });
+
+    return {
+      logicalSession: pointed,
+      revision: provisioned.revision,
+      trueforgeSessionId: provisioned.trueforgeSession.id,
+      generationId: generation.id,
+    };
+  } catch (error) {
+    if (componentConnectorRegistrationAttempted) {
+      try {
+        await unregisterUiComponentsMcpForGeneration(client, { generationId });
+      } catch (cleanupError) {
+        console.error("ui_components_mcp connector cleanup failed after provisioning error", {
+          generationId,
+          error: cleanupError instanceof Error ? cleanupError.message : String(cleanupError),
+        });
+      }
+    }
+    throw error;
+  }
 }

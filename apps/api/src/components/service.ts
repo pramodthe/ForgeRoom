@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { componentGrantCommandSchema, type SessionResponse } from "@forgeroom/contracts";
 import {
   applyComponentGrantChange,
+  appendComponentAuditEvent,
   hasActiveComponentGrant,
   publishWorkspaceRegistry,
   type createSql,
@@ -75,18 +76,153 @@ function idempotencyKeyHash(key: string): string {
   return `sha256:${createHash("sha256").update(key).digest("hex")}`;
 }
 
-async function markSessionRotationsApplied(
+async function loadSessionRotationEventIds(
   sql: SqlClient,
-  input: { workspaceId: string; coworkerId: string; idempotencyKeyHash: string },
-): Promise<void> {
-  await sql`
-    UPDATE audit_events
-    SET redacted_payload_json = redacted_payload_json || ${sql.json({ session_rotations_applied: true })}
+  input: { auditId: string; workspaceId: string; action: string },
+): Promise<string[]> {
+  const rows = await sql<{ target_id: string }[]>`
+    SELECT target_id
+    FROM audit_events
     WHERE workspace_id = ${input.workspaceId}
-      AND action IN ('component.grant', 'component.revoke')
-      AND redacted_payload_json->>'coworker_id' = ${input.coworkerId}
-      AND redacted_payload_json->>'idempotency_key_hash' = ${input.idempotencyKeyHash}
+      AND action = ${input.action}
+      AND target_type = 'channel_agent_session'
+      AND redacted_payload_json->>'grant_audit_id' = ${input.auditId}
+    ORDER BY created_at ASC, id ASC
   `;
+  return [...new Set(rows.map((row) => row.target_id))];
+}
+
+async function loadStartedSessionRotations(
+  sql: SqlClient,
+  input: { auditId: string; workspaceId: string },
+): Promise<Record<string, string>> {
+  const rows = await sql<{ target_id: string; redacted_payload_json: unknown }[]>`
+    SELECT target_id, redacted_payload_json
+    FROM audit_events
+    WHERE workspace_id = ${input.workspaceId}
+      AND action = 'component.session_rotation_started'
+      AND target_type = 'channel_agent_session'
+      AND redacted_payload_json->>'grant_audit_id' = ${input.auditId}
+    ORDER BY created_at ASC, id ASC
+  `;
+  const started: Record<string, string> = {};
+  for (const row of rows) {
+    const payload = parseAuditPayload(row.redacted_payload_json);
+    if (payload && typeof payload.started_at === "string") {
+      started[row.target_id] = payload.started_at;
+    }
+  }
+  return started;
+}
+
+async function recordSessionRotationStarted(
+  sql: SqlClient,
+  input: {
+    auditId: string;
+    workspaceId: string;
+    coworkerId: string;
+    sessionId: string;
+    createdBy: string;
+  },
+): Promise<string> {
+  const startedAt = new Date().toISOString();
+  await appendComponentAuditEvent(sql, {
+    workspaceId: input.workspaceId,
+    actorUserId: input.createdBy,
+    action: "component.session_rotation_started",
+    targetType: "channel_agent_session",
+    targetId: input.sessionId,
+    payload: {
+      grant_audit_id: input.auditId,
+      coworker_id: input.coworkerId,
+      session_id: input.sessionId,
+      operation_id: `${input.auditId}:${input.sessionId}`,
+      started_at: startedAt,
+    },
+  });
+  return startedAt;
+}
+
+async function recordSessionRotationApplied(
+  sql: SqlClient,
+  input: {
+    auditId: string;
+    workspaceId: string;
+    coworkerId: string;
+    sessionId: string;
+    createdBy: string;
+  },
+): Promise<void> {
+  await appendComponentAuditEvent(sql, {
+    workspaceId: input.workspaceId,
+    actorUserId: input.createdBy,
+    action: "component.session_rotation_applied",
+    targetType: "channel_agent_session",
+    targetId: input.sessionId,
+    payload: {
+      grant_audit_id: input.auditId,
+      coworker_id: input.coworkerId,
+      session_id: input.sessionId,
+    },
+  });
+}
+
+async function applyPendingSessionRotations(input: {
+  sql: SqlClient;
+  auditId: string;
+  workspaceId: string;
+  coworkerId: string;
+  sessionRotationIds: readonly string[];
+  startedSessionRotations: Readonly<Record<string, string>>;
+  completedSessionRotationIds: readonly string[];
+  createdBy: string;
+  granted: boolean;
+  rotateGrantSessions: NonNullable<
+    Parameters<typeof createComponentService>[0]["rotateGrantSessions"]
+  >;
+}): Promise<void> {
+  const sessionRotationIds = [...new Set(input.sessionRotationIds)];
+  const completed = new Set(
+    input.completedSessionRotationIds.filter((sessionId) => sessionRotationIds.includes(sessionId)),
+  );
+  for (const sessionId of sessionRotationIds) {
+    if (completed.has(sessionId)) {
+      continue;
+    }
+    const persistedStartedAt = input.startedSessionRotations[sessionId];
+    const reconcile = typeof persistedStartedAt === "string";
+    let operationStartedAt = persistedStartedAt;
+    if (!reconcile) {
+      operationStartedAt = await recordSessionRotationStarted(input.sql, {
+        auditId: input.auditId,
+        workspaceId: input.workspaceId,
+        coworkerId: input.coworkerId,
+        sessionId,
+        createdBy: input.createdBy,
+      });
+    }
+    if (!operationStartedAt) {
+      throw new Error("component session rotation start timestamp missing");
+    }
+    await input.rotateGrantSessions({
+      workspaceId: input.workspaceId,
+      coworkerId: input.coworkerId,
+      sessionIds: [sessionId],
+      createdBy: input.createdBy,
+      granted: input.granted,
+      operationId: `${input.auditId}:${sessionId}`,
+      operationStartedAt,
+      reconcile,
+    });
+    completed.add(sessionId);
+    await recordSessionRotationApplied(input.sql, {
+      auditId: input.auditId,
+      workspaceId: input.workspaceId,
+      coworkerId: input.coworkerId,
+      sessionId,
+      createdBy: input.createdBy,
+    });
+  }
 }
 
 function parseAuditPayload(payload: unknown): Record<string, unknown> | null {
@@ -181,6 +317,9 @@ export function createComponentService(options: {
     sessionIds: readonly string[];
     createdBy: string;
     granted: boolean;
+    operationId: string;
+    operationStartedAt: string;
+    reconcile: boolean;
   }) => Promise<void>;
 }) {
   const { sql, workspace, rotateGrantSessions } = options;
@@ -317,8 +456,8 @@ export function createComponentService(options: {
       const keyHash = idempotencyKeyHash(command.idempotency_key);
       await sql`SELECT pg_advisory_lock(hashtext(${keyHash}))`;
       try {
-        const [priorAudit] = await sql<{ redacted_payload_json: unknown }[]>`
-          SELECT redacted_payload_json
+        const [priorAudit] = await sql<{ id: string; redacted_payload_json: unknown }[]>`
+          SELECT id, redacted_payload_json
           FROM audit_events
           WHERE workspace_id = ${workspaceId}
             AND action IN ('component.grant', 'component.revoke')
@@ -334,7 +473,28 @@ export function createComponentService(options: {
             const grantId = payload.grant_id;
             const action = payload.action;
             const sessionRotations = payload.session_rotations;
-            const sessionRotationsApplied = payload.session_rotations_applied === true;
+            const requestedComponentVersionId = payload.component_version_id;
+            const requestedGranted = payload.granted;
+            if (requestedComponentVersionId !== match.id || requestedGranted !== command.granted) {
+              return {
+                ok: false,
+                error: {
+                  code: "conflict",
+                  message: "Idempotency key was already used for a different component grant.",
+                  details: {
+                    reason: "idempotency_key_reuse",
+                    requested_component_version_id: match.id,
+                    claimed_component_version_id:
+                      typeof requestedComponentVersionId === "string"
+                        ? requestedComponentVersionId
+                        : null,
+                    requested_granted: command.granted,
+                    claimed_granted:
+                      typeof requestedGranted === "boolean" ? requestedGranted : null,
+                  },
+                },
+              };
+            }
             if (
               typeof grantId === "string" &&
               (action === "granted" || action === "revoked" || action === "noop") &&
@@ -342,19 +502,30 @@ export function createComponentService(options: {
               Array.isArray(sessionRotations) &&
               sessionRotations.every((row) => typeof row === "string")
             ) {
-              if (sessionRotations.length > 0 && rotateGrantSessions && !sessionRotationsApplied) {
+              if (sessionRotations.length > 0 && rotateGrantSessions) {
                 try {
-                  await rotateGrantSessions({
+                  const [startedSessionRotations, completedSessionRotationIds] = await Promise.all([
+                    loadStartedSessionRotations(sql, {
+                      auditId: priorAudit.id,
+                      workspaceId,
+                    }),
+                    loadSessionRotationEventIds(sql, {
+                      auditId: priorAudit.id,
+                      workspaceId,
+                      action: "component.session_rotation_applied",
+                    }),
+                  ]);
+                  await applyPendingSessionRotations({
+                    sql,
+                    auditId: priorAudit.id,
                     workspaceId,
                     coworkerId,
-                    sessionIds: sessionRotations,
+                    sessionRotationIds: sessionRotations,
+                    startedSessionRotations,
+                    completedSessionRotationIds,
                     createdBy: session.user.id,
                     granted: action === "granted",
-                  });
-                  await markSessionRotationsApplied(sql, {
-                    workspaceId,
-                    coworkerId,
-                    idempotencyKeyHash: keyHash,
+                    rotateGrantSessions,
                   });
                 } catch (error) {
                   return {
@@ -427,17 +598,20 @@ export function createComponentService(options: {
 
         if (result.changed && applied.sessionRotations.length > 0 && rotateGrantSessions) {
           try {
-            await rotateGrantSessions({
+            if (!applied.auditId) {
+              throw new Error("component grant audit missing before session rotation");
+            }
+            await applyPendingSessionRotations({
+              sql,
+              auditId: applied.auditId,
               workspaceId,
               coworkerId,
-              sessionIds: applied.sessionRotations,
+              sessionRotationIds: applied.sessionRotations,
+              startedSessionRotations: {},
+              completedSessionRotationIds: [],
               createdBy: session.user.id,
               granted: command.granted,
-            });
-            await markSessionRotationsApplied(sql, {
-              workspaceId,
-              coworkerId,
-              idempotencyKeyHash: keyHash,
+              rotateGrantSessions,
             });
           } catch (error) {
             return {
