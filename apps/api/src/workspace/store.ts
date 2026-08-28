@@ -362,6 +362,12 @@ export type WorkspaceCatalogStore = {
 
   getTask(id: string): Promise<TaskRecord | null>;
   getRunProvenance(id: string): Promise<RunProvenanceRecord | null>;
+  /**
+   * Register a run's workspace/channel scope for memory-backed execution.
+   * Durable stores create full runs through the orchestration transaction and
+   * do not need this lightweight provenance hook.
+   */
+  recordRunProvenance?(run: RunProvenanceRecord): Promise<void>;
   listAuditEvents(workspaceId: string, targetId?: string): Promise<AuditEventRecord[]>;
   listTasks(channelId: string): Promise<TaskRecord[]>;
   listTaskHistory(taskId: string): Promise<TaskRevisionRecord[]>;
@@ -848,6 +854,20 @@ export function createMemoryWorkspaceStore(): WorkspaceCatalogStore {
     async getRunProvenance(id) {
       const row = runs.get(id);
       return row ? structuredClone(row) : null;
+    },
+    async recordRunProvenance(run) {
+      const channel = channels.get(run.channelId);
+      if (!channel || channel.workspaceId !== run.workspaceId) {
+        throw new Error("run provenance must reference a channel in the same workspace");
+      }
+      const existing = runs.get(run.id);
+      if (
+        existing &&
+        (existing.workspaceId !== run.workspaceId || existing.channelId !== run.channelId)
+      ) {
+        throw new Error("run provenance cannot change workspace or channel");
+      }
+      runs.set(run.id, structuredClone(run));
     },
     async listAuditEvents(workspaceId, targetId) {
       return [...auditEvents.values()]

@@ -80,6 +80,7 @@ import {
   type CoworkerRecord,
   type ParticipantRecord,
   type PinRecord,
+  type RunProvenanceRecord,
   type TaskGrantRecord,
   type TaskRecord,
   type TaskRevisionRecord,
@@ -528,6 +529,8 @@ export type WorkspaceService = {
     config?: Partial<CoworkerEditableConfig>;
     toolGrants?: string[];
   }): Promise<CoworkerRecord>;
+  /** Test/fixture helper for memory-backed run provenance. */
+  seedRunProvenance(input: RunProvenanceRecord): Promise<RunProvenanceRecord>;
   resolveAgUiCoworkerContext(
     session: SessionResponse,
     channelId: string,
@@ -2997,6 +3000,18 @@ export function createWorkspaceService(options?: {
 
     async appendCoworkerAgUiEvent(input) {
       try {
+        const channel = await store.getChannel(input.channelId);
+        if (!channel) {
+          return { ok: false, error: { code: "not_found", message: "Channel not found." } };
+        }
+        // The durable Postgres run is created by orchestration. Memory-backed
+        // execution has no runs table, so register the same scope before the
+        // event is appended to make source_run_id usable in task commands.
+        await store.recordRunProvenance?.({
+          id: input.applicationRunId,
+          workspaceId: channel.workspaceId,
+          channelId: input.channelId,
+        });
         const appended = await store.appendChannelEvent({
           channelId: input.channelId,
           allowArchived: true,
@@ -3475,6 +3490,14 @@ export function createWorkspaceService(options?: {
       };
       await store.insertCoworker(coworker, version);
       return coworker;
+    },
+
+    async seedRunProvenance(input) {
+      if (!store.recordRunProvenance) {
+        throw new Error("run provenance seeding requires a memory-backed workspace store");
+      }
+      await store.recordRunProvenance(input);
+      return { ...input };
     },
 
     async cancelRunStep(session, runId, runStepId) {

@@ -269,7 +269,7 @@ describe("channel and coworker API", () => {
   });
 
   it("creates, lists, updates and replays TaskRecord revisions", async () => {
-    const { app, env, workspaceStore } = await createTestApp();
+    const { app, env, workspace, workspaceStore } = await createTestApp();
     const { session, cookie } = await login(app, env);
     const channelRes = await app.request(`/api/workspaces/${env.workspaceId}/channels`, {
       method: "POST",
@@ -283,6 +283,12 @@ describe("channel and coworker API", () => {
     });
     const channel = channelSchema.parse(withoutRequestId(await channelRes.json()));
 
+    await workspace.seedRunProvenance({
+      id: "run_memory_task",
+      workspaceId: env.workspaceId,
+      channelId: channel.id,
+    });
+
     const createBody = {
       schemaVersion: 1,
       title: "Review connector health",
@@ -291,7 +297,7 @@ describe("channel and coworker API", () => {
       assignee_type: null,
       assignee_id: null,
       source_message_id: null,
-      source_run_id: null,
+      source_run_id: "run_memory_task",
       due_at: null,
       idempotency_key: "idem_task_create",
     };
