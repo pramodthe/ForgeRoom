@@ -1,7 +1,16 @@
 import type { CompiledSessionRevision } from "@forgeroom/orchestration/session";
 import { provisionChannelCoworkerSession } from "@forgeroom/orchestration/session";
+import { intersectEffectiveComponentTools } from "@forgeroom/orchestration/capability-intersection";
+import { loadControlledComponentCandidates, type createSql } from "@forgeroom/db";
 import { loadTrueForgeClientFromEnv, type TrueForgeClient } from "@forgeroom/trueforge";
 import type { ChannelAgentSessionRecord, CoworkerRecord, WorkspaceCatalogStore } from "./store";
+import type { ApiEnv } from "../env";
+import {
+  registerUiComponentsMcpForGeneration,
+  unregisterUiComponentsMcpForGeneration,
+} from "../mcp/ui-components-registration";
+
+type SqlClient = ReturnType<typeof createSql>;
 
 export type SessionRevisionRecord = {
   id: string;
@@ -119,6 +128,8 @@ export async function ensureCoworkerChannelSession(input: {
   createdBy: string;
   client?: TrueForgeClient;
   env?: NodeJS.ProcessEnv;
+  apiEnv?: ApiEnv;
+  sql?: SqlClient;
 }): Promise<{
   logicalSession: ChannelAgentSessionRecord;
   revision: CompiledSessionRevision;
@@ -203,6 +214,15 @@ export async function ensureCoworkerChannelSession(input: {
   }
 
   const client = input.client ?? loadTrueForgeClientFromEnv(input.env ?? process.env);
+  const componentToolNames = input.sql
+    ? intersectEffectiveComponentTools(
+        await loadControlledComponentCandidates(input.sql, {
+          workspaceId: input.workspaceId,
+          channelId: input.channelId,
+          agentProfileId: input.coworker.id,
+        }),
+      ).map((row) => row.toolName)
+    : [];
   const provisioned = await provisionChannelCoworkerSession(client, {
     channelAgentSessionId: afterUpsert.id,
     generation: 1,
@@ -221,6 +241,7 @@ export async function ensureCoworkerChannelSession(input: {
     workspaceId: input.workspaceId,
     connectors: connectorsFromCoworker(input.coworker),
     skillNames: skillNamesFromCoworker(input.coworker),
+    componentToolNames,
     createdBy: input.createdBy,
   });
 
@@ -244,11 +265,36 @@ export async function ensureCoworkerChannelSession(input: {
     currentGenerationId: generation.id,
     updatedAt: now,
   };
-  await input.store.persistProvisionedSession({
-    logicalSession: pointed,
-    revision,
-    generation,
-  });
+  let registeredMcpGenerationId: string | null = null;
+  if (input.apiEnv && componentToolNames.length > 0) {
+    await registerUiComponentsMcpForGeneration(client, {
+      env: input.apiEnv,
+      generationId: generation.id,
+      componentToolNames,
+    });
+    registeredMcpGenerationId = generation.id;
+  }
+  try {
+    await input.store.persistProvisionedSession({
+      logicalSession: pointed,
+      revision,
+      generation,
+    });
+  } catch (error) {
+    if (registeredMcpGenerationId) {
+      try {
+        await unregisterUiComponentsMcpForGeneration(client, {
+          generationId: registeredMcpGenerationId,
+        });
+      } catch (cleanupError) {
+        console.error("ui_components_mcp connector cleanup failed after provision persist error", {
+          generationId: registeredMcpGenerationId,
+          error: cleanupError instanceof Error ? cleanupError.message : String(cleanupError),
+        });
+      }
+    }
+    throw error;
+  }
 
   return {
     logicalSession: pointed,

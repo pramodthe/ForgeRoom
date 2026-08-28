@@ -6,6 +6,7 @@ import {
 } from "@forgeroom/db";
 import type { TrueForgeClient } from "@forgeroom/trueforge";
 import type { WorkspaceCatalogStore } from "../workspace/store";
+import type { ApiEnv } from "../env";
 import { rotateOwnedChannelCoworkerSession } from "../workspace/session-rotation";
 import { connectorsFromCoworker, skillNamesFromCoworker } from "../workspace/session-provision";
 
@@ -20,6 +21,7 @@ export async function rotateComponentGrantSessions(input: {
   sessionIds: readonly string[];
   createdBy: string;
   reason: Extract<SessionRotationReason, "component_grant" | "component_revoke">;
+  apiEnv?: ApiEnv;
   now?: string;
 }): Promise<void> {
   const coworker = await input.store.getCoworker(input.coworkerId);
@@ -69,6 +71,7 @@ export async function rotateComponentGrantSessions(input: {
       hasActiveTurn: activeTurn !== null,
       activeTurnId: activeTurn?.agentTurnId ?? null,
       activeRunStepId: activeTurn?.runStepId ?? null,
+      ...(input.apiEnv ? { apiEnv: input.apiEnv } : {}),
     });
   }
 }
