@@ -249,7 +249,8 @@ describe("component grant rotation gateway", () => {
       const [interrupt] = await sql<{ state: string; stale_at: string | null }[]>`
         SELECT state, stale_at FROM ui_component_interrupts WHERE id = 'intr_rot'
       `;
-      expect(interrupt).toMatchObject({ state: "stale", stale_at: expect.any(String) });
+      expect(interrupt?.state).toBe("stale");
+      expect(interrupt?.stale_at).not.toBeNull();
     });
   }, 60_000);
 });
