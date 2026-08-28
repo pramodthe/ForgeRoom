@@ -80,7 +80,11 @@ export type WorkerProcessOptions = {
   databaseUrl?: string;
   trueforge?: Pick<
     TrueForgeClientType,
-    "createTurn" | "listTurns" | "cancelSession" | "downloadSandboxFile" | "deleteHeaderAuthMcpServer"
+    | "createTurn"
+    | "listTurns"
+    | "cancelSession"
+    | "downloadSandboxFile"
+    | "deleteHeaderAuthMcpServer"
   >;
   pausePayloadEncryptionSecret?: string;
   loadTurnCreateContext?: (agentTurnId: string) => Promise<{
