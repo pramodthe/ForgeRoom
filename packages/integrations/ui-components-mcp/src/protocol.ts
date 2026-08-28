@@ -85,7 +85,7 @@ export async function handleUiComponentsMcpRequest(
         jsonrpc: "2.0",
         id,
         result: {
-          protocolVersion: "2024-11-05",
+          protocolVersion: "2024-10-07",
           capabilities: { tools: {} },
           serverInfo: { name: "forgeroom-ui-components-mcp", version: "1.0.0" },
         },

@@ -194,7 +194,10 @@ export async function rotateOwnedChannelCoworkerSession(
       now,
     });
 
-    if (input.apiEnv) {
+    if (
+      input.apiEnv &&
+      (!input.hasActiveTurn || begun.requestActiveTurnCancellation)
+    ) {
       try {
         await unregisterUiComponentsMcpForGeneration(client, {
           generationId: begun.previousGenerationId,

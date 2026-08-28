@@ -12,7 +12,7 @@ describe("handleUiComponentsMcpRequest", () => {
       { enabledToolNames: ["ui.dataTable"], callTool: vi.fn() },
     );
     expect(response.result).toMatchObject({
-      protocolVersion: "2024-11-05",
+      protocolVersion: "2024-10-07",
       capabilities: { tools: {} },
     });
   });
