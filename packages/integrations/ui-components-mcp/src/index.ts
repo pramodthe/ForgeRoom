@@ -6,7 +6,7 @@ export {
   buildUiComponentsMcpSessionUrl,
   isUiComponentsMcpConnectorName,
 } from "./constants";
-export { deriveUiComponentsMcpSecret } from "./credentials";
+export { deriveUiComponentsMcpSecret, verifyUiComponentsMcpSecret } from "./credentials";
 export { listControlledComponentMcpTools, resolveStableNameForMcpTool } from "./tools";
 export type { UiComponentsMcpTool } from "./tools";
 export {

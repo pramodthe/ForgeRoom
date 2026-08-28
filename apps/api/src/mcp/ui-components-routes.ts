@@ -6,10 +6,10 @@ import {
 } from "@forgeroom/db";
 import {
   P0_UI_COMPONENTS_MCP_HEADER_NAME,
-  deriveUiComponentsMcpSecret,
   handleUiComponentsMcpNotification,
   handleUiComponentsMcpRequest,
   parseJsonRpcMessage,
+  verifyUiComponentsMcpSecret,
 } from "@forgeroom/ui-components-mcp";
 import type { ApiEnv } from "../env";
 import { errorResponse } from "../http";
@@ -26,11 +26,10 @@ export function mountUiComponentsMcpRoutes(
   app.post("/api/mcp/ui_components_v1/sessions/:generationId", async (c) => {
     const generationId = c.req.param("generationId");
     const providedSecret = c.req.header(P0_UI_COMPONENTS_MCP_HEADER_NAME);
-    const expectedSecret = deriveUiComponentsMcpSecret(
-      input.env.uiComponentsMcpSecret,
-      generationId,
-    );
-    if (!providedSecret || providedSecret !== expectedSecret) {
+    if (
+      !providedSecret ||
+      !verifyUiComponentsMcpSecret(input.env.uiComponentsMcpSecret, generationId, providedSecret)
+    ) {
       const failure = errorResponse("unauthenticated", "Invalid UI components MCP credentials.", {
         status: 401,
       });

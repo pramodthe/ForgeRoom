@@ -194,6 +194,19 @@ export async function rotateOwnedChannelCoworkerSession(
       now,
     });
 
+    if (input.apiEnv) {
+      try {
+        await unregisterUiComponentsMcpForGeneration(client, {
+          generationId: begun.previousGenerationId,
+        });
+      } catch (cleanupError) {
+        console.error("ui_components_mcp connector cleanup failed after rotation", {
+          generationId: begun.previousGenerationId,
+          error: cleanupError instanceof Error ? cleanupError.message : String(cleanupError),
+        });
+      }
+    }
+
     return {
       sessionId: input.channelAgentSessionId,
       newGenerationId: swap.newGenerationId,
