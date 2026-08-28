@@ -184,6 +184,9 @@ importers:
       '@forgeroom/trueforge':
         specifier: workspace:*
         version: link:../../packages/integrations/trueforge
+      '@forgeroom/ui-components-mcp':
+        specifier: workspace:*
+        version: link:../../packages/integrations/ui-components-mcp
     devDependencies:
       '@types/node':
         specifier: 'catalog:'

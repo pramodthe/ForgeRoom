@@ -51,6 +51,7 @@ import {
   executeFinalizeOrQuarantineUiInstance,
   executeOfferAndRecheckComponentTool,
 } from "./component-tools";
+import { drainRetiredUiComponentsMcpForAgentTurn } from "./retired-mcp-cleanup";
 
 export function parseWorkerCommand(input: unknown): InternalWorkerCommand {
   return internalWorkerCommandSchema.parse(input);
@@ -79,7 +80,7 @@ export type WorkerProcessOptions = {
   databaseUrl?: string;
   trueforge?: Pick<
     TrueForgeClientType,
-    "createTurn" | "listTurns" | "cancelSession" | "downloadSandboxFile"
+    "createTurn" | "listTurns" | "cancelSession" | "downloadSandboxFile" | "deleteHeaderAuthMcpServer"
   >;
   pausePayloadEncryptionSecret?: string;
   loadTurnCreateContext?: (agentTurnId: string) => Promise<{
@@ -183,6 +184,9 @@ export async function executeCreateOrReconcileTurn(
 export async function executeIngestTrueForgeEvent(
   sql: ReturnType<typeof createSql>,
   command: Extract<InternalWorkerCommand, { name: "ingest_trueforge_event" }>,
+  options?: {
+    trueforge?: Pick<TrueForgeClientType, "deleteHeaderAuthMcpServer">;
+  },
 ): Promise<IngestRunEventResult> {
   const event = normalizeTrueForgeEvent({
     ...command.payload.event_payload,
@@ -192,12 +196,27 @@ export async function executeIngestTrueForgeEvent(
   const turnDoneOutcome =
     event.normalizedType === "turn.done" ? evaluateTurnDoneOutcome(event.payloadRedacted) : null;
   // Parent Run lifecycle is refreshed inside the ingest transaction from the locked step.
-  return ingestNormalizedTrueForgeEvent(sql, {
+  const ingest = await ingestNormalizedTrueForgeEvent(sql, {
     agentTurnId: command.payload.agent_turn_id,
     expectedTurnStates: [command.payload.expected_turn_state, "streaming", "creating"],
     event,
     turnDoneOutcome,
   });
+  if (ingest.ok && ingest.inserted && options?.trueforge) {
+    const terminal =
+      ingest.normalizedType === "turn.done" ||
+      ingest.normalizedType === "turn.error" ||
+      ingest.normalizedType === "turn.failed" ||
+      ingest.normalizedType === "session.error";
+    if (terminal) {
+      await drainRetiredUiComponentsMcpForAgentTurn(
+        sql,
+        options.trueforge,
+        command.payload.agent_turn_id,
+      );
+    }
+  }
+  return ingest;
 }
 
 export async function executePublishSandboxArtifact(
@@ -466,7 +485,7 @@ export function startWorkerProcess(options: WorkerProcessOptions | WorkerCommand
           return { command, ingest: { ok: false, reason: "unavailable" } };
         }
         sql ??= createSql(resolved.databaseUrl);
-        const ingest = await executeIngestTrueForgeEvent(sql, command);
+        const ingest = await executeIngestTrueForgeEvent(sql, command, { trueforge });
         if (ingest.ok) {
           await resolved.executeCommand?.(command);
         }

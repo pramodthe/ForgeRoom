@@ -31,6 +31,7 @@ import {
 } from "./session-provision";
 import type { ApiEnv } from "../env";
 import {
+  drainRetiredUiComponentsMcpForSession,
   registerUiComponentsMcpForGeneration,
   unregisterUiComponentsMcpForGeneration,
 } from "../mcp/ui-components-registration";
@@ -194,17 +195,8 @@ export async function rotateOwnedChannelCoworkerSession(
       now,
     });
 
-    if (input.apiEnv && (!input.hasActiveTurn || begun.requestActiveTurnCancellation)) {
-      try {
-        await unregisterUiComponentsMcpForGeneration(client, {
-          generationId: begun.previousGenerationId,
-        });
-      } catch (cleanupError) {
-        console.error("ui_components_mcp connector cleanup failed after rotation", {
-          generationId: begun.previousGenerationId,
-          error: cleanupError instanceof Error ? cleanupError.message : String(cleanupError),
-        });
-      }
+    if (input.apiEnv) {
+      await drainRetiredUiComponentsMcpForSession(client, input.sql, input.channelAgentSessionId);
     }
 
     return {

@@ -611,6 +611,32 @@ export async function recordMcpRotationOutcome(
   return { outcome, denyByClaim: false };
 }
 
+/** Retired generations safe to tear down once no turn still holds the remote slot. */
+export async function listDrainableRetiredSessionGenerationIds(
+  sql: SqlClient,
+  channelAgentSessionId: string,
+): Promise<string[]> {
+  const rows = await sql<{ id: string }[]>`
+    SELECT g.id
+    FROM channel_agent_session_generations AS g
+    WHERE g.channel_agent_session_id = ${channelAgentSessionId}
+      AND g.state = 'retired'
+      AND NOT EXISTS (
+        SELECT 1
+        FROM agent_turns AS t
+        WHERE t.session_generation_id = g.id
+          AND t.state IN (
+            'acquiring',
+            'creating',
+            'streaming',
+            'resuming',
+            'required_actions'
+          )
+      )
+  `;
+  return rows.map((row) => row.id);
+}
+
 export async function listCoworkerChannelSessions(
   sql: SqlClient,
   input: { workspaceId: string; agentProfileId: string },
