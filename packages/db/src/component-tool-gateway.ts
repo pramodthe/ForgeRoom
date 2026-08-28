@@ -767,6 +767,58 @@ export type BrokerComponentAuthoritySnapshot = {
 };
 
 /**
+ * Row locks that close the window between the authority recheck and the UIInstance
+ * and grant inserts. Without them the recheck reads under READ COMMITTED and a
+ * concurrent grant revocation, publication change or session rotation can commit in
+ * the gap, persisting an instance — and for interactive components an
+ * approval-capable ActionGrant — after its authority was withdrawn.
+ *
+ * Locks are FOR SHARE (concurrent brokers still proceed; only writers block), are
+ * held until the enclosing transaction commits, and are taken in a fixed
+ * session → component → grant order so two brokers cannot deadlock against each
+ * other. A writer that already committed is picked up by the recheck that follows,
+ * because READ COMMITTED re-evaluates a locked row after the blocking writer commits.
+ */
+async function lockBrokerAuthorityRows(
+  tx: SqlClient,
+  input: {
+    workspaceId: string;
+    channelId: string;
+    coworkerId: string;
+    stableName: string;
+  },
+): Promise<void> {
+  await tx`
+    SELECT cas.id
+    FROM channel_agent_sessions AS cas
+    WHERE cas.channel_id = ${input.channelId}
+      AND cas.agent_profile_id = ${input.coworkerId}
+    FOR SHARE
+  `;
+  await tx`
+    SELECT v.id
+    FROM ui_component_versions AS v
+    JOIN ui_components AS c ON c.id = v.component_id
+    WHERE c.workspace_id = ${input.workspaceId}
+      AND c.stable_name = ${input.stableName}
+      AND c.current_published_version_id = v.id
+    FOR SHARE OF v, c
+  `;
+  await tx`
+    SELECT g.id
+    FROM ui_component_grants AS g
+    JOIN ui_component_versions AS v ON v.id = g.component_version_id
+    JOIN ui_components AS c ON c.id = v.component_id
+    WHERE g.workspace_id = ${input.workspaceId}
+      AND c.stable_name = ${input.stableName}
+      AND g.revoked_at IS NULL
+      AND (g.channel_id IS NULL OR g.channel_id = ${input.channelId})
+      AND (g.agent_profile_id IS NULL OR g.agent_profile_id = ${input.coworkerId})
+    FOR SHARE OF g
+  `;
+}
+
+/**
  * Publication/version/schema/descriptor/grant recheck used after complete args
  * and again immediately before UIInstance creation.
  */
@@ -784,6 +836,11 @@ export async function recheckBrokerComponentAuthority(
       BrokerComponentAuthoritySnapshot,
       "componentVersionId" | "descriptorHash" | "grantScopeHash"
     >;
+    /**
+     * Take row locks before rechecking. Only valid when `sql` is a transaction —
+     * checkpoint 1 runs outside one, where locks would be released immediately.
+     */
+    lockRows?: boolean;
   },
 ): Promise<
   ComponentGatewayResult<BrokerComponentAuthoritySnapshot & { offered: true; hasActiveGrant: true }>
@@ -791,6 +848,15 @@ export async function recheckBrokerComponentAuthority(
   const definition = getRegistryDefinition(input.stableName);
   if (!definition) {
     return { ok: false, code: "not_found", message: "Unknown controlled component." };
+  }
+
+  if (input.lockRows) {
+    await lockBrokerAuthorityRows(sql, {
+      workspaceId: input.workspaceId,
+      channelId: input.channelId,
+      coworkerId: input.coworkerId,
+      stableName: input.stableName,
+    });
   }
 
   const validation = validateRegistryProps(input.stableName, input.props);
@@ -1220,6 +1286,7 @@ export async function brokerComponentToolMcpCall(
       props: input.props,
       expectedSessionGeneration: context.generation,
       expected: expectedAuthority,
+      lockRows: true,
     });
     if (!beforeCreate.ok) {
       return {

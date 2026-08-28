@@ -6,12 +6,15 @@ import {
   loadComponentOfferContext,
   recheckBrokerComponentAuthority,
 } from "./component-tool-gateway";
+import { createSql } from "./client";
+import { migrate } from "./migrate";
 import {
   HASH,
   NOW,
   alignSeededDataTableToRegistry,
   seedRuntime,
   withMigratedDatabase,
+  withTemporaryDatabase,
 } from "./test-harness";
 
 const TASK_CARD_DESCRIPTOR_HASH = getRegistryDefinition("TaskCard")!.descriptorHash;
@@ -366,4 +369,64 @@ describe("component tool gateway", () => {
       });
     });
   });
+
+  it("quarantines instead of persisting an instance when a grant revocation commits during create", async () => {
+    await withTemporaryDatabase(async (url) => {
+      // Two connections so a revocation can be held uncommitted while the broker runs.
+      const sql = createSql(url);
+      const revoker = createSql(url);
+      try {
+        await migrate(sql);
+        await seedRuntime(sql);
+        await seedBrokeredDataTable(sql);
+
+        let holdingRowLock = (): void => undefined;
+        const rowLockHeld = new Promise<void>((resolve) => {
+          holdingRowLock = resolve;
+        });
+        const revoked = revoker.begin(async (tx) => {
+          await tx`
+            UPDATE ui_component_grants SET revoked_at = ${NOW} WHERE id = 'cg_broker'
+          `;
+          holdingRowLock();
+          // Held long enough that the broker reaches checkpoint 2 while this
+          // revocation is still uncommitted — that is the window under test.
+          await new Promise((resolve) => setTimeout(resolve, 1_500));
+        });
+        // Start the broker only once the revocation actually holds the row lock,
+        // otherwise the broker can win the race and the test proves nothing.
+        await rowLockHeld;
+
+        const result = await brokerComponentToolMcpCall(sql, {
+          generationId: "gen_1",
+          stableName: "DataTable",
+          toolCallId: "tc_revoke_race",
+          props: {
+            caption: "Results",
+            empty_text: "No rows",
+            columns: [{ key: "id", label: "ID" }],
+          },
+          now: NOW,
+        });
+        await revoked;
+
+        // Checkpoint 2 takes FOR SHARE on the grant, so it blocks behind the revoker
+        // and re-evaluates once that commits. Without the lock it reads the
+        // pre-revocation snapshot and persists an instance whose authority is gone.
+        expect(result).toMatchObject({
+          status: "quarantined",
+          instanceId: "",
+          renderRevision: null,
+        });
+
+        const instances = await sql<{ id: string }[]>`
+          SELECT id FROM ui_instances WHERE tool_call_id = 'tc_revoke_race'
+        `;
+        expect(instances).toHaveLength(0);
+      } finally {
+        await revoker.end({ timeout: 5 });
+        await sql.end({ timeout: 5 });
+      }
+    });
+  }, 60_000);
 });
