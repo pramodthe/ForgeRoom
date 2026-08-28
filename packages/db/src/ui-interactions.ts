@@ -742,6 +742,7 @@ export async function issueUiInteractionToken(
         expectedRenderRevision: instance.current_render_revision,
         expectedManifestHash: revision.manifest_hash,
         expectedDataRef: actionGrant.data_ref,
+        now,
       });
       if (!linkedDataGrant.ok) {
         return {
@@ -1079,6 +1080,7 @@ export async function commitUiInteraction(
         expectedRenderRevision: row.render_revision,
         expectedManifestHash: row.current_manifest_hash,
         expectedDataRef: actionGrant.data_ref,
+        now,
       });
       if (!retained.ok) {
         return {

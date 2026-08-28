@@ -121,7 +121,10 @@ describe("component tool gateway", () => {
         FROM ui_instance_revisions
         WHERE ui_instance_id = ${result.instanceId}
       `;
-      expect(revisions[0]?.render_node_set_json).toEqual([{ nodeId: "node_1" }]);
+      const renderNodeSet = revisions[0]?.render_node_set_json;
+      expect(
+        typeof renderNodeSet === "string" ? JSON.parse(renderNodeSet) : renderNodeSet,
+      ).toEqual([{ nodeId: "node_1" }]);
 
       const channelEvents = await sql<{ agui_event_type: string | null; sequence: number }[]>`
         SELECT agui_event_type, sequence

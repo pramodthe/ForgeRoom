@@ -160,6 +160,7 @@ export async function loadRetainedDataGrantSnapshot(
     expectedRenderRevision: number;
     expectedManifestHash: string;
     expectedDataRef: string;
+    now: string;
   },
 ): Promise<
   | { ok: true; dataGrant: DataGrant; snapshot: unknown }
@@ -206,7 +207,7 @@ export async function loadRetainedDataGrantSnapshot(
       message: "DataGrant snapshot hash is missing.",
     };
   }
-  if (!dataGrantIsActive(row, new Date())) {
+  if (!dataGrantIsActive(row, new Date(input.now))) {
     return {
       ok: false,
       code: "validation_failed",
