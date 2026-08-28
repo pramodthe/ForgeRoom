@@ -5,10 +5,6 @@ import { loadControlledComponentCandidates, type createSql } from "@forgeroom/db
 import { loadTrueForgeClientFromEnv, type TrueForgeClient } from "@forgeroom/trueforge";
 import type { ChannelAgentSessionRecord, CoworkerRecord, WorkspaceCatalogStore } from "./store";
 import type { ApiEnv } from "../env";
-import {
-  registerUiComponentsMcpForGeneration,
-  unregisterUiComponentsMcpForGeneration,
-} from "../mcp/ui-components-registration";
 
 type SqlClient = ReturnType<typeof createSql>;
 
@@ -265,36 +261,11 @@ export async function ensureCoworkerChannelSession(input: {
     currentGenerationId: generation.id,
     updatedAt: now,
   };
-  let registeredMcpGenerationId: string | null = null;
-  if (input.apiEnv && componentToolNames.length > 0) {
-    await registerUiComponentsMcpForGeneration(client, {
-      env: input.apiEnv,
-      generationId: generation.id,
-      componentToolNames,
-    });
-    registeredMcpGenerationId = generation.id;
-  }
-  try {
-    await input.store.persistProvisionedSession({
-      logicalSession: pointed,
-      revision,
-      generation,
-    });
-  } catch (error) {
-    if (registeredMcpGenerationId) {
-      try {
-        await unregisterUiComponentsMcpForGeneration(client, {
-          generationId: registeredMcpGenerationId,
-        });
-      } catch (cleanupError) {
-        console.error("ui_components_mcp connector cleanup failed after provision persist error", {
-          generationId: registeredMcpGenerationId,
-          error: cleanupError instanceof Error ? cleanupError.message : String(cleanupError),
-        });
-      }
-    }
-    throw error;
-  }
+  await input.store.persistProvisionedSession({
+    logicalSession: pointed,
+    revision,
+    generation,
+  });
 
   return {
     logicalSession: pointed,
