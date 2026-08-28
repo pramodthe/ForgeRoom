@@ -12,7 +12,11 @@ function sha256(value: unknown): string {
   return `sha256:${createHash("sha256").update(canonicalizeJson(value), "utf8").digest("hex")}`;
 }
 
-async function prepareReadySurface(sql: Parameters<typeof seedRuntime>[0]): Promise<void> {
+async function prepareReadySurface(
+  sql: Parameters<typeof seedRuntime>[0],
+  options?: { actionGrantExpiresAt?: string },
+): Promise<void> {
+  const actionGrantExpiresAt = options?.actionGrantExpiresAt ?? NOW;
   const inputSchema = { type: "object", additionalProperties: false, enum: [{}] };
   const actionBody = actionGrantSchema.parse({
     schemaVersion: 1,
@@ -22,7 +26,7 @@ async function prepareReadySurface(sql: Parameters<typeof seedRuntime>[0]): Prom
     surface_id: "ui_1",
     policy_revision: 1,
     issued_by: "application_policy",
-    expires_at: NOW,
+    expires_at: actionGrantExpiresAt,
     revoked_at: null,
     grant_scope_hash: HASH,
     created_at: NOW,
@@ -69,7 +73,8 @@ async function prepareReadySurface(sql: Parameters<typeof seedRuntime>[0]): Prom
     ) VALUES (
       'ag_test', 'ui_1', 'action', 1, 0, ${HASH}, 'select_row', 'select_row', 'local_state',
       ${JSON.stringify(inputSchema)}::jsonb, ${sha256(inputSchema)}, '["node_1"]'::jsonb,
-      ${JSON.stringify(actionBody)}::jsonb, ${HASH}, 3, 0, 'application_policy', ${NOW}, ${NOW}
+      ${JSON.stringify(actionBody)}::jsonb, ${HASH}, 3, 0, 'application_policy',
+      ${actionGrantExpiresAt}, ${NOW}
     )
   `;
 }
@@ -605,6 +610,192 @@ describe("UI interaction gateway", () => {
       expect(queueItems).toEqual([
         { input_type: "component_interaction_response", run_step_id: "step_1" },
       ]);
+    });
+  }, 60_000);
+
+  it("rejects token issue when the ActionGrant is expired", async () => {
+    await withMigratedDatabase(async (sql) => {
+      await seedRuntime(sql);
+      await prepareReadySurface(sql, { actionGrantExpiresAt: "2019-01-01T00:00:00.000Z" });
+      const issued = await issueUiInteractionToken(sql, {
+        instanceId: "ui_1",
+        workspaceId: "ws_1",
+        actorUserId: "user_1",
+        request: {
+          schemaVersion: 1,
+          surfaceId: "ui_1",
+          renderNodeId: "node_1",
+          renderRevision: 0,
+          expectedStateRevision: null,
+          actionGrantId: "ag_test",
+          actionRef: "select_row",
+          input: {},
+          clientKind: "registry",
+          idempotencyKey: "expired-action-grant",
+        },
+        interactionTokenSecret: INTERACTION_TOKEN_SECRET,
+        now: TEST_NOW,
+      });
+      expect(issued).toEqual({
+        ok: false,
+        error: {
+          code: "ui_interaction_not_allowed",
+          message: "ActionGrant is inactive.",
+        },
+      });
+    });
+  }, 60_000);
+
+  it("rejects token issue when the render grant is revoked", async () => {
+    await withMigratedDatabase(async (sql) => {
+      await seedRuntime(sql);
+      await prepareReadySurface(sql);
+      await sql`
+        UPDATE ui_surface_grants
+        SET revoked_at = ${NOW}
+        WHERE id = 'rg_1'
+      `;
+      const issued = await issueUiInteractionToken(sql, {
+        instanceId: "ui_1",
+        workspaceId: "ws_1",
+        actorUserId: "user_1",
+        request: {
+          schemaVersion: 1,
+          surfaceId: "ui_1",
+          renderNodeId: "node_1",
+          renderRevision: 0,
+          expectedStateRevision: null,
+          actionGrantId: "ag_test",
+          actionRef: "select_row",
+          input: {},
+          clientKind: "registry",
+          idempotencyKey: "revoked-render-grant",
+        },
+        interactionTokenSecret: INTERACTION_TOKEN_SECRET,
+        now: TEST_NOW,
+      });
+      expect(issued).toEqual({
+        ok: false,
+        error: {
+          code: "ui_interaction_not_allowed",
+          message: "Render authority is inactive.",
+        },
+      });
+    });
+  }, 60_000);
+
+  it("marks commit stale when the ActionGrant expires before commit", async () => {
+    await withMigratedDatabase(async (sql) => {
+      await seedRuntime(sql);
+      await prepareReadySurface(sql, { actionGrantExpiresAt: "2020-06-01T00:00:00.000Z" });
+      const issued = await issueUiInteractionToken(sql, {
+        instanceId: "ui_1",
+        workspaceId: "ws_1",
+        actorUserId: "user_1",
+        request: {
+          schemaVersion: 1,
+          surfaceId: "ui_1",
+          renderNodeId: "node_1",
+          renderRevision: 0,
+          expectedStateRevision: null,
+          actionGrantId: "ag_test",
+          actionRef: "select_row",
+          input: {},
+          clientKind: "registry",
+          idempotencyKey: "expire-between-issue-commit",
+        },
+        interactionTokenSecret: INTERACTION_TOKEN_SECRET,
+        now: TEST_NOW,
+      });
+      if (!issued.ok) throw new Error(`${issued.error.code}: ${issued.error.message}`);
+      const committed = await commitUiInteraction(sql, {
+        instanceId: "ui_1",
+        workspaceId: "ws_1",
+        actorUserId: "user_1",
+        interactionId: issued.value.interactionId,
+        interactionToken: issued.value.interactionToken,
+        now: NOW,
+      });
+      expect(committed).toMatchObject({
+        ok: true,
+        value: { state: "stale" },
+      });
+    });
+  }, 60_000);
+
+  it("rejects unsupported P1 ActionGrant modes at token issue", async () => {
+    await withMigratedDatabase(async (sql) => {
+      await seedRuntime(sql);
+      await prepareReadySurface(sql);
+      const inputSchema = { type: "object", additionalProperties: false, properties: {} };
+      const unsupportedBody = {
+        schemaVersion: 1,
+        id: "ag_request_turn",
+        workspace_id: "ws_1",
+        channel_id: "ch_1",
+        surface_id: "ui_1",
+        policy_revision: 1,
+        issued_by: "application_policy",
+        expires_at: NOW,
+        revoked_at: null,
+        grant_scope_hash: HASH,
+        created_at: NOW,
+        kind: "action",
+        bound_render_revision: 0,
+        bound_manifest_hash: HASH,
+        action_ref: "request_turn",
+        handler_key: "controlled_ui.request_agent_turn.v1",
+        input_schema: inputSchema,
+        input_schema_hash: sha256(inputSchema),
+        allowed_render_node_ids: ["node_1"],
+        requires_recent_auth: false,
+        requires_trusted_confirmation: false,
+        max_uses: 1,
+        use_count: 0,
+        mode: "request_agent_turn",
+        target_coworker_id: "cw_2",
+        intent_template_hash: HASH,
+      };
+      await sql`
+        INSERT INTO ui_surface_grants (
+          id, ui_instance_id, grant_kind, policy_revision, bound_render_revision, bound_manifest_hash,
+          action_ref, handler_key, action_mode, input_schema_json, input_schema_hash,
+          allowed_render_node_ids_json, grant_body_redacted_json, grant_scope_hash,
+          max_uses, use_count, issued_by, expires_at, created_at
+        ) VALUES (
+          'ag_request_turn', 'ui_1', 'action', 1, 0, ${HASH}, 'request_turn',
+          'controlled_ui.request_agent_turn.v1', 'local_state',
+          ${JSON.stringify(inputSchema)}::jsonb, ${sha256(inputSchema)}, '["node_1"]'::jsonb,
+          ${JSON.stringify(unsupportedBody)}::jsonb, ${HASH}, 1, 0,
+          'application_policy', ${NOW}, ${NOW}
+        )
+      `;
+      const issued = await issueUiInteractionToken(sql, {
+        instanceId: "ui_1",
+        workspaceId: "ws_1",
+        actorUserId: "user_1",
+        request: {
+          schemaVersion: 1,
+          surfaceId: "ui_1",
+          renderNodeId: "node_1",
+          renderRevision: 0,
+          expectedStateRevision: null,
+          actionGrantId: "ag_request_turn",
+          actionRef: "request_turn",
+          input: {},
+          clientKind: "registry",
+          idempotencyKey: "unsupported-mode",
+        },
+        interactionTokenSecret: INTERACTION_TOKEN_SECRET,
+        now: TEST_NOW,
+      });
+      expect(issued).toEqual({
+        ok: false,
+        error: {
+          code: "ui_interaction_not_allowed",
+          message: "ActionGrant mode is unsupported in P0.",
+        },
+      });
     });
   }, 60_000);
 });

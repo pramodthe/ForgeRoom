@@ -20,7 +20,7 @@ TrueForge can call a granted frontend component, persist its exact instance and 
 
 - [ ] Browser renderer tools are advertisements; server offers only its grant intersection to TrueForge.
 - [ ] Publication/version/schema/descriptor/grant recheck occurs after complete args and immediately before instance creation.
-- [ ] Component descriptor/grant changes block affected queue claims, rotate offered-tool session revisions and stale old offers.
+- [ ] Component descriptor/grant changes block affected queue claims, rotate offered-tool session revisions and stale old offers. *(grant rotation + queue block + stale broker generation covered; descriptor publication recheck remains)*
 - [ ] Complete props validate server-side and client-side; one tool call creates one immutable UIInstance lineage.
 - [ ] Server broker returns ordinary render results without a live browser; interactive waiting is represented by a durable interrupt, not an ephemeral callback.
 - [x] `UIComponentInterrupt` is application-owned and distinct from PauseGroup: one bounded result CAS-resolves it and enqueues one structured same-RunStep continuation on the exact session generation; duplicates/stale generations cannot enqueue and no generic UI endpoint calls `RunAgentInput.resume`.
@@ -53,6 +53,8 @@ implemented.
   controlled `provider_unavailable` error translation.
 - [x] Component offer/recheck, finalize/quarantine, and scoped-interaction worker commands.
 - [x] Component grant changes rotate offered-tool session revisions.
+- [x] Component grant rotation blocks queue claims, rejects rotating/stale broker offers,
+  and stales waiting component interrupts on restriction swaps.
 - [x] `server_read` retained DataGrant resolution.
 - [x] `complete_component_interrupt` CAS resolution and same-RunStep continuation enqueue.
 - [x] TrueForge `ui_components_v1` MCP bridge and noninteractive broker tool-result path.
@@ -63,6 +65,14 @@ implemented.
   channel timeline after MCP broker finalize.
 - [x] Universal render grants for every brokered instance; manifest render-node ids (`node_1`) replace
   hardcoded `"root"` in revisions and ActionGrants.
+- [x] Grant expiry/revocation integration tests for token issue and commit stale paths.
+- [x] Unsupported P1 ActionGrant modes fail typed at token issue; commit rejects unsupported modes
+  instead of silently marking interactions stale.
+- [x] `POST /api/ui-instances/:instanceId/data/:functionName` authorize shell with registry +
+  surface DataGrant checks; handlers return typed denial until registered.
+- [x] Broker-time DataGrant provisioning for declared data functions with registry grants.
+- [x] P0 `rows` data-function handler returns bounded retained snapshot reads.
+- [x] P0 route guard: no `/render-capabilities` or P1 confirmation endpoints in ui-instance routes.
 
 - `pnpm --filter @forgeroom/db typecheck`
 - `pnpm --filter @forgeroom/db exec vitest run src/ui-interactions.integration.test.ts`
