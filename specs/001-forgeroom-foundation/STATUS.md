@@ -4,7 +4,7 @@
 | --- | --- |
 | Overall | M0 Demo contract done; M1 Foundation done; P0-315/P0-317/P0-407/P0-316/P0-410/P0-408 done; P0-301–P0-314, P0-404, P0-405 done |
 | Current phase | Phase 1 — Foundation / M5 Verification |
-| Active task | P0-504 (ready once deps confirm) |
+| Active task | P0-504 (ready) |
 | Next task | P0-504 browser E2E |
 | P0 blockers | Run-limit hard enforcement (P0-204/OD-008 evidence) |
 | Last updated | 2026-08-29 (P0-408 slice 3 closeout) |
