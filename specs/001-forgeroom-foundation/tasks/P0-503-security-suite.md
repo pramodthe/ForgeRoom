@@ -36,6 +36,7 @@ pnpm test:security
 
 ## Completion evidence
 
-- Report path:
+- Local report (2026-08-29): `pnpm test:security` release runner under Node 22.12.0 — 71 files / 356 tests passed with no skips across contracts, domain, DB, orchestration, adapters, API, web trusted-host UI, controlled components and trace redaction.
+- Runner fails early below the repository's Node 22.12.0 engine floor and caps DB/API workers to avoid false timeout failures.
 - Checklist reviewer:
-- Open risks:
+- Open risks: independent checklist review and live provider-backed acceptance remain required; this local report does not close either gate.

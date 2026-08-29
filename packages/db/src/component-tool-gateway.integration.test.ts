@@ -134,7 +134,7 @@ describe("component tool gateway", () => {
       `;
       expect(rows[0]).toMatchObject({ status: "ready", current_render_revision: 1 });
     });
-  });
+  }, 60_000);
 
   it("brokers a noninteractive MCP component tool call into a ready instance", async () => {
     await withMigratedDatabase(async (sql) => {
@@ -186,7 +186,7 @@ describe("component tool gateway", () => {
         { agui_event_type: "ACTIVITY_SNAPSHOT", sequence: 1 },
       ]);
     });
-  });
+  }, 60_000);
 
   it("provisions broker DataGrants when a data-function grant exists", async () => {
     await withMigratedDatabase(async (sql) => {

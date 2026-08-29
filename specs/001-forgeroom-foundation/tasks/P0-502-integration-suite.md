@@ -34,5 +34,6 @@ pnpm test:integration
 
 ## Completion evidence
 
-- Report path:
-- Redacted provider trace:
+- Local report (2026-08-29): `pnpm test:integration` release runner — 47 files / 224 tests passed across DB, API, orchestration, AG-UI, Composio, TrueForge, artifacts and private component MCP.
+- Stability remediation: DB-heavy groups are capped at four workers and the two component-gateway cases that exercise migrated databases use the suite-standard 60-second timeout.
+- Redacted provider trace: still required; local adapter/integration success is not represented as a live provider run.

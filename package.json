@@ -16,6 +16,8 @@
     "format": "prettier --write .",
     "typecheck": "pnpm -r --sort --if-present typecheck",
     "test": "pnpm -r --sort --if-present test",
+    "test:integration": "node scripts/run-release-suite.mjs integration",
+    "test:security": "node scripts/run-release-suite.mjs security",
     "test:e2e": "pnpm --filter @forgeroom/e2e test:e2e",
     "test:e2e:providers": "FORGEROOM_E2E_LIVE=providers pnpm --filter @forgeroom/e2e test:e2e",
     "build": "pnpm -r --sort --if-present build",

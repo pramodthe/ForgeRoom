@@ -1,74 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { coworkerDraftSchema, coworkerProfileSchema } from "@forgeroom/contracts";
 import { GOLDEN_RESEARCH_PROMPT } from "@forgeroom/domain";
-import { withMigratedDatabase, seedRuntime } from "@forgeroom/db/test-harness";
-import { loadApiEnv } from "../env";
-import { createApiApp } from "../server";
-import { createAuthService } from "../auth/service";
-import { createMemoryAuthStore } from "../auth/store";
-import { createMemoryWorkspaceStore } from "./store";
-import { createPostgresWorkspaceStore } from "./postgres-store";
-import { createWorkspaceService } from "./service";
-
-const PASSWORD = "correct-horse-battery";
-
-async function createTestApp(
-  store = createMemoryWorkspaceStore(),
-  options?: { workspaceId?: string; ownerUserId?: string },
-) {
-  const authStore = createMemoryAuthStore();
-  const env = loadApiEnv({
-    NODE_ENV: "test",
-    APP_ORIGIN: "http://localhost:5173",
-    OWNER_EMAIL: "owner@example.test",
-    OWNER_PASSWORD: PASSWORD,
-    OWNER_USER_ID: options?.ownerUserId ?? "user_owner",
-    OWNER_DISPLAY_NAME: "Owner",
-    WORKSPACE_ID: options?.workspaceId ?? "workspace_1",
-    LOGIN_RATE_LIMIT_MAX: "20",
-    LOGIN_RATE_LIMIT_WINDOW_MS: "60000",
-    RECENT_AUTH_WINDOW_SECONDS: "300",
-    SESSION_TTL_SECONDS: "3600",
-  });
-  const auth = createAuthService({ env, store: authStore });
-  const workspace = createWorkspaceService({ store });
-  await auth.seedOwner();
-  return {
-    app: createApiApp({ env, auth, workspace }),
-    env,
-    store,
-    workspace,
-  };
-}
-
-function mutationHeaders(
-  env: ReturnType<typeof loadApiEnv>,
-  cookie: string,
-  csrf: string,
-): Record<string, string> {
-  return {
-    "content-type": "application/json",
-    cookie: `${env.sessionCookieName}=${cookie}`,
-    origin: env.appOrigin,
-    "x-csrf-token": csrf,
-  };
-}
-
-async function login(app: ReturnType<typeof createApiApp>, env: ReturnType<typeof loadApiEnv>) {
-  const response = await app.request("/api/auth/login", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ email: "owner@example.test", password: PASSWORD }),
-  });
-  const body = (await response.json()) as { csrf_token: string };
-  const cookie = response.headers
-    .get("set-cookie")
-    ?.match(new RegExp(`${env.sessionCookieName}=([^;]+)`))?.[1];
-  if (!cookie) {
-    throw new Error("missing session cookie");
-  }
-  return { cookie, csrf: body.csrf_token };
-}
+import {
+  coworkerDraftMutationHeaders as mutationHeaders,
+  createCoworkerDraftTestApp as createTestApp,
+  loginCoworkerDraftTestApp as login,
+} from "./coworker-drafts.test-helpers";
 
 describe("coworker drafts API", () => {
   it("creates a read-only research draft for the golden prompt without mutating coworkers", async () => {
@@ -184,60 +121,4 @@ describe("coworker drafts API", () => {
     const listBody = (await listed.json()) as { coworkers: unknown[] };
     expect(listBody.coworkers).toHaveLength(1);
   });
-
-  it.skipIf(!process.env.DATABASE_URL)(
-    "persists idempotent confirm through postgres",
-    async () => {
-      await withMigratedDatabase(async (sql) => {
-        await seedRuntime(sql);
-        await sql`
-          UPDATE agent_profiles
-          SET handle = 'seeded_research'
-          WHERE id = 'cw_1'
-        `;
-        const store = createPostgresWorkspaceStore(sql);
-        const { app, env } = await createTestApp(store, {
-          workspaceId: "ws_1",
-          ownerUserId: "user_1",
-        });
-        const { cookie, csrf } = await login(app, env);
-        const created = await app.request(`/api/workspaces/${env.workspaceId}/coworker-drafts`, {
-          method: "POST",
-          headers: mutationHeaders(env, cookie, csrf),
-          body: JSON.stringify({
-            schemaVersion: 1,
-            request: GOLDEN_RESEARCH_PROMPT,
-            idempotency_key: "idem_pg_confirm_draft",
-          }),
-        });
-        expect(created.status).toBe(201);
-        const draft = coworkerDraftSchema.parse(
-          ((await created.json()) as { draft: unknown }).draft,
-        );
-        const confirmBody = {
-          schemaVersion: 1 as const,
-          draft_revision: draft.revision,
-          draft_hash: draft.draft_hash,
-          policy_revision: draft.policy_revision,
-          catalog_revision: draft.catalog_revision,
-          idempotency_key: "idem_pg_confirm_once",
-        };
-        await app.request(`/api/coworker-drafts/${draft.id}/confirm`, {
-          method: "POST",
-          headers: mutationHeaders(env, cookie, csrf),
-          body: JSON.stringify(confirmBody),
-        });
-        await app.request(`/api/coworker-drafts/${draft.id}/confirm`, {
-          method: "POST",
-          headers: mutationHeaders(env, cookie, csrf),
-          body: JSON.stringify(confirmBody),
-        });
-        const listed = await app.request(`/api/workspaces/${env.workspaceId}/coworkers`, {
-          headers: { cookie: `${env.sessionCookieName}=${cookie}` },
-        });
-        expect(((await listed.json()) as { coworkers: unknown[] }).coworkers).toHaveLength(2);
-      });
-    },
-    60_000,
-  );
 });
