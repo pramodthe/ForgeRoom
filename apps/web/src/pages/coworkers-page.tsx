@@ -2,23 +2,32 @@ import { Link, useParams } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { CoworkerDraft } from "@forgeroom/contracts";
 import { LoadingState, RouteErrorState } from "@forgeroom/ui-components";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   confirmCoworkerDraft,
   createCoworkerDraft,
   createFixtureResearcher,
   disableCoworker,
   getCoworker,
+  getCoworkerDraft,
   listCoworkerDirectory,
   updateCoworker,
   type CoworkerDetail,
 } from "../api/workspace-api";
-import { newIdempotencyKey } from "../api/http-client";
+import { ApiError, newIdempotencyKey } from "../api/http-client";
 import { isFixtureMode } from "../api/mode";
 import { useSession } from "../auth/session-context";
 import { workspaceCoworkerDetailPath, workspaceCoworkersPath } from "../routes/paths";
 import { Avatar } from "../ui/avatar";
 import { useDialogFocus } from "../ui/use-dialog-focus";
+import {
+  buildFixtureCoworkerDraft,
+  clearCoworkerDraftReview,
+  formatTaskRecordGrant,
+  parseCoworkerDraftFromError,
+  persistCoworkerDraftReview,
+  readCoworkerDraftReview,
+} from "./review-flow-helpers";
 import { approvalPolicyLines, summarizeCoworkerGrants } from "./settings-helpers";
 
 export function CoworkersPage() {
@@ -171,13 +180,31 @@ function CoworkerBuilder({
   );
   const [draft, setDraft] = useState<CoworkerDraft | null>(null);
   const [creationError, setCreationError] = useState<string | null>(null);
+  const [staleNotice, setStaleNotice] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (isFixtureMode || !session) return;
+    const draftId = readCoworkerDraftReview(workspaceId);
+    if (!draftId) return;
+    void getCoworkerDraft({ draftId })
+      .then((restored) => {
+        setDraft(restored);
+        setStage("review");
+      })
+      .catch(() => {
+        clearCoworkerDraftReview(workspaceId);
+      });
+  }, [session, workspaceId]);
 
   async function generateDraft() {
     setCreationError(null);
+    setStaleNotice(null);
     setStage("gathering");
     try {
       if (isFixtureMode) {
         await new Promise((resolve) => window.setTimeout(resolve, 500));
+        const fixtureDraft = buildFixtureCoworkerDraft(workspaceId, prompt);
+        setDraft(fixtureDraft);
         setStage("review");
         return;
       }
@@ -194,6 +221,7 @@ function CoworkerBuilder({
         },
       });
       setDraft(created);
+      persistCoworkerDraftReview(workspaceId, created.id);
       setStage("review");
     } catch (error) {
       setCreationError(error instanceof Error ? error.message : "Unable to create draft.");
@@ -203,6 +231,7 @@ function CoworkerBuilder({
 
   async function confirmDraft() {
     setCreationError(null);
+    setStaleNotice(null);
     setStage("confirming");
     try {
       if (isFixtureMode) {
@@ -210,6 +239,7 @@ function CoworkerBuilder({
         setStage("creating");
         await createFixtureResearcher(workspaceId);
         await onCreated();
+        clearCoworkerDraftReview(workspaceId);
         await new Promise((resolve) => window.setTimeout(resolve, 700));
         setStage("ready");
         return;
@@ -217,7 +247,7 @@ function CoworkerBuilder({
       if (!session || !draft) {
         throw new Error("Your session expired. Sign in again.");
       }
-      await confirmCoworkerDraft({
+      const result = await confirmCoworkerDraft({
         draftId: draft.id,
         csrfToken: session.csrf_token,
         command: {
@@ -229,10 +259,34 @@ function CoworkerBuilder({
           idempotency_key: newIdempotencyKey("coworker_confirm"),
         },
       });
+      setDraft(result.draft);
       setStage("creating");
       await onCreated();
+      clearCoworkerDraftReview(workspaceId);
       setStage("ready");
     } catch (error) {
+      const refreshed = parseCoworkerDraftFromError(error);
+      if (refreshed) {
+        setDraft(refreshed);
+        persistCoworkerDraftReview(workspaceId, refreshed.id);
+        setStaleNotice(
+          "The draft changed on the server. Review the updated revision before creating.",
+        );
+        setStage("review");
+        return;
+      }
+      if (error instanceof ApiError && error.code === "coworker_provisioning_failed") {
+        setCreationError(error.message);
+        setStage("review");
+        return;
+      }
+      if (error instanceof ApiError && error.code === "expired_proposal") {
+        clearCoworkerDraftReview(workspaceId);
+        setDraft(null);
+        setCreationError(error.message);
+        setStage("prompt");
+        return;
+      }
       setCreationError(error instanceof Error ? error.message : "Unable to create coworker.");
       setStage("review");
     }
@@ -310,6 +364,14 @@ function CoworkerBuilder({
               onCreate={() => void confirmDraft()}
             />
           ) : null}
+          {staleNotice ? (
+            <p
+              className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"
+              role="status"
+            >
+              {staleNotice}
+            </p>
+          ) : null}
           {creationError ? (
             <p
               className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800"
@@ -320,14 +382,14 @@ function CoworkerBuilder({
           ) : null}
           {stage === "confirming" ? (
             <BuilderProgress
-              title="Confirming draft revision 1…"
+              title={`Confirming draft revision ${draft?.revision ?? 1}…`}
               detail="Binding the exact reviewed hash before any profile is created."
             />
           ) : null}
           {stage === "creating" ? (
             <BuilderProgress
-              title="Provisioning Researcher…"
-              detail="Creating the immutable profile and its General channel session."
+              title={`Provisioning ${draft?.proposal.name ?? "coworker"}…`}
+              detail="Creating the immutable profile and provisioning channel sessions."
             />
           ) : null}
           {stage === "ready" ? (
@@ -338,7 +400,10 @@ function CoworkerBuilder({
               <h3 className="mt-4 text-lg font-semibold text-zinc-950">
                 {draft?.proposal.name ?? "Researcher"} is ready
               </h3>
-              <p className="mt-1 text-sm text-zinc-500">Added to General with read-only tools.</p>
+              <p className="mt-1 text-sm text-zinc-500">
+                Added to {draft?.proposal.channel_ids.length ?? 1} channel
+                {(draft?.proposal.channel_ids.length ?? 1) === 1 ? "" : "s"} with reviewed grants.
+              </p>
               <button
                 type="button"
                 onClick={onClose}
@@ -378,11 +443,19 @@ function PermissionReview({
   const instructions =
     draft?.proposal.standing_instructions ??
     "Analyze support and GitHub evidence, identify customer patterns, and prepare sourced briefings.";
-  const tools = draft?.effective_preview.tools ?? ["GITHUB_GET_AN_ISSUE"];
-  const denials = draft?.effective_preview.denials ?? [
-    "knowledge_memory_workflow_unsupported_in_p0",
-    "native_subagents",
-  ];
+  const tools = draft?.effective_preview.tools ?? [];
+  const denials = draft?.effective_preview.denials ?? [];
+  const channels = draft?.proposal.channel_ids ?? [];
+  const skills = draft?.proposal.skill_version_ids ?? [];
+  const components = draft?.proposal.component_version_ids ?? [];
+  const taskGrants = draft?.proposal.task_record_grants ?? [];
+  if (!draft) {
+    return (
+      <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+        Generate a review draft before confirming permissions.
+      </div>
+    );
+  }
   return (
     <div>
       <div className="rounded-2xl border border-violet-100 bg-violet-50/60 p-4">
@@ -401,22 +474,33 @@ function PermissionReview({
         <ReviewGroup
           title="Access"
           items={[
-            draft?.effective_preview.account ?? "Workspace service account",
-            ...tools.map((tool) => `${tool} · read`),
+            draft.effective_preview.account,
+            `${channels.length} channel${channels.length === 1 ? "" : "s"}`,
+            ...tools.map((tool) => `${tool} · direct`),
           ]}
         />
         <ReviewGroup
           title="Capabilities"
           items={[
-            `Sandbox ${draft?.effective_preview.sandbox ? "enabled" : "disabled"}`,
-            `${draft?.proposal.budget.max_tool_calls ?? 20} calls · ${draft?.proposal.budget.max_turn_tokens ?? 12000} tokens`,
+            `Sandbox ${draft.effective_preview.sandbox ? "enabled" : "disabled"}`,
+            `${draft.proposal.budget.max_tool_calls} calls · ${draft.proposal.budget.max_turn_tokens.toLocaleString()} tokens`,
+            `${skills.length} private skill${skills.length === 1 ? "" : "s"}`,
+            `${components.length} controlled component${components.length === 1 ? "" : "s"}`,
           ]}
+        />
+        <ReviewGroup
+          title="TaskRecord scope"
+          items={
+            taskGrants.length > 0
+              ? taskGrants.map((grant) => formatTaskRecordGrant(grant))
+              : ["No TaskRecord write grants"]
+          }
         />
         <ReviewGroup
           title="Approval policy"
           items={[
-            "No external writes",
-            "No destructive tools",
+            "External writes require human approval",
+            "Destructive tools remain blocked in P0",
             "Read provider data may leave workspace",
           ]}
         />

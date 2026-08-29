@@ -491,38 +491,49 @@ export async function updateFixtureTaskStatus(input: {
   status: TaskStatus;
   csrfToken?: string;
 }): Promise<TaskRecordV1> {
-  if (!useMockApi) {
+  const attempt = async (): Promise<TaskRecordV1> => {
+    if (!useMockApi) {
+      const current = await getTask(input.workspaceId, input.taskId);
+      if (!current) throw new Error("task_not_found");
+      const body = await apiFetch<{ task: unknown; request_id: string }>(
+        `/api/tasks/${encodeURIComponent(input.taskId)}`,
+        {
+          method: "PATCH",
+          csrfToken: input.csrfToken ?? "",
+          body: JSON.stringify({
+            schemaVersion: 1,
+            expected_revision: current.current_revision,
+            idempotency_key: newIdempotencyKey("task_update"),
+            status: input.status,
+          }),
+        },
+      );
+      return taskRecordV1Schema.parse(stripRequestId(body).task);
+    }
+    assertWorkspace(input.workspaceId);
     const current = await getTask(input.workspaceId, input.taskId);
     if (!current) throw new Error("task_not_found");
-    const body = await apiFetch<{ task: unknown; request_id: string }>(
-      `/api/tasks/${encodeURIComponent(input.taskId)}`,
-      {
-        method: "PATCH",
-        csrfToken: input.csrfToken ?? "",
-        body: JSON.stringify({
-          schemaVersion: 1,
-          expected_revision: current.current_revision,
-          idempotency_key: newIdempotencyKey("task_update"),
-          status: input.status,
-        }),
-      },
-    );
-    return taskRecordV1Schema.parse(stripRequestId(body).task);
+    if (!canTransitionTask(current.status, input.status)) {
+      throw new Error(`task_transition_not_allowed:${current.status}->${input.status}`);
+    }
+    const updated = taskRecordV1Schema.parse({
+      ...current,
+      status: input.status,
+      current_revision: current.current_revision + 1,
+      updated_at: new Date().toISOString(),
+    });
+    persistFixtureTask(updated);
+    return updated;
+  };
+
+  try {
+    return await attempt();
+  } catch (error) {
+    if (error instanceof ApiError && error.code === "stale_task_revision") {
+      return attempt();
+    }
+    throw error;
   }
-  assertWorkspace(input.workspaceId);
-  const current = await getTask(input.workspaceId, input.taskId);
-  if (!current) throw new Error("task_not_found");
-  if (!canTransitionTask(current.status, input.status)) {
-    throw new Error(`task_transition_not_allowed:${current.status}->${input.status}`);
-  }
-  const updated = taskRecordV1Schema.parse({
-    ...current,
-    status: input.status,
-    current_revision: current.current_revision + 1,
-    updated_at: new Date().toISOString(),
-  });
-  persistFixtureTask(updated);
-  return updated;
 }
 
 export async function listCoworkers(workspaceId: string): Promise<CoworkerProfile[]> {
