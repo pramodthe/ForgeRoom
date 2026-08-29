@@ -1,0 +1,4 @@
+# Notion MCP is configured at the project level so collaborators can connect
+# their own Notion workspaces through the same trusted remote endpoint.
+[mcp_servers.notion]
+url = "https://mcp.notion.com/mcp"
