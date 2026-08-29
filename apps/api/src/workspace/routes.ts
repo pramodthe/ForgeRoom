@@ -19,6 +19,7 @@ import {
   coworkerUpdateCommandSchema,
   taskCreateCommandSchema,
   taskUpdateCommandSchema,
+  runCancelCommandSchema,
 } from "@forgeroom/contracts";
 import { randomOpaqueId } from "../auth/crypto";
 import type { AuthService } from "../auth/service";
@@ -918,6 +919,22 @@ export function mountWorkspaceRoutes(
     return okJson(c, { revisions: result.value }, 200);
   });
 
+  app.get("/api/runs/:runId", async (c) => {
+    const authed = await requireSession(c, env, auth);
+    if (authed instanceof Response) {
+      return authed;
+    }
+    const runId = requireParam(c, "runId");
+    if (runId instanceof Response) {
+      return runId;
+    }
+    const result = await workspace.getRun(authed.session, runId);
+    if (!result.ok) {
+      return fail(c, result.error);
+    }
+    return okJson(c, result.value, 200);
+  });
+
   app.get("/api/runs/:runId/receipt", async (c) => {
     const authed = await requireSession(c, env, auth);
     if (authed instanceof Response) {
@@ -943,14 +960,15 @@ export function mountWorkspaceRoutes(
     if (runId instanceof Response) {
       return runId;
     }
-    const body = (await c.req.json().catch(() => ({}))) as { run_step_id?: string };
-    if (!body.run_step_id) {
-      const failure = errorResponse("validation_failed", "run_step_id is required.", {
+    const body = (await c.req.json().catch(() => ({}))) as unknown;
+    const parsed = runCancelCommandSchema.safeParse(body);
+    if (!parsed.success) {
+      const failure = errorResponse("validation_failed", "Invalid run cancel command.", {
         status: 400,
       });
       return c.json(failure.body, failure.status);
     }
-    const result = await workspace.cancelRunStep(authed.session, runId, body.run_step_id);
+    const result = await workspace.cancelRun(authed.session, runId, parsed.data);
     if (!result.ok) {
       return fail(c, result.error);
     }

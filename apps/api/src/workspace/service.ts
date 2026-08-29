@@ -25,6 +25,9 @@ import type {
   SafeJsonObject,
   SessionResponse,
   P0PersistedAguiEvent,
+  RunCancelCommand,
+  RunCancelResult,
+  RunDetailResponse,
   TaskCreateCommand,
   TaskRecordV1,
   TaskRevision,
@@ -67,6 +70,8 @@ import {
 } from "@forgeroom/db";
 import { randomOpaqueId } from "../auth/crypto";
 import { getRunReceiptForSession } from "../runs/receipt";
+import { getRunForSession } from "../runs/detail";
+import { cancelRunForSession } from "../runs/cancel";
 import { customAguiEvent, messageCreatedAguiEvent, pinAguiEvent } from "./event-builders";
 import { ChannelEventPersistenceError } from "./event-guard";
 import { createChannelEventHub, type ChannelEventHub } from "./event-hub";
@@ -575,6 +580,15 @@ export type WorkspaceService = {
       cancel_called: boolean;
     }>
   >;
+  getRun(
+    session: SessionResponse,
+    runId: string,
+  ): Promise<WorkspaceServiceResult<RunDetailResponse>>;
+  cancelRun(
+    session: SessionResponse,
+    runId: string,
+    command: RunCancelCommand,
+  ): Promise<WorkspaceServiceResult<RunCancelResult>>;
   getRunReceipt(
     session: SessionResponse,
     runId: string,
@@ -4181,6 +4195,26 @@ export function createWorkspaceService(options?: {
 
     async getRunReceipt(session, runId) {
       return getRunReceiptForSession({ store, sql, now }, session, runId);
+    },
+
+    async getRun(session, runId) {
+      if (!sql) {
+        return {
+          ok: false,
+          error: { code: "not_found", message: "Run detail requires a database-backed API." },
+        };
+      }
+      return getRunForSession(sql, session, runId);
+    },
+
+    async cancelRun(session, runId, command) {
+      if (!sql) {
+        return {
+          ok: false,
+          error: { code: "not_found", message: "Run control requires a database-backed API." },
+        };
+      }
+      return cancelRunForSession({ sql, trueforgeClient }, session, runId, command);
     },
 
     async steerCorrection(session, runId, input) {

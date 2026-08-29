@@ -126,9 +126,27 @@ export const runStepCancelCommandSchema = z
   })
   .strict();
 
+export const runDetailResponseSchema = z
+  .object({
+    run: runSchema,
+    source_message_body: z.string(),
+  })
+  .strict();
+
+export const runCancelResultSchema = z
+  .object({
+    run_id: opaqueIdSchema,
+    lifecycle: runLifecycleSchema,
+    cancelled_step_ids: z.array(opaqueIdSchema),
+    cancel_called: z.boolean(),
+  })
+  .strict();
+
 export type Run = z.infer<typeof runSchema>;
 export type RunStep = z.infer<typeof runStepSchema>;
 export type RunStepState = z.infer<typeof runStepStateSchema>;
 export type AgentTurnState = z.infer<typeof agentTurnStateSchema>;
 export type RunCancelCommand = z.infer<typeof runCancelCommandSchema>;
 export type RunSteerCommand = z.infer<typeof runSteerCommandSchema>;
+export type RunDetailResponse = z.infer<typeof runDetailResponseSchema>;
+export type RunCancelResult = z.infer<typeof runCancelResultSchema>;

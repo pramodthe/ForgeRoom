@@ -69,6 +69,7 @@ export {
   aggregateRunFromStepsLocal,
   applyRunLifecycleProjection,
 } from "./multi-agent-run";
+export { loadRunDetail, type RunDetailRecord } from "./run-detail";
 export {
   loadAgentTurnCreateContext,
   markComponentInterruptContinued,

@@ -4,6 +4,9 @@ import type {
   ApprovalDecisionResult,
   AuditReceipt,
   ChannelPendingApprovalsResponse,
+  RunCancelCommand,
+  RunCancelResult,
+  RunDetailResponse,
   UiDataFunctionCommand,
   UiInstanceReplayResponse,
 } from "@forgeroom/contracts";
@@ -12,6 +15,8 @@ import {
   approvalDecisionResultSchema,
   auditReceiptSchema,
   channelPendingApprovalsResponseSchema,
+  runCancelResultSchema,
+  runDetailResponseSchema,
   uiInstanceReplayResponseSchema,
 } from "@forgeroom/contracts";
 import { apiFetch, ApiError, stripRequestId } from "./http-client";
@@ -48,6 +53,24 @@ export async function listChannelPendingApprovals(
   return channelPendingApprovalsResponseSchema.parse(
     stripRequestId(body as { request_id: string }),
   );
+}
+
+export async function getRun(runId: string): Promise<RunDetailResponse> {
+  const body = await apiFetch<unknown>(`/api/runs/${encodeURIComponent(runId)}`);
+  return runDetailResponseSchema.parse(stripRequestId(body as { request_id: string }));
+}
+
+export async function cancelRun(input: {
+  runId: string;
+  command: RunCancelCommand;
+  csrfToken: string;
+}): Promise<RunCancelResult> {
+  const body = await apiFetch<unknown>(`/api/runs/${encodeURIComponent(input.runId)}/cancel`, {
+    method: "POST",
+    csrfToken: input.csrfToken,
+    body: JSON.stringify(input.command),
+  });
+  return runCancelResultSchema.parse(stripRequestId(body as { request_id: string }));
 }
 
 export async function getRunReceipt(runId: string): Promise<{

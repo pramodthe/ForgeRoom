@@ -188,6 +188,8 @@ export {
   runCancelCommandSchema,
   runSteerCommandSchema,
   runStepCancelCommandSchema,
+  runDetailResponseSchema,
+  runCancelResultSchema,
 } from "./runs";
 export type {
   Run,
@@ -197,6 +199,8 @@ export type {
   RunStepState,
   RunCancelCommand,
   RunSteerCommand,
+  RunDetailResponse,
+  RunCancelResult,
 } from "./runs";
 
 export {
