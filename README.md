@@ -2,6 +2,8 @@
 
 **ForgeRoom is a shared workspace for people and persistent AI coworkers to do real work together—openly, visibly, and with human control at the moments that matter.**
 
+hello
+
 [View the public repository](https://github.com/pramodthe/ForgeRoom) · [Read the product specs](./specs/README.md) · [Browse the commit history](https://github.com/pramodthe/ForgeRoom/commits/main)
 
 ## What ForgeRoom is
