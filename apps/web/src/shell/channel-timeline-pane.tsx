@@ -18,6 +18,7 @@ import { ChannelComposer } from "./channel-composer";
 import { ChannelHeader } from "./channel-header";
 import { ChannelTimeline } from "./channel-timeline";
 import { PendingApprovalsStrip } from "./pending-approvals-strip";
+import { PendingQuestionsStrip } from "./pending-questions-strip";
 import { useChannelWorkroomUi } from "./channel-workroom-ui-context";
 
 type ChannelTimelinePaneProps = {
@@ -133,6 +134,7 @@ export function ChannelTimelinePane({
         }
       />
       <PendingApprovalsStrip channelId={channel.id} archived={archived} />
+      <PendingQuestionsStrip channelId={channel.id} archived={archived} />
       <ChannelTimeline
         workspaceId={workspaceId}
         channelId={channel.id}

@@ -4,17 +4,39 @@ import type {
   ApprovalDecisionResult,
   AuditReceipt,
   ChannelPendingApprovalsResponse,
+  ChannelPendingQuestionsResponse,
+  QuestionAnswerCommand,
+  QuestionAnswerResult,
+  QuestionCard,
+  RunCancelCommand,
+  RunCancelResult,
+  RunDetailResponse,
   UiDataFunctionCommand,
   UiInstanceReplayResponse,
+  UiInteractionResult,
+  UiInteractionTokenRequest,
 } from "@forgeroom/contracts";
 import {
   approvalCardSchema,
   approvalDecisionResultSchema,
   auditReceiptSchema,
   channelPendingApprovalsResponseSchema,
+  channelPendingQuestionsResponseSchema,
+  questionAnswerResultSchema,
+  questionCardSchema,
+  runCancelResultSchema,
+  runDetailResponseSchema,
   uiInstanceReplayResponseSchema,
+  uiInteractionResultSchema,
+  uiInteractionTokenResponseSchema,
 } from "@forgeroom/contracts";
 import { apiFetch, ApiError, stripRequestId } from "./http-client";
+
+type UiInteractionCommitCommand = {
+  schemaVersion: 1;
+  interactionId: string;
+  interactionToken: string;
+};
 
 export async function getApprovalCard(proposalId: string): Promise<ApprovalCard> {
   const body = await apiFetch<{ card: unknown; request_id: string }>(
@@ -48,6 +70,58 @@ export async function listChannelPendingApprovals(
   return channelPendingApprovalsResponseSchema.parse(
     stripRequestId(body as { request_id: string }),
   );
+}
+
+export async function getQuestionCard(questionId: string): Promise<QuestionCard> {
+  const body = await apiFetch<{ card: unknown; request_id: string }>(
+    `/api/questions/${encodeURIComponent(questionId)}`,
+  );
+  return questionCardSchema.parse(stripRequestId(body).card);
+}
+
+export async function postQuestionAnswer(input: {
+  questionId: string;
+  command: QuestionAnswerCommand;
+  csrfToken: string;
+}): Promise<QuestionAnswerResult> {
+  const body = await apiFetch<unknown>(
+    `/api/questions/${encodeURIComponent(input.questionId)}/answer`,
+    {
+      method: "POST",
+      csrfToken: input.csrfToken,
+      body: JSON.stringify(input.command),
+    },
+  );
+  return questionAnswerResultSchema.parse(stripRequestId(body as { request_id: string }));
+}
+
+export async function listChannelPendingQuestions(
+  channelId: string,
+): Promise<ChannelPendingQuestionsResponse> {
+  const body = await apiFetch<unknown>(
+    `/api/channels/${encodeURIComponent(channelId)}/pending-questions`,
+  );
+  return channelPendingQuestionsResponseSchema.parse(
+    stripRequestId(body as { request_id: string }),
+  );
+}
+
+export async function getRun(runId: string): Promise<RunDetailResponse> {
+  const body = await apiFetch<unknown>(`/api/runs/${encodeURIComponent(runId)}`);
+  return runDetailResponseSchema.parse(stripRequestId(body as { request_id: string }));
+}
+
+export async function cancelRun(input: {
+  runId: string;
+  command: RunCancelCommand;
+  csrfToken: string;
+}): Promise<RunCancelResult> {
+  const body = await apiFetch<unknown>(`/api/runs/${encodeURIComponent(input.runId)}/cancel`, {
+    method: "POST",
+    csrfToken: input.csrfToken,
+    body: JSON.stringify(input.command),
+  });
+  return runCancelResultSchema.parse(stripRequestId(body as { request_id: string }));
 }
 
 export async function getRunReceipt(runId: string): Promise<{
@@ -89,6 +163,49 @@ export async function postUiInstanceDataFunction(input: {
     },
   );
   return stripRequestId(body).data;
+}
+
+export async function postUiInstanceInteractionToken(input: {
+  instanceId: string;
+  request: UiInteractionTokenRequest;
+  csrfToken: string;
+}): Promise<{
+  interactionId: string;
+  interactionToken: string;
+  expiresAt: string;
+}> {
+  const body = await apiFetch<unknown>(
+    `/api/ui-instances/${encodeURIComponent(input.instanceId)}/interaction-tokens`,
+    {
+      method: "POST",
+      csrfToken: input.csrfToken,
+      body: JSON.stringify(input.request),
+    },
+  );
+  const parsed = uiInteractionTokenResponseSchema.parse(
+    stripRequestId(body as { request_id: string }),
+  );
+  return {
+    interactionId: parsed.interactionId,
+    interactionToken: parsed.interactionToken,
+    expiresAt: parsed.expiresAt,
+  };
+}
+
+export async function postUiInstanceInteraction(input: {
+  instanceId: string;
+  command: UiInteractionCommitCommand;
+  csrfToken: string;
+}): Promise<UiInteractionResult> {
+  const body = await apiFetch<unknown>(
+    `/api/ui-instances/${encodeURIComponent(input.instanceId)}/interactions`,
+    {
+      method: "POST",
+      csrfToken: input.csrfToken,
+      body: JSON.stringify(input.command),
+    },
+  );
+  return uiInteractionResultSchema.parse(stripRequestId(body as { request_id: string }));
 }
 
 export async function getArtifact(artifactId: string) {

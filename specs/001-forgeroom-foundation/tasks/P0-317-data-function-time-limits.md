@@ -1,7 +1,7 @@
 ---
 id: P0-317
 title: Bound controlled data-function reads with a time limit
-status: ready
+status: in_review
 owner: unassigned
 depends_on: [P0-315]
 requirements: [GUI-010]
@@ -32,10 +32,10 @@ row/byte/time bound that P0-315 requires of every reviewed read-only handler.
 
 ## Acceptance criteria
 
-- [ ] `DataGrant` carries an explicit time bound and rejects grants that omit it.
-- [ ] Exceeding the bound fails with a typed limit error, not a hang or a partial read.
-- [ ] The bound is re-checked from the retained grant on replay, not taken from caller input.
-- [ ] Row, byte and time limits are enforced together, and a breach of any one is attributed.
+- [x] `DataGrant` carries an explicit time bound and rejects grants that omit it. *(legacy persisted grants default to 1_000 ms; broker-issued grants always persist `max_time_ms`)*
+- [x] Exceeding the bound fails with a typed limit error, not a hang or a partial read.
+- [x] The bound is re-checked from the retained grant on replay, not taken from caller input.
+- [x] Row, byte and time limits are enforced together, and a breach of any one is attributed.
 
 ## Implementation notes
 
@@ -72,6 +72,8 @@ Manual or provider-backed checks:
 
 - 2026-08-28 — Split out of P0-315 during acceptance-criteria audit. P0-315 enforces row and byte
   limits but has no time bound on `DataGrant` or anywhere in the data-function path.
+- 2026-08-29 — Closeout: `max_time_ms` on `DataGrant`, `applySnapshotLimits` + `invokeUiDataFunction`
+  enforcement, attributed `DataGrantLimitExceededError`, integration tests for bytes/time breach.
 
 ## Handoff
 

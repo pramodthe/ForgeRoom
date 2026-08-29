@@ -25,6 +25,13 @@ import type {
   SafeJsonObject,
   SessionResponse,
   P0PersistedAguiEvent,
+  RunCancelCommand,
+  RunCancelResult,
+  RunDetailResponse,
+  SkillDraft,
+  SkillDraftCreateCommand,
+  SkillDraftPublishCommand,
+  SkillVersion,
   TaskCreateCommand,
   TaskRecordV1,
   TaskRevision,
@@ -67,6 +74,11 @@ import {
 } from "@forgeroom/db";
 import { randomOpaqueId } from "../auth/crypto";
 import { getRunReceiptForSession } from "../runs/receipt";
+import { getRunForSession } from "../runs/detail";
+import { cancelRunForSession } from "../runs/cancel";
+import { createSkillDraftForRun, getSkillDraftForSession } from "../skills/drafts";
+import { getSkillVersionForSession, publishSkillDraftForSession } from "../skills/publish";
+import { getSkillDraftById, getSkillVersionById } from "@forgeroom/db";
 import { customAguiEvent, messageCreatedAguiEvent, pinAguiEvent } from "./event-builders";
 import { ChannelEventPersistenceError } from "./event-guard";
 import { createChannelEventHub, type ChannelEventHub } from "./event-hub";
@@ -575,6 +587,15 @@ export type WorkspaceService = {
       cancel_called: boolean;
     }>
   >;
+  getRun(
+    session: SessionResponse,
+    runId: string,
+  ): Promise<WorkspaceServiceResult<RunDetailResponse>>;
+  cancelRun(
+    session: SessionResponse,
+    runId: string,
+    command: RunCancelCommand,
+  ): Promise<WorkspaceServiceResult<RunCancelResult>>;
   getRunReceipt(
     session: SessionResponse,
     runId: string,
@@ -585,6 +606,24 @@ export type WorkspaceService = {
       disclaimer: string;
     }>
   >;
+  createSkillDraft(
+    session: SessionResponse,
+    runId: string,
+    command: SkillDraftCreateCommand,
+  ): Promise<WorkspaceServiceResult<SkillDraft>>;
+  getSkillDraft(
+    session: SessionResponse,
+    draftId: string,
+  ): Promise<WorkspaceServiceResult<SkillDraft>>;
+  publishSkillDraft(
+    session: SessionResponse,
+    draftId: string,
+    command: SkillDraftPublishCommand,
+  ): Promise<WorkspaceServiceResult<SkillVersion>>;
+  getSkillVersion(
+    session: SessionResponse,
+    versionId: string,
+  ): Promise<WorkspaceServiceResult<SkillVersion>>;
   steerCorrection(
     session: SessionResponse,
     runId: string,
@@ -4181,6 +4220,95 @@ export function createWorkspaceService(options?: {
 
     async getRunReceipt(session, runId) {
       return getRunReceiptForSession({ store, sql, now }, session, runId);
+    },
+
+    async createSkillDraft(session, runId, command) {
+      if (!sql) {
+        return {
+          ok: false,
+          error: { code: "not_found", message: "Skill drafts require a database-backed API." },
+        };
+      }
+      const draftId = randomOpaqueId("skd");
+      const skillId = randomOpaqueId("skill");
+      return withIdempotency({
+        workspaceId: session.workspace_id,
+        commandKind: "skill_draft.create",
+        idempotencyKey: command.idempotency_key,
+        resultId: draftId,
+        reload: async (id) => {
+          const loaded = await getSkillDraftById(sql, id);
+          if (!loaded || loaded.workspaceId !== session.workspace_id) {
+            return null;
+          }
+          return loaded.draft;
+        },
+        run: async () =>
+          createSkillDraftForRun(sql, session, runId, command, now, { draftId, skillId }),
+      });
+    },
+
+    async getSkillDraft(session, draftId) {
+      if (!sql) {
+        return {
+          ok: false,
+          error: { code: "not_found", message: "Skill drafts require a database-backed API." },
+        };
+      }
+      return getSkillDraftForSession(sql, session, draftId);
+    },
+
+    async publishSkillDraft(session, draftId, command) {
+      if (!sql) {
+        return {
+          ok: false,
+          error: { code: "not_found", message: "Skill drafts require a database-backed API." },
+        };
+      }
+      return withIdempotency({
+        workspaceId: session.workspace_id,
+        commandKind: "skill_draft.publish",
+        idempotencyKey: command.idempotency_key,
+        resultId: draftId,
+        reload: async (id) => {
+          const loaded = await getSkillVersionById(sql, id);
+          if (!loaded || loaded.workspaceId !== session.workspace_id) {
+            return null;
+          }
+          return loaded.version;
+        },
+        run: async () => publishSkillDraftForSession(sql, session, draftId, command, now),
+      });
+    },
+
+    async getSkillVersion(session, versionId) {
+      if (!sql) {
+        return {
+          ok: false,
+          error: { code: "not_found", message: "Skill versions require a database-backed API." },
+        };
+      }
+      return getSkillVersionForSession(sql, session, versionId);
+    },
+
+    async getRun(session, runId) {
+      if (!sql) {
+        return {
+          ok: false,
+          error: { code: "not_found", message: "Run detail requires a database-backed API." },
+        };
+      }
+      return getRunForSession(sql, session, runId);
+    },
+
+    async cancelRun(session, runId, command) {
+      if (!sql) {
+        return {
+          ok: false,
+          error: { code: "not_found", message: "Run control requires a database-backed API." },
+        };
+      }
+      return cancelRunForSession({ sql, trueforgeClient }, session, runId, command);
     },
 
     async steerCorrection(session, runId, input) {

@@ -5,6 +5,7 @@ import { ChannelListPane } from "./channel-list-pane";
 import { ChannelTimelinePane } from "./channel-timeline-pane";
 import { WorkPanelPane } from "./work-panel-pane";
 import { ChannelWorkroomUiProvider } from "./channel-workroom-ui-context";
+import { TrustedHitlHostProvider } from "./trusted-hitl-host-context";
 
 type ChannelWorkroomProps = {
   workspaceId: string;
@@ -50,24 +51,26 @@ export function ChannelWorkroom({ workspaceId, channelId }: ChannelWorkroomProps
 
   return (
     <ChannelWorkroomUiProvider key={channelId}>
-      <div className="flex h-full min-h-0 flex-col lg:flex-row">
-        <ChannelListPane
-          workspaceId={workspaceId}
-          channels={channelsQuery.data ?? []}
-          selectedChannelId={channelId}
-          connections={connectionsQuery.data ?? []}
-        />
-        <div className="flex min-w-0 flex-1 justify-center">
-          <div className="flex h-full w-full max-w-[820px] min-w-0 flex-col border-x border-zinc-200">
-            <ChannelTimelinePane
-              channel={channel}
-              workspaceId={workspaceId}
-              connections={connectionsQuery.data ?? []}
-            />
+      <TrustedHitlHostProvider>
+        <div className="flex h-full min-h-0 flex-col lg:flex-row">
+          <ChannelListPane
+            workspaceId={workspaceId}
+            channels={channelsQuery.data ?? []}
+            selectedChannelId={channelId}
+            connections={connectionsQuery.data ?? []}
+          />
+          <div className="flex min-w-0 flex-1 justify-center">
+            <div className="flex h-full w-full max-w-[820px] min-w-0 flex-col border-x border-zinc-200">
+              <ChannelTimelinePane
+                channel={channel}
+                workspaceId={workspaceId}
+                connections={connectionsQuery.data ?? []}
+              />
+            </div>
           </div>
+          <WorkPanelPane workspaceId={workspaceId} channelId={channel.id} channel={channel} />
         </div>
-        <WorkPanelPane workspaceId={workspaceId} channelId={channel.id} channel={channel} />
-      </div>
+      </TrustedHitlHostProvider>
     </ChannelWorkroomUiProvider>
   );
 }

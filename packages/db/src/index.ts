@@ -69,6 +69,7 @@ export {
   aggregateRunFromStepsLocal,
   applyRunLifecycleProjection,
 } from "./multi-agent-run";
+export { loadRunDetail, type RunDetailRecord } from "./run-detail";
 export {
   loadAgentTurnCreateContext,
   markComponentInterruptContinued,
@@ -132,6 +133,8 @@ export type {
   RecordApprovalDecisionResult,
   SqlClient as ApprovalDecisionSqlClient,
 } from "./approval-decision";
+export { loadQuestionForCard, listPendingQuestionIds } from "./question-card";
+export type { QuestionCardSnapshot, SqlClient as QuestionCardSqlClient } from "./question-card";
 export {
   derivePausePayloadKey,
   sealPauseResponsePayload,
@@ -224,6 +227,20 @@ export type {
   UiInteractionDbResult,
 } from "./ui-interactions";
 export { loadSandboxArtifactDiscoveryBinding } from "./artifact-discovery-binding";
+export {
+  createSkillDraftRecord,
+  getSkillDraftById,
+  getSkillVersionById,
+  loadSkillRunEvidence,
+  publishSkillDraftRecord,
+  slugifySkillStableName,
+} from "./skill-drafts";
+export type {
+  CreateSkillDraftInput,
+  LoadSkillRunEvidenceResult,
+  PublishSkillDraftInput,
+  PublishSkillDraftResult,
+} from "./skill-drafts";
 export type { ArtifactDiscoveryBinding } from "./artifact-discovery-binding";
 export type {
   ArtifactRecord,

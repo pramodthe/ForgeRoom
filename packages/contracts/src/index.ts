@@ -176,6 +176,7 @@ export type {
   SkillBinding,
   SkillDraftCreateCommand,
   SkillDraftReviseCommand,
+  SkillDraftPublishCommand,
 } from "./skills";
 
 export {
@@ -188,6 +189,12 @@ export {
   runCancelCommandSchema,
   runSteerCommandSchema,
   runStepCancelCommandSchema,
+  runEventSummarySchema,
+  runTaskSummarySchema,
+  runArtifactSummarySchema,
+  runDecisionSummarySchema,
+  runDetailResponseSchema,
+  runCancelResultSchema,
 } from "./runs";
 export type {
   Run,
@@ -197,6 +204,12 @@ export type {
   RunStepState,
   RunCancelCommand,
   RunSteerCommand,
+  RunEventSummary,
+  RunTaskSummary,
+  RunArtifactSummary,
+  RunDecisionSummary,
+  RunDetailResponse,
+  RunCancelResult,
 } from "./runs";
 
 export {
@@ -231,6 +244,9 @@ export {
   approvalCardSchema,
   approvalDecisionResultSchema,
   channelPendingApprovalsResponseSchema,
+  questionCardSchema,
+  questionAnswerResultSchema,
+  channelPendingQuestionsResponseSchema,
   requiredActionTypeSchema,
   requiredActionStateSchema,
   requiredActionSchema,
@@ -256,6 +272,9 @@ export type {
   ApprovalCard,
   ApprovalDecisionResult,
   ChannelPendingApprovalsResponse,
+  QuestionCard,
+  QuestionAnswerResult,
+  ChannelPendingQuestionsResponse,
   Question,
   QuestionAnswerCommand,
 } from "./pause";

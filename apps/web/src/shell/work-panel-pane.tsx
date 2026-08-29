@@ -56,10 +56,15 @@ export function WorkPanelPane(props: { workspaceId: string; channelId: string; c
             channelId={props.channelId}
             roster={rosterQuery.data?.coworkers ?? []}
             runs={workroomUi.runs}
+            archived={props.channel.status === "archived"}
             onOpenRun={workroomUi.openRunDrawer}
           />
         ) : activeTab === "Artifacts" ? (
-          <LiveArtifactsTab channelId={props.channelId} runId={workroomUi.selectedRunId} />
+          <LiveArtifactsTab
+            channelId={props.channelId}
+            runId={workroomUi.selectedRunId}
+            archived={props.channel.status === "archived"}
+          />
         ) : (
           <LiveContextTab channel={props.channel} />
         )}
@@ -67,7 +72,9 @@ export function WorkPanelPane(props: { workspaceId: string; channelId: string; c
       {workroomUi.selectedRunId ? (
         <RunDetailDrawer
           workspaceId={props.workspaceId}
+          channelId={props.channelId}
           runId={workroomUi.selectedRunId}
+          archived={props.channel.status === "archived"}
           onClose={workroomUi.closeRunDrawer}
         />
       ) : null}
