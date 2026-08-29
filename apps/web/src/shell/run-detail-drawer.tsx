@@ -1,17 +1,25 @@
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRef, useState } from "react";
+import { getRunReceipt } from "../api/channel-resources-api";
+import { isFixtureMode } from "../api/mode";
 import { publishFixtureRunSkill } from "../api/workspace-api";
 import { Avatar } from "../ui/avatar";
 import { useDialogFocus } from "../ui/use-dialog-focus";
 
 type RunDetailDrawerProps = {
   workspaceId: string;
+  runId: string;
   onClose: () => void;
 };
 
 const STOPPED_RUN_KEY = "forgeroom:fixture:run:v1:run_4A91:stopped";
 
-export function RunDetailDrawer({ workspaceId, onClose }: RunDetailDrawerProps) {
+export function RunDetailDrawer({ workspaceId, runId, onClose }: RunDetailDrawerProps) {
+  const receiptQuery = useQuery({
+    queryKey: ["run-receipt", runId],
+    queryFn: () => getRunReceipt(runId),
+    enabled: !isFixtureMode,
+  });
   const [skillReviewOpen, setSkillReviewOpen] = useState(false);
   const [stopped, setStopped] = useState(
     () => typeof window !== "undefined" && window.localStorage.getItem(STOPPED_RUN_KEY) === "true",
@@ -44,12 +52,18 @@ export function RunDetailDrawer({ workspaceId, onClose }: RunDetailDrawerProps) 
         <header className="sticky top-0 z-10 flex items-start justify-between border-b border-zinc-200 bg-white/95 px-6 py-5 backdrop-blur">
           <div>
             <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-violet-700">
-              Run receipt · run_4A91
+              Run receipt · {runId}
             </div>
             <h2 id="run-drawer-title" className="mt-1 text-xl font-semibold text-zinc-950">
-              Weekly support operations review
+              {isFixtureMode
+                ? "Weekly support operations review"
+                : (receiptQuery.data?.receipt.run_id ?? "Run details")}
             </h2>
-            <p className="mt-1 text-xs text-zinc-500">Direct team fan-out · Analyst and Operator</p>
+            <p className="mt-1 text-xs text-zinc-500">
+              {isFixtureMode
+                ? "Direct team fan-out · Analyst and Operator"
+                : `${receiptQuery.data?.receipt.coworker_ids.length ?? 0} coworker steps · normalized receipt`}
+            </p>
           </div>
           <button
             ref={closeRef}
@@ -63,6 +77,37 @@ export function RunDetailDrawer({ workspaceId, onClose }: RunDetailDrawerProps) 
         </header>
 
         <div className="space-y-4 p-6">
+          {!isFixtureMode && receiptQuery.isLoading ? (
+            <section className="rounded-2xl border border-zinc-200 bg-white p-4 text-sm text-zinc-600">
+              Loading run receipt…
+            </section>
+          ) : null}
+          {!isFixtureMode && receiptQuery.data ? (
+            <section className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
+              <h3 className="text-sm font-semibold text-zinc-900">Audit receipt</h3>
+              <p className="mt-2 text-xs leading-5 text-zinc-600">{receiptQuery.data.disclaimer}</p>
+              <dl className="mt-4 space-y-2 text-xs text-zinc-700">
+                <div className="flex justify-between gap-3">
+                  <dt className="text-zinc-500">Receipt hash</dt>
+                  <dd className="truncate font-mono text-[11px]">
+                    {receiptQuery.data.receipt_hash}
+                  </dd>
+                </div>
+                <div className="flex justify-between gap-3">
+                  <dt className="text-zinc-500">Task</dt>
+                  <dd>{receiptQuery.data.receipt.task_id ?? "None"}</dd>
+                </div>
+                <div className="flex justify-between gap-3">
+                  <dt className="text-zinc-500">Artifact</dt>
+                  <dd>{receiptQuery.data.receipt.artifact_id ?? "None"}</dd>
+                </div>
+                <div className="flex justify-between gap-3">
+                  <dt className="text-zinc-500">Approvals</dt>
+                  <dd>{receiptQuery.data.receipt.approval_ids.length}</dd>
+                </div>
+              </dl>
+            </section>
+          ) : null}
           <section className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
             <div className="flex items-center justify-between gap-3">
               <div>

@@ -100,7 +100,8 @@ export function pickAllowedFieldPaths(
 
 export function applySnapshotLimits(
   value: unknown,
-  limits: { maxRows: number; maxBytes: number },
+  limits: { maxRows: number; maxBytes: number; maxTimeMs: number },
+  startedAtMs = Date.now(),
 ): unknown {
   let limited = value;
   if (typeof limited === "object" && limited !== null && !Array.isArray(limited)) {
@@ -114,9 +115,24 @@ export function applySnapshotLimits(
   }
   const encoded = canonicalizeJson(limited);
   if (Buffer.byteLength(encoded, "utf8") > limits.maxBytes) {
-    throw new Error("Retained snapshot exceeds granted byte limit after filtering.");
+    throw new DataGrantLimitExceededError("bytes");
+  }
+  if (Date.now() - startedAtMs > limits.maxTimeMs) {
+    throw new DataGrantLimitExceededError("time_ms");
   }
   return limited;
+}
+
+export type DataGrantLimitKind = "rows" | "bytes" | "time_ms";
+
+export class DataGrantLimitExceededError extends Error {
+  readonly limit: DataGrantLimitKind;
+
+  constructor(limit: DataGrantLimitKind) {
+    super(`DataGrant ${limit} limit exceeded.`);
+    this.name = "DataGrantLimitExceededError";
+    this.limit = limit;
+  }
 }
 
 export type RetainedDataGrantRow = {
@@ -242,15 +258,22 @@ export function resolveRetainedDataGrantRead(input: {
   snapshot: unknown;
   dataGrant: DataGrant;
   allowedSelectionPaths: readonly (readonly string[])[];
+  startedAtMs?: number;
 }): unknown {
+  const startedAtMs = input.startedAtMs ?? Date.now();
   const filtered = pickAllowedFieldPaths(input.snapshot, input.dataGrant.allowed_field_paths);
   const selectionPaths =
     input.allowedSelectionPaths.length > 0
       ? input.allowedSelectionPaths
       : input.dataGrant.allowed_field_paths;
   const selected = pickAllowedFieldPaths(filtered, selectionPaths);
-  return applySnapshotLimits(selected, {
-    maxRows: input.dataGrant.max_rows,
-    maxBytes: input.dataGrant.max_bytes,
-  });
+  return applySnapshotLimits(
+    selected,
+    {
+      maxRows: input.dataGrant.max_rows,
+      maxBytes: input.dataGrant.max_bytes,
+      maxTimeMs: input.dataGrant.max_time_ms,
+    },
+    startedAtMs,
+  );
 }

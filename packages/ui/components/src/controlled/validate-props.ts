@@ -1,0 +1,93 @@
+import { P0_AGENT_TOOL_COMPONENT_NAMES } from "../index";
+import { PARAMETER_SCHEMAS } from "./schemas";
+
+type P0AgentToolComponentName = (typeof P0_AGENT_TOOL_COMPONENT_NAMES)[number];
+
+const FORBIDDEN_KEYS = new Set(["__proto__", "prototype", "constructor"]);
+
+export type PropValidationResult =
+  { ok: true; value: Record<string, unknown> } | { ok: false; reason: string };
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function validateValue(
+  schema: Record<string, unknown>,
+  value: unknown,
+  path: string,
+): string | null {
+  const type = schema.type;
+  if (type === "string") {
+    if (typeof value !== "string") return `${path} must be a string`;
+    if (value.length > 512) return `${path} exceeds max length`;
+    if (Array.isArray(schema.enum) && !schema.enum.includes(value)) {
+      return `${path} is not an allowed value`;
+    }
+    return null;
+  }
+  if (type === "boolean") {
+    return typeof value === "boolean" ? null : `${path} must be a boolean`;
+  }
+  if (type === "array") {
+    return Array.isArray(value) ? null : `${path} must be an array`;
+  }
+  if (Array.isArray(type)) {
+    const allowed = type
+      .map((entry) => validateValue({ type: entry }, value, path))
+      .some((error) => error === null);
+    return allowed ? null : `${path} has an invalid type`;
+  }
+  if (type === "object" || type === undefined) {
+    return isPlainObject(value) ? null : `${path} must be an object`;
+  }
+  if (type === "null") {
+    return value === null ? null : `${path} must be null`;
+  }
+  return null;
+}
+
+export function validateControlledProps(
+  componentName: string,
+  props: unknown,
+): PropValidationResult {
+  if (!P0_AGENT_TOOL_COMPONENT_NAMES.includes(componentName as P0AgentToolComponentName)) {
+    return { ok: false, reason: "Unknown controlled component." };
+  }
+  if (!isPlainObject(props)) {
+    return { ok: false, reason: "Props must be a plain object." };
+  }
+  for (const key of Reflect.ownKeys(props)) {
+    if (typeof key === "string" && FORBIDDEN_KEYS.has(key)) {
+      return { ok: false, reason: `Forbidden key: ${key}` };
+    }
+  }
+
+  const schema = PARAMETER_SCHEMAS[componentName as P0AgentToolComponentName];
+  if (!schema) {
+    return { ok: false, reason: "Unknown controlled component." };
+  }
+  const properties = (schema.properties ?? {}) as Record<string, Record<string, unknown>>;
+  const required = (schema.required ?? []) as string[];
+  const additionalProperties = schema.additionalProperties === false;
+
+  for (const key of required) {
+    if (!(key in props)) {
+      return { ok: false, reason: `Missing required prop: ${key}` };
+    }
+  }
+
+  for (const [key, value] of Object.entries(props)) {
+    if (!(key in properties)) {
+      if (additionalProperties) {
+        return { ok: false, reason: `Unknown prop: ${key}` };
+      }
+      continue;
+    }
+    const fieldSchema = properties[key] ?? {};
+    const error = validateValue(fieldSchema, value, key);
+    if (error) return { ok: false, reason: error };
+  }
+
+  return { ok: true, value: props };
+}

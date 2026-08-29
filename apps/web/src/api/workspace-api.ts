@@ -358,6 +358,18 @@ export async function listChannelRoster(
   return roster;
 }
 
+export async function listChannelTasks(channelId: string): Promise<TaskRecordV1[]> {
+  if (useMockApi) {
+    return MOCK_TASKS.map((task) => fixtureTask(task)).filter(
+      (task) => task.channel_id === channelId,
+    );
+  }
+  const body = await apiFetch<{ tasks: unknown[]; request_id: string }>(
+    `/api/channels/${encodeURIComponent(channelId)}/tasks`,
+  );
+  return taskRecordV1Schema.array().parse(stripRequestId(body).tasks);
+}
+
 export async function listTasks(workspaceId: string): Promise<TaskRecordV1[]> {
   if (useMockApi) {
     assertWorkspace(workspaceId);

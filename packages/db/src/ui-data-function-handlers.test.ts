@@ -38,6 +38,7 @@ describe("UI data function handlers", () => {
         ],
         max_rows: 25,
         max_bytes: 4096,
+        max_time_ms: 1_000,
         redaction_policy_key: "workspace-safe-v1",
         retained_snapshot_blob_key: "snapshots/dg_rows",
         immutable_snapshot_hash:

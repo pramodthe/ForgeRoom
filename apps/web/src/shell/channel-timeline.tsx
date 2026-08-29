@@ -9,6 +9,7 @@ import {
   InertUnknownActivityCard,
   RunCountersFooter,
 } from "@forgeroom/ui-components";
+import { ControlledUiActivity } from "./controlled-ui-activity";
 import type { ActivityPresentationState } from "@forgeroom/ag-ui/browser";
 import type { TimelineConnection } from "../ag-ui/use-channel-timeline";
 import type { TimelineItem, TimelineMessage, TimelineRun } from "../ag-ui/channel-timeline-reducer";
@@ -157,6 +158,7 @@ export function ChannelTimeline(props: {
   archived: boolean;
   currentHumanId: string | null;
   currentHumanName: string;
+  onOpenRun?: (runId: string) => void;
 }) {
   const bottomRef = useRef<HTMLDivElement>(null);
   const coworkerById = new Map(props.roster.map((coworker) => [coworker.coworker_id, coworker]));
@@ -236,7 +238,11 @@ export function ChannelTimeline(props: {
               return (
                 <div key={item.key} className="ml-9">
                   <AgUiActivitySlot slotId={item.messageId}>
-                    <ForgeRoomActivityCard content={entry.content} ownerLabel={ownerLabel} />
+                    {entry.content.activityType === "forgeroom.controlled_ui.v1" ? (
+                      <ControlledUiActivity content={entry.content} />
+                    ) : (
+                      <ForgeRoomActivityCard content={entry.content} ownerLabel={ownerLabel} />
+                    )}
                   </AgUiActivitySlot>
                 </div>
               );
@@ -272,6 +278,7 @@ export function ChannelTimeline(props: {
 
         {visibleRunCards.map((run) => {
           const coworker = coworkerById.get(run.coworkerId);
+          const canOpenReceipt = Boolean(run.applicationRunId && props.onOpenRun);
           return (
             <div
               key={run.runStepId}
@@ -292,11 +299,22 @@ export function ChannelTimeline(props: {
                       ? (run.message ?? "completed partially.")
                       : run.message}
                 </div>
-                {run.lifecycle ? (
-                  <span className="rounded-full bg-white/70 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide">
-                    {run.lifecycle}
-                  </span>
-                ) : null}
+                <div className="flex items-center gap-2">
+                  {run.lifecycle ? (
+                    <span className="rounded-full bg-white/70 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide">
+                      {run.lifecycle}
+                    </span>
+                  ) : null}
+                  {canOpenReceipt ? (
+                    <button
+                      type="button"
+                      onClick={() => props.onOpenRun?.(run.applicationRunId!)}
+                      className="rounded-full bg-white/80 px-2 py-0.5 text-[10px] font-medium text-violet-800 ring-1 ring-violet-200 hover:bg-white"
+                    >
+                      Receipt
+                    </button>
+                  ) : null}
+                </div>
               </div>
               {run.counters ? (
                 <div className="mt-2">

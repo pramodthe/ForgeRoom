@@ -117,6 +117,7 @@ describe("UIInstance replay mapping", () => {
           allowed_field_paths: [["rows", "id"]],
           max_rows: 20,
           max_bytes: 4_096,
+          max_time_ms: 1_000,
           redaction_policy_key: "workspace-safe-v1",
           retained_snapshot_blob_key: "snapshots/snap_1",
           immutable_snapshot_hash: HASH,
