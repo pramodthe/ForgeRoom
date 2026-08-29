@@ -1,7 +1,10 @@
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { defineConfig, devices } from "@playwright/test";
 
 const baseURL = process.env.FORGEROOM_E2E_BASE_URL ?? "http://127.0.0.1:5173";
 const live = process.env.FORGEROOM_E2E_LIVE === "1";
+const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "../..");
 
 export default defineConfig({
   testDir: "./tests",
@@ -44,6 +47,6 @@ export default defineConfig({
         url: baseURL,
         reuseExistingServer: !process.env.CI,
         timeout: 120_000,
-        cwd: "/workspace",
+        cwd: repoRoot,
       },
 });
