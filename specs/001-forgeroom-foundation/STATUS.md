@@ -2,12 +2,12 @@
 
 | Field | Current value |
 | --- | --- |
-| Overall | M0 Demo contract done; M1 Foundation done; P0-407/P0-316/P0-410 done; P0-315/P0-317 in_review; P0-408 ready; P0-301–P0-314, P0-404, P0-405 done |
+| Overall | M0 Demo contract done; M1 Foundation done; P0-315/P0-317/P0-407/P0-316/P0-410 done; P0-408 ready; P0-301–P0-314, P0-404, P0-405 done |
 | Current phase | Phase 1 — Foundation / M4 Product UI |
 | Active task | P0-408 (ready) |
 | Next task | P0-408 AG-UI rich timeline, then P0-504 |
 | P0 blockers | Run-limit hard enforcement (P0-204/OD-008 evidence) |
-| Last updated | 2026-08-29 (P0-316 merged #55; P0-317 time-limit closeout in review PR #56) |
+| Last updated | 2026-08-29 (P0-315/#70 and P0-317/#69 merged; P0-407 slice 3 #71 pending) |
 
 ## Milestones
 
@@ -61,21 +61,12 @@ Never put credentials in this file.
 
 ## Recently completed
 
-- P0-407 → `done` (2026-08-29): axe + 1440px visual baselines; slices 1–3 merged.
+- P0-407 → `done` (2026-08-29): axe + 1440px visual baselines; slices 1–3 merged (#68, #71).
+- P0-315 → `done` (2026-08-29): component/interaction gateway merged #70.
+- P0-317 → `done` (2026-08-29): `DataGrant.max_time_ms` enforced merged #69.
 - P0-410 → `done` (2026-08-29): coworker/task/skill review flows merged PRs #62–#66.
 - P0-404 / P0-405 → `done` (2026-08-29): spec closeout after merged PR stack #48–#54; approval/question/run drawer and Work/Artifacts/Context tabs acceptance criteria verified.
 - P0-404 / P0-405 closeout (2026-08-29): merged PR #54 (trusted HITL host-open hook, Work tab stop, task evidence).
-- P0-317 → `in_review` (2026-08-29): `DataGrant.max_time_ms` enforced in `applySnapshotLimits` and `invokeUiDataFunction`; attributed limit errors; integration tests for bytes/time breach.
-- P0-315 → `in_review` (2026-08-28). Nine of eleven open acceptance criteria verified with
-  file/line evidence: grant-intersection offers, server broker render results over MCP, one-use
-  interaction tokens, manifest render-node binding, bounded interaction scope, absent P1 endpoints,
-  grant expiry/revocation, plus the two-checkpoint authority recheck and rotation staling that
-  merged with **PR #46**. #46 also closed a Qodo action-required security finding: checkpoint 2
-  took no row locks, so a concurrent revoke/rotate could commit between the recheck and the
-  instance/grant inserts. Fixed with `FOR SHARE` on the session, version and grant rows, plus a
-  regression test that waits on `pg_stat_activity` until the broker is provably blocked. Two deferred to named tasks rather than prose — client-side prop-schema
-  validation to **P0-316** (owns the renderers). Data-function time bound closed in **P0-317**
-  (`max_time_ms` on `DataGrant`, attributed limit errors, integration tests).
 - Status re-triage (2026-08-28): P0-316, P0-318, P0-404 and P0-405 were marked `blocked` while
   every listed dependency was already `done`; corrected to `ready`.
 - Local gate run at `34bf326`: `pnpm lint`, `typecheck`, `test` (23 files, 116 passed, 1 skipped)
