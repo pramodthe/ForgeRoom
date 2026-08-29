@@ -19,14 +19,14 @@ One reliable Playwright test proves conversational coworker creation, two-cowork
 
 ## Acceptance criteria
 
-- [ ] Executes every numbered scenario in `test-plan.md`. *(slice 1: prototype smoke covers UI surfaces; live 15-step gated by `FORGEROOM_E2E_LIVE=1`)*
+- [ ] Executes every numbered scenario in `test-plan.md`. *(slice 1: prototype smoke; slice 2: live-api smoke + 15-step structure with provider soft-skips; full GenUI/approval/skill still gated by `FORGEROOM_E2E_LIVE=1|providers` + credentials)*
 - [ ] Denial verifies unchanged provider state before revised request. *(fixture records denial; live provider verify deferred)*
-- [ ] Refresh restores exact pending proposal. *(deferred to live)*
+- [ ] Refresh restores exact pending proposal. *(deferred to live providers)*
 - [ ] A controlled chart/table and bounded interaction render inline and survive refresh with identical revisions/hashes. *(slice 1: fixture chart/table/choice visible)*
-- [ ] Creating the second coworker shows an exact permission preview and one confirmed provisioning result. *(slice 1: Research coworker builder + denials + ready)*
-- [ ] A canonical Task survives refresh and an authorized transition; a completed Run publishes and attaches one reviewed private skill. *(slice 1: task list + fixture save-as-skill attach)*
+- [ ] Creating the second coworker shows an exact permission preview and one confirmed provisioning result. *(slice 1: fixture Research builder; live provisioning needs TrueForge)*
+- [ ] A canonical Task survives refresh and an authorized transition; a completed Run publishes and attaches one reviewed private skill. *(slice 1: fixture; live task fan-out soft-skipped without providers)*
 - [x] Native subagent, coordinator, component-catalogue and generated-frame surfaces are absent.
-- [ ] Approval reaches expected deterministic state under read reconciliation. *(deferred to live)*
+- [ ] Approval reaches expected deterministic state under read reconciliation. *(deferred to live providers)*
 - [x] Uses accessible locators and event waits, not fixed sleeps.
 - [x] Captures trace/screenshots without credentials, personal data, raw provider bodies or model reasoning; compressed trace scan proves redaction.
 
@@ -34,6 +34,9 @@ One reliable Playwright test proves conversational coworker creation, two-cowork
 
 ~~~bash
 pnpm test:e2e
+FORGEROOM_E2E_LIVE=api pnpm test:e2e
+# Full provider narrative (local/secrets only):
+# FORGEROOM_E2E_LIVE=1 pnpm test:e2e
 ~~~
 
 Run three consecutive times after fixture reset to detect flakiness.
@@ -42,7 +45,9 @@ Run three consecutive times after fixture reset to detect flakiness.
 
 - Report/trace paths: `apps/e2e/playwright-report`, `apps/e2e/test-results` (gitignored)
 - Three-run results (2026-08-29, `CI=1 pnpm test:e2e`): 3/3 passed (~8s each, chromium prototype smoke)
+- Slice 2 live-api (2026-08-29, `CI=1 FORGEROOM_E2E_LIVE=api pnpm test:e2e`): live-api smoke + scenario structure passed; provider steps skipped without credentials
 
 ## Work log
 
 - 2026-08-29 — Slice 1: scaffold `@forgeroom/e2e` Playwright package, prototype smoke covering channel/GenUI/approval/Research coworker/tasks/choice/receipt/skill, trace redaction scan, CI `pnpm test:e2e`, fixture work-panel demo receipt entry. Live 15-step scenario gated behind `FORGEROOM_E2E_LIVE`.
+- 2026-08-29 — Slice 2: live-api Playwright project (`FORGEROOM_E2E_LIVE=api`) boots migrate/seed/API/Vite via `apps/e2e/scripts/start-live-stack.sh`; demo-seed login/channel/coworkers/tasks smoke; complete-scenario soft-skips without providers; CI live-api job; channel workroom tolerates missing Composio; coworker detail strips `config` before strict profile parse; trace scan scrub of fixture password + ignores model_provider openai.

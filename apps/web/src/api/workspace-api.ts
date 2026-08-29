@@ -759,11 +759,12 @@ export async function getCoworker(
   try {
     const body = await apiFetch<unknown>(`/api/coworkers/${encodeURIComponent(coworkerId)}`);
     const parsed = stripRequestId(body as Record<string, unknown>);
-    const profile = coworkerProfileSchema.parse(parsed);
+    const { config, ...profileFields } = parsed;
+    const profile = coworkerProfileSchema.parse(profileFields);
     if (profile.workspace_id !== workspaceId) {
       return null;
     }
-    return { ...profile, config: parsed.config as CoworkerEditableConfig };
+    return { ...profile, config: config as CoworkerEditableConfig };
   } catch (error) {
     if (error instanceof ApiError && error.status === 404) {
       return null;

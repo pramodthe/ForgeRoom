@@ -7,7 +7,7 @@
 | Active task | P0-504 (in_progress) |
 | Next task | P0-504 live provider scenario, then P0-501–P0-503 / P0-506 |
 | P0 blockers | Run-limit hard enforcement (P0-204/OD-008 evidence) |
-| Last updated | 2026-08-29 (P0-504 slice 1 Playwright scaffold) |
+| Last updated | 2026-08-29 (P0-504 slice 2 live-api Playwright) |
 
 ## Milestones
 

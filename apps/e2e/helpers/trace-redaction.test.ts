@@ -15,4 +15,19 @@ describe("scanPlaywrightArtifacts", () => {
     expect(scanPlaywrightArtifacts([root]).hits.length).toBeGreaterThan(0);
     rmSync(root, { recursive: true, force: true });
   });
+
+  it("scrubs the known e2e fixture password and ignores model_provider openai", () => {
+    const root = join(tmpdir(), `forgeroom-e2e-scan-fixture-${Date.now()}`);
+    mkdirSync(root, { recursive: true });
+    writeFileSync(
+      join(root, "login.json"),
+      JSON.stringify({
+        password: "correct-horse-battery",
+        model_provider: "openai",
+        model_preset: "openai/gpt-5-4-mini",
+      }),
+    );
+    expect(scanPlaywrightArtifacts([root]).hits).toEqual([]);
+    rmSync(root, { recursive: true, force: true });
+  });
 });
