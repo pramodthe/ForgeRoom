@@ -10,11 +10,14 @@ import { useSession } from "../auth/session-context";
 import { Avatar } from "../ui/avatar";
 import { useDialogFocus } from "../ui/use-dialog-focus";
 import { PoliteStatus } from "./polite-status";
+import { PinSourceButton } from "./pin-source-button";
+import { pinLabelFromArtifactName } from "./pin-source-label";
 
 type RunDetailDrawerProps = {
   workspaceId: string;
   channelId: string;
   runId: string;
+  archived?: boolean;
   onClose: () => void;
 };
 
@@ -49,7 +52,13 @@ function lifecycleLabel(lifecycle: Run["lifecycle"]): string {
   return lifecycle.replaceAll("_", " ");
 }
 
-export function RunDetailDrawer({ workspaceId, channelId, runId, onClose }: RunDetailDrawerProps) {
+export function RunDetailDrawer({
+  workspaceId,
+  channelId,
+  runId,
+  archived,
+  onClose,
+}: RunDetailDrawerProps) {
   if (isFixtureMode) {
     return <FixtureRunDetailDrawer workspaceId={workspaceId} onClose={onClose} />;
   }
@@ -58,6 +67,7 @@ export function RunDetailDrawer({ workspaceId, channelId, runId, onClose }: RunD
       workspaceId={workspaceId}
       channelId={channelId}
       runId={runId}
+      archived={archived}
       onClose={onClose}
     />
   );
@@ -67,11 +77,13 @@ function LiveRunDetailDrawer({
   workspaceId,
   channelId,
   runId,
+  archived,
   onClose,
 }: {
   workspaceId: string;
   channelId: string;
   runId: string;
+  archived?: boolean;
   onClose: () => void;
 }) {
   const { session } = useSession();
@@ -329,14 +341,26 @@ function LiveRunDetailDrawer({
                             {artifact.mime_type} · rev {artifact.revision}
                           </div>
                         </div>
-                        <a
-                          href={apiUrl(
-                            `/api/artifacts/${encodeURIComponent(artifact.id)}/download`,
-                          )}
-                          className="shrink-0 text-xs font-medium text-violet-700"
-                        >
-                          Download
-                        </a>
+                        <div className="flex shrink-0 items-center gap-2">
+                          <PinSourceButton
+                            channelId={channelId}
+                            archived={archived ?? false}
+                            compact
+                            target={{
+                              kind: "artifact",
+                              artifactId: artifact.id,
+                              label: pinLabelFromArtifactName(artifact.name),
+                            }}
+                          />
+                          <a
+                            href={apiUrl(
+                              `/api/artifacts/${encodeURIComponent(artifact.id)}/download`,
+                            )}
+                            className="text-xs font-medium text-violet-700"
+                          >
+                            Download
+                          </a>
+                        </div>
                       </div>
                     ))}
                   </div>

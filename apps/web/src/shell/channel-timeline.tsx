@@ -14,6 +14,8 @@ import type { ActivityPresentationState } from "@forgeroom/ag-ui/browser";
 import type { TimelineConnection } from "../ag-ui/use-channel-timeline";
 import type { TimelineItem, TimelineMessage, TimelineRun } from "../ag-ui/channel-timeline-reducer";
 import { isFixtureMode } from "../api/mode";
+import { PinSourceButton } from "./pin-source-button";
+import { pinLabelFromMessageBody } from "./pin-source-label";
 import { Avatar } from "../ui/avatar";
 import {
   ConnectionRecoveryCards,
@@ -51,6 +53,8 @@ function MessageBubble(props: {
   currentHumanId: string | null;
   currentHumanName: string;
   richResponse: ReactNode;
+  channelId: string;
+  archived: boolean;
 }) {
   const coworker =
     props.message.kind === "coworker"
@@ -64,6 +68,7 @@ function MessageBubble(props: {
   return (
     <Fragment>
       <article
+        id={props.message.messageId ? `timeline-message-${props.message.messageId}` : undefined}
         className={`flex ${props.message.kind === "human" ? "justify-end" : "justify-start"}`}
       >
         <div
@@ -95,6 +100,20 @@ function MessageBubble(props: {
             <p className="min-h-[1.25rem] whitespace-pre-wrap text-sm leading-6">
               {props.message.content || (props.message.status === "streaming" ? "Working…" : "")}
             </p>
+            {props.message.messageId && props.message.status !== "streaming" ? (
+              <div className="mt-2 flex justify-end">
+                <PinSourceButton
+                  channelId={props.channelId}
+                  archived={props.archived}
+                  compact
+                  target={{
+                    kind: "message",
+                    messageId: props.message.messageId,
+                    label: pinLabelFromMessageBody(props.message.content),
+                  }}
+                />
+              </div>
+            ) : null}
             {props.message.status === "streaming" ? (
               <span className="mt-2 inline-flex items-center gap-1 text-xs text-zinc-500">
                 <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-violet-500" />
@@ -217,6 +236,8 @@ export function ChannelTimeline(props: {
                   roster={props.roster}
                   currentHumanId={props.currentHumanId}
                   currentHumanName={props.currentHumanName}
+                  channelId={props.channelId}
+                  archived={props.archived}
                   richResponse={fixtureRichResponse({
                     workspaceId: props.workspaceId,
                     channelId: props.channelId,

@@ -3,6 +3,7 @@ import type {
   ChannelMessageCommand,
   ChannelParticipantAddCommand,
   ChannelPin,
+  ChannelPinCreateCommand,
   ChannelPinRemoveCommand,
   ChannelRosterCoworker,
   ChannelRosterResponse,
@@ -24,6 +25,7 @@ import {
   channelSchema,
   channelPinsListResponseSchema,
   channelPinSchema,
+  channelPinCreateCommandSchema,
   channelPinRemoveCommandSchema,
   channelTimelineMessagesResponseSchema,
   coworkerDraftSchema,
@@ -387,6 +389,31 @@ export async function listChannelPins(channelId: string): Promise<ChannelPin[]> 
     throw new Error("pins_channel_mismatch");
   }
   return parsed.pins;
+}
+
+export async function createChannelPin(input: {
+  channelId: string;
+  csrfToken: string;
+  sourceMessageId?: string | null;
+  sourceArtifactId?: string | null;
+  label: string;
+}): Promise<ChannelPin> {
+  const command: ChannelPinCreateCommand = channelPinCreateCommandSchema.parse({
+    schemaVersion: 1,
+    source_message_id: input.sourceMessageId ?? null,
+    source_artifact_id: input.sourceArtifactId ?? null,
+    label: input.label,
+    idempotency_key: newIdempotencyKey("pin"),
+  });
+  const body = await apiFetch<{ pin: unknown; sequence: number; request_id: string }>(
+    `/api/channels/${encodeURIComponent(input.channelId)}/pins`,
+    {
+      method: "POST",
+      csrfToken: input.csrfToken,
+      body: JSON.stringify(command),
+    },
+  );
+  return channelPinSchema.parse(stripRequestId(body).pin);
 }
 
 export async function removeChannelPin(input: {

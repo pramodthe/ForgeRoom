@@ -14,6 +14,7 @@ import {
 
 export type TimelineMessage = {
   key: string;
+  messageId?: string;
   sequence: number;
   kind: "human" | "coworker";
   authorId: string;
@@ -188,6 +189,7 @@ export function channelTimelineReducer(
         if (existing?.status === "streaming") continue;
         messages[key] = {
           key,
+          messageId: message.id,
           sequence: message.channel_sequence,
           kind: "human",
           authorId: message.author_id,
@@ -214,6 +216,7 @@ export function channelTimelineReducer(
 
       messages[key] = {
         key,
+        messageId: message.id,
         sequence,
         kind: "coworker",
         authorId: message.author_id,
@@ -322,6 +325,7 @@ export function channelTimelineReducer(
     }
     messages[key] = {
       key,
+      messageId: event.messageId,
       sequence: prior?.sequence ?? envelope.channelSequence,
       kind: "coworker",
       authorId: envelope.coworkerId,
@@ -346,6 +350,7 @@ export function channelTimelineReducer(
       const prior = messages[key];
       messages[key] = {
         key,
+        messageId: message.id,
         sequence: prior?.sequence ?? envelope.channelSequence + index,
         kind: "coworker",
         authorId: envelope.coworkerId,
