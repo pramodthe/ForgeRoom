@@ -7,6 +7,7 @@ import {
   loadSkillRunEvidence,
   slugifySkillStableName,
 } from "./skill-drafts";
+import { ingestNormalizedTrueForgeEvent } from "./turn-lifecycle";
 import { seedRuntime, withMigratedDatabase } from "./test-harness";
 
 const NOW = "2026-08-29T00:00:00.000Z";
@@ -24,21 +25,23 @@ async function seedCompletedRun(sql: postgres.Sql) {
     SET state = 'completed', completed_at = ${NOW}
     WHERE id = 'step_1'
   `;
-  await sql`
-    INSERT INTO run_events (
-      id, agent_turn_id, trueforge_event_id, thread_id,
-      normalized_payload_redacted_json, normalized_type, first_seen_at, updated_at
-    ) VALUES (
-      're_1', 'turn_1', 'tf_evt_1', 'thread_1',
-      ${JSON.stringify({
+  await ingestNormalizedTrueForgeEvent(sql, {
+    agentTurnId: "turn_1",
+    expectedTurnStates: ["streaming", "creating", "required_actions", "completed"],
+    now: NOW,
+    event: {
+      trueforgeEventId: "tf_evt_skill_1",
+      normalizedType: "tool.succeeded",
+      threadId: "thread_1",
+      sequenceNumber: 1,
+      payloadRedacted: {
         type: "tool.succeeded",
         tool_name: "GITHUB_GET_AN_ISSUE",
         target: "pramodthe/ForgeRoom#35",
         result_summary: "Issue loaded",
-      })}::jsonb,
-      'tool.succeeded', ${NOW}, ${NOW}
-    )
-  `;
+      },
+    },
+  });
   await sql`
     INSERT INTO pause_groups (
       id, agent_turn_id, trueforge_turn_id, generation, state, required_action_count
@@ -78,6 +81,9 @@ describe("skill drafts persistence", () => {
       });
       expect(loaded.ok).toBe(true);
       if (!loaded.ok) return;
+      expect(loaded.evidence.events.some((event) => event.normalizedType === "tool.succeeded")).toBe(
+        true,
+      );
 
       const draft = await createSkillDraftRecord(sql, {
         workspaceId: "ws_1",
