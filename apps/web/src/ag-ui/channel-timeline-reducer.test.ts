@@ -354,6 +354,123 @@ describe("channelTimelineReducer", () => {
     expect(state.runs.step_coworker_research?.applicationRunId).toBe("run_demo");
   });
 
+  it("folds channel and thread UI state without letting coworkers overwrite the channel lane", () => {
+    const emptyCounters = {
+      planning: 0,
+      running: 0,
+      awaiting_input: 0,
+      awaiting_approval: 0,
+      blocked_connection: 0,
+      cancelling: 0,
+      queued: 0,
+    };
+    let state = initialChannelTimelineState("channel_demo");
+    state = channelTimelineReducer(state, {
+      type: "event",
+      envelope: {
+        schemaVersion: 1,
+        channelId: "channel_demo",
+        channelSequence: 1,
+        actorKind: "system",
+        aguiEvent: {
+          type: "STATE_SNAPSHOT",
+          snapshot: {
+            schemaVersion: 1,
+            stateKind: "channel",
+            revision: 1,
+            channel: { id: "channel_demo", name: "General", archived: false },
+            coworkers: {},
+            runs: {},
+            artifacts: {},
+            tasks: {},
+            uiInstances: {},
+            pendingHumanActions: [],
+          },
+        },
+      },
+    });
+    state = channelTimelineReducer(state, {
+      type: "event",
+      envelope: coworkerEnvelope(2, {
+        type: "STATE_SNAPSHOT",
+        snapshot: {
+          schemaVersion: 1,
+          stateKind: "thread",
+          revision: 1,
+          coworkerId: "coworker_research",
+          logicalThreadId: "thread_coworker_research",
+          phase: "running",
+          activeRunStepIds: ["step_coworker_research"],
+          surfaceIds: [],
+        },
+      }),
+    });
+    state = channelTimelineReducer(state, {
+      type: "event",
+      envelope: coworkerEnvelope(3, {
+        type: "STATE_SNAPSHOT",
+        snapshot: {
+          schemaVersion: 1,
+          stateKind: "channel",
+          revision: 9,
+          channel: { id: "channel_demo", name: "Hijacked", archived: false },
+          coworkers: {},
+          runs: { run_demo: { lifecycle: "active", counters: emptyCounters } },
+          artifacts: {},
+          tasks: {},
+          uiInstances: {},
+          pendingHumanActions: [],
+        },
+      }),
+    });
+
+    expect(state.uiState.channel?.channel.name).toBe("General");
+    expect(state.uiState.needChannelSnapshot).toBe(true);
+    expect(state.uiState.threads.thread_coworker_research?.phase).toBe("running");
+  });
+
+  it("keeps logical-turn busy state across a successful wire-run finish", () => {
+    let state = initialChannelTimelineState("channel_demo");
+    state = channelTimelineReducer(state, {
+      type: "event",
+      envelope: coworkerEnvelope(1, {
+        type: "RUN_STARTED",
+        threadId: "thread_coworker_research",
+        runId: "agui_step_1",
+      }),
+    });
+    state = channelTimelineReducer(state, {
+      type: "event",
+      envelope: coworkerEnvelope(2, {
+        type: "STATE_SNAPSHOT",
+        snapshot: {
+          schemaVersion: 1,
+          stateKind: "thread",
+          revision: 1,
+          coworkerId: "coworker_research",
+          logicalThreadId: "thread_coworker_research",
+          phase: "running",
+          activeRunStepIds: ["step_coworker_research"],
+          surfaceIds: [],
+        },
+      }),
+    });
+    state = channelTimelineReducer(state, {
+      type: "event",
+      envelope: coworkerEnvelope(3, {
+        type: "RUN_FINISHED",
+        threadId: "thread_coworker_research",
+        runId: "agui_step_1",
+        outcome: { type: "success" },
+      }),
+    });
+
+    expect(state.runs.step_coworker_research).toMatchObject({
+      status: "running",
+      lifecycle: "active",
+    });
+  });
+
   it("renders unsupported capability snapshots as inert activities", () => {
     let state = initialChannelTimelineState("channel_demo");
     state = channelTimelineReducer(state, {

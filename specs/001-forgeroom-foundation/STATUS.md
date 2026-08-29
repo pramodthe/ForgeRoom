@@ -4,7 +4,7 @@
 | --- | --- |
 | Overall | M0 Demo contract done; M1 Foundation done; P0-315/P0-317/P0-407/P0-316/P0-410 done; P0-408 ready; P0-301–P0-314, P0-404, P0-405 done |
 | Current phase | Phase 1 — Foundation / M4 Product UI |
-| Active task | P0-408 (ready) |
+| Active task | P0-408 (in_progress) |
 | Next task | P0-408 AG-UI rich timeline, then P0-504 |
 | P0 blockers | Run-limit hard enforcement (P0-204/OD-008 evidence) |
 | Last updated | 2026-08-29 (P0-315/#70 and P0-317/#69 merged; P0-407 slice 3 #71 pending) |

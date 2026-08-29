@@ -8,8 +8,11 @@ import { applicationSourceNameSchema } from "@forgeroom/contracts";
 import {
   initialActivityPresentationState,
   reduceActivityPresentationState,
+  initialUiPresentationState,
+  reduceUiPresentationState,
   type ActivityLaneOwner,
   type ActivityPresentationState,
+  type UiPresentationState,
 } from "@forgeroom/ag-ui/browser";
 
 export type TimelineMessage = {
@@ -65,6 +68,7 @@ export type ChannelTimelineState = {
   messages: Record<string, TimelineMessage>;
   runs: Record<string, TimelineRun>;
   activityState: ActivityPresentationState;
+  uiState: UiPresentationState;
   activitySequences: Record<string, number>;
   activityRefs: Record<string, TimelineActivityRef>;
   customEvents: Record<string, TimelineCustomEvent>;
@@ -87,11 +91,80 @@ export function initialChannelTimelineState(channelId: string): ChannelTimelineS
     messages: {},
     runs: {},
     activityState: initialActivityPresentationState(),
+    uiState: initialUiPresentationState(),
     activitySequences: {},
     activityRefs: {},
     customEvents: {},
     inertActivities: {},
     seenSequences: {},
+  };
+}
+
+function threadPhaseKeepsLogicalTurnBusy(phase: string | undefined): boolean {
+  return phase === "running" || phase === "queued" || phase === "interrupted";
+}
+
+function applicationRunLifecycleKeepsBusy(lifecycle: RunLifecycle | undefined): boolean {
+  return lifecycle === "active" || lifecycle === "queued";
+}
+
+function resolveWireRunOutcome(input: {
+  envelope: AgentChannelEnvelope;
+  event: Extract<AgentChannelEnvelope["aguiEvent"], { type: "RUN_FINISHED" | "RUN_ERROR" }>;
+  uiState: UiPresentationState;
+  prior?: TimelineRun;
+}): Pick<TimelineRun, "status" | "lifecycle"> & { message?: string } {
+  if (input.event.type === "RUN_ERROR") {
+    return {
+      status: "failed",
+      lifecycle: "failed",
+      message: input.event.message,
+    };
+  }
+
+  if (input.event.outcome.type === "interrupt") {
+    return {
+      status: "needs_input",
+      lifecycle: "active",
+      message: input.event.outcome.interrupts[0]?.message ?? "Human input is required.",
+    };
+  }
+
+  const threadPhase = input.envelope.logicalThreadId
+    ? input.uiState.threads[input.envelope.logicalThreadId]?.phase
+    : undefined;
+  const channelRunLifecycle = input.envelope.applicationRunId
+    ? input.uiState.channel?.runs[input.envelope.applicationRunId]?.lifecycle
+    : undefined;
+
+  if (
+    threadPhaseKeepsLogicalTurnBusy(threadPhase) ||
+    applicationRunLifecycleKeepsBusy(channelRunLifecycle)
+  ) {
+    return {
+      status: "running",
+      lifecycle: channelRunLifecycle ?? input.prior?.lifecycle ?? "active",
+      ...(input.prior?.message ? { message: input.prior.message } : {}),
+    };
+  }
+
+  return {
+    status: "complete",
+    lifecycle: "completed",
+  };
+}
+
+function advanceSeenEnvelope(
+  state: ChannelTimelineState,
+  envelope: AgentChannelEnvelope,
+): ChannelTimelineState {
+  return {
+    ...state,
+    seenSequences: {
+      ...state.seenSequences,
+      [String(envelope.channelSequence)]: true,
+    },
+    uiState: reduceUiPresentationState(state.uiState, envelope),
   };
 }
 
@@ -235,26 +308,22 @@ export function channelTimelineReducer(
     return state;
   }
 
-  const seenSequences = {
-    ...state.seenSequences,
-    [String(envelope.channelSequence)]: true as const,
-  };
+  const next = advanceSeenEnvelope(state, envelope);
   const event = envelope.aguiEvent;
   const runStepId = envelope.runStepId;
 
   if (event.type === "RUN_STARTED" && runStepId && envelope.coworkerId) {
-    const prior = state.runs[runStepId];
+    const prior = next.runs[runStepId];
     if (
       prior &&
       (envelope.channelSequence <= prior.sequence || isTerminalRunStatus(prior.status))
     ) {
-      return { ...state, seenSequences };
+      return next;
     }
     return {
-      ...state,
-      seenSequences,
+      ...next,
       runs: {
-        ...state.runs,
+        ...next.runs,
         [runStepId]: {
           runStepId,
           ...(envelope.applicationRunId ? { applicationRunId: envelope.applicationRunId } : {}),
@@ -272,22 +341,20 @@ export function channelTimelineReducer(
     runStepId &&
     envelope.coworkerId
   ) {
-    const interrupted = event.type === "RUN_FINISHED" && event.outcome.type === "interrupt";
-    const statusMessage =
-      event.type === "RUN_ERROR"
-        ? event.message
-        : event.outcome.type === "interrupt"
-          ? (event.outcome.interrupts[0]?.message ?? "Human input is required.")
-          : undefined;
-    const prior = state.runs[runStepId];
+    const prior = next.runs[runStepId];
     if (prior && envelope.channelSequence <= prior.sequence) {
-      return { ...state, seenSequences };
+      return next;
     }
+    const outcome = resolveWireRunOutcome({
+      envelope,
+      event,
+      uiState: next.uiState,
+      prior,
+    });
     return {
-      ...state,
-      seenSequences,
+      ...next,
       runs: {
-        ...state.runs,
+        ...next.runs,
         [runStepId]: {
           runStepId,
           ...(envelope.applicationRunId
@@ -297,10 +364,10 @@ export function channelTimelineReducer(
               : {}),
           coworkerId: envelope.coworkerId,
           sequence: envelope.channelSequence,
-          status: event.type === "RUN_ERROR" ? "failed" : interrupted ? "needs_input" : "complete",
-          lifecycle: event.type === "RUN_ERROR" ? "failed" : interrupted ? "active" : "completed",
+          status: outcome.status,
+          lifecycle: outcome.lifecycle,
           ...(prior?.counters ? { counters: prior.counters } : {}),
-          ...(statusMessage ? { message: statusMessage } : {}),
+          ...(outcome.message ? { message: outcome.message } : {}),
         },
       },
     };
@@ -313,12 +380,12 @@ export function channelTimelineReducer(
     envelope.coworkerId
   ) {
     const key = `${envelope.logicalThreadId ?? envelope.coworkerId}:${event.messageId}`;
-    const prior = state.messages[key];
+    const prior = next.messages[key];
     const content =
       event.type === "TEXT_MESSAGE_CONTENT"
         ? `${prior?.content ?? ""}${event.delta}`
         : (prior?.content ?? "");
-    const messages = { ...state.messages };
+    const messages = { ...next.messages };
     const restPlaceholderKey = `seq:${envelope.channelSequence}`;
     if (messages[restPlaceholderKey]) {
       delete messages[restPlaceholderKey];
@@ -333,14 +400,13 @@ export function channelTimelineReducer(
       status: event.type === "TEXT_MESSAGE_END" ? "complete" : "streaming",
     };
     return {
-      ...state,
-      seenSequences,
+      ...next,
       messages,
     };
   }
 
   if (event.type === "MESSAGES_SNAPSHOT" && envelope.coworkerId) {
-    const messages = { ...state.messages };
+    const messages = { ...next.messages };
     const restPlaceholderKey = `seq:${envelope.channelSequence}`;
     if (messages[restPlaceholderKey]) {
       delete messages[restPlaceholderKey];
@@ -359,8 +425,7 @@ export function channelTimelineReducer(
       };
     }
     return {
-      ...state,
-      seenSequences,
+      ...next,
       messages,
     };
   }
@@ -370,10 +435,9 @@ export function channelTimelineReducer(
     if (unsupported) {
       const inertKey = `inert:${unsupported.messageId}`;
       return {
-        ...state,
-        seenSequences,
+        ...next,
         inertActivities: {
-          ...state.inertActivities,
+          ...next.inertActivities,
           [inertKey]: {
             key: inertKey,
             sequence: envelope.channelSequence,
@@ -385,17 +449,17 @@ export function channelTimelineReducer(
       };
     }
 
-    const priorActivity = state.activityState.activities[event.messageId ?? ""];
-    const nextActivityState = reduceActivityPresentationState(state.activityState, envelope);
+    const priorActivity = next.activityState.activities[event.messageId ?? ""];
+    const nextActivityState = reduceActivityPresentationState(next.activityState, envelope);
     const nextActivity = nextActivityState.activities[event.messageId ?? ""];
     const messageId = typeof event.messageId === "string" ? event.messageId : undefined;
     if (!messageId) {
-      return { ...state, seenSequences, activityState: nextActivityState };
+      return { ...next, activityState: nextActivityState };
     }
 
-    const activityRefs = { ...state.activityRefs };
-    const activitySequences = { ...state.activitySequences };
-    const inertActivities = { ...state.inertActivities };
+    const activityRefs = { ...next.activityRefs };
+    const activitySequences = { ...next.activitySequences };
+    const inertActivities = { ...next.inertActivities };
     delete inertActivities[`inert:${messageId}`];
 
     if (nextActivity) {
@@ -419,8 +483,7 @@ export function channelTimelineReducer(
     }
 
     return {
-      ...state,
-      seenSequences,
+      ...next,
       activityState: nextActivityState,
       activityRefs,
       activitySequences,
@@ -431,16 +494,15 @@ export function channelTimelineReducer(
   if (event.type === "CUSTOM" && event.name !== "message.created") {
     const parsedName = applicationSourceNameSchema.safeParse(event.name);
     if (!parsedName.success) {
-      return { ...state, seenSequences };
+      return next;
     }
     const customKey = `custom:${envelope.channelSequence}`;
     const lifecycle = event.payload.lifecycle;
     const activity = event.payload.activity;
     return {
-      ...state,
-      seenSequences,
+      ...next,
       customEvents: {
-        ...state.customEvents,
+        ...next.customEvents,
         [customKey]: {
           key: customKey,
           sequence: envelope.channelSequence,
@@ -451,11 +513,11 @@ export function channelTimelineReducer(
           ...(envelope.coworkerId ? { coworkerId: envelope.coworkerId } : {}),
         },
       },
-      runs: applyRunProjection(state.runs, envelope, lifecycle, activity),
+      runs: applyRunProjection(next.runs, envelope, lifecycle, activity),
     };
   }
 
-  return { ...state, seenSequences };
+  return next;
 }
 
 export function orderedTimelineMessages(state: ChannelTimelineState): TimelineMessage[] {
