@@ -75,6 +75,8 @@ function inspectZipContent(content: Buffer): "safe" | "sensitive" | "invalid" {
     }
   }
   if (endOffset < 0 || endOffset + 22 > content.length) return "invalid";
+  const archiveComment = content.subarray(endOffset + 22);
+  if (containsSensitiveText(archiveComment)) return "sensitive";
   const diskNumber = content.readUInt16LE(endOffset + 4);
   const centralDisk = content.readUInt16LE(endOffset + 6);
   const entriesOnDisk = content.readUInt16LE(endOffset + 8);
@@ -112,6 +114,12 @@ function inspectZipContent(content: Buffer): "safe" | "sensitive" | "invalid" {
       if (nameEnd > content.length || (flags & 0x1) !== 0) return "invalid";
       const name = content.subarray(offset + 46, nameEnd).toString("utf8");
       if (isSensitiveArtifactPath(name)) return "sensitive";
+      const entryCommentStart = nameEnd + extraLength;
+      const entryCommentEnd = entryCommentStart + commentLength;
+      if (entryCommentEnd > content.length) return "invalid";
+      if (containsSensitiveText(content.subarray(entryCommentStart, entryCommentEnd))) {
+        return "sensitive";
+      }
       if (localOffset + 30 > content.length || content.readUInt32LE(localOffset) !== 0x04034b50) {
         return "invalid";
       }
@@ -181,7 +189,7 @@ export function validateDiscoveredArtifactDownload(input: {
     return { ok: false, reason: "size_mismatch" };
   }
   const contentInspection =
-    normalizeMime(discovery.mimeType) === "application/zip"
+    normalizeMime(discovery.mimeType) === "application/zip" || looksLikeZip(content)
       ? inspectZipContent(content)
       : containsSensitiveText(content)
         ? "sensitive"

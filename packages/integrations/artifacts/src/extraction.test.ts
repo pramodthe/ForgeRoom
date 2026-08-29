@@ -8,9 +8,10 @@ import {
   P0_MAX_ARTIFACT_BYTES,
 } from "./index";
 
-function createStoredZip(name: string, content: Buffer, comment = ""): Buffer {
+function createStoredZip(name: string, content: Buffer, comment = "", entryComment = ""): Buffer {
   const nameBytes = Buffer.from(name, "utf8");
   const commentBytes = Buffer.from(comment, "utf8");
+  const entryCommentBytes = Buffer.from(entryComment, "utf8");
   const local = Buffer.alloc(30 + nameBytes.length + content.length);
   local.writeUInt32LE(0x04034b50, 0);
   local.writeUInt32LE(content.length, 18);
@@ -19,12 +20,14 @@ function createStoredZip(name: string, content: Buffer, comment = ""): Buffer {
   nameBytes.copy(local, 30);
   content.copy(local, 30 + nameBytes.length);
 
-  const central = Buffer.alloc(46 + nameBytes.length);
+  const central = Buffer.alloc(46 + nameBytes.length + entryCommentBytes.length);
   central.writeUInt32LE(0x02014b50, 0);
   central.writeUInt32LE(content.length, 20);
   central.writeUInt32LE(content.length, 24);
   central.writeUInt16LE(nameBytes.length, 28);
+  central.writeUInt16LE(entryCommentBytes.length, 32);
   nameBytes.copy(central, 46);
+  entryCommentBytes.copy(central, 46 + nameBytes.length);
 
   const end = Buffer.alloc(22 + commentBytes.length);
   end.writeUInt32LE(0x06054b50, 0);
@@ -181,6 +184,39 @@ describe("P0-312 download validation", () => {
     );
     expect(
       validateDiscoveredArtifactDownload({ discovery: zipDiscovery, content: sensitiveZip }),
+    ).toMatchObject({ ok: false, reason: "sensitive_content" });
+    expect(
+      validateDiscoveredArtifactDownload({
+        discovery: {
+          ...zipDiscovery,
+          sandboxPath: "/home/daytona/results.bin",
+          relativePath: "results.bin",
+          name: "results.bin",
+          mimeType: "application/octet-stream",
+        },
+        content: sensitiveZip,
+      }),
+    ).toMatchObject({ ok: false, reason: "sensitive_content" });
+
+    const sensitiveCommentZip = createStoredZip(
+      "summary.txt",
+      Buffer.from("safe"),
+      "aws_secret_access_key=provider-secret-value",
+    );
+    expect(
+      validateDiscoveredArtifactDownload({ discovery: zipDiscovery, content: sensitiveCommentZip }),
+    ).toMatchObject({ ok: false, reason: "sensitive_content" });
+    const sensitiveEntryCommentZip = createStoredZip(
+      "summary.txt",
+      Buffer.from("safe"),
+      "",
+      "client_secret=provider-secret-value",
+    );
+    expect(
+      validateDiscoveredArtifactDownload({
+        discovery: zipDiscovery,
+        content: sensitiveEntryCommentZip,
+      }),
     ).toMatchObject({ ok: false, reason: "sensitive_content" });
 
     const nestedZip = createStoredZip(
