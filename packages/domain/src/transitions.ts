@@ -1,6 +1,12 @@
-import type { CoworkerDraftState } from "@forgeroom/contracts";
-import type { RunLifecycle, RunStepState } from "@forgeroom/contracts";
-import type { TaskStatus } from "@forgeroom/contracts";
+import type {
+  ActionProposalState,
+  AgentTurnState,
+  CoworkerDraftState,
+  PauseGroupState,
+  RunLifecycle,
+  RunStepState,
+  TaskStatus,
+} from "@forgeroom/contracts";
 
 export const TASK_TRANSITIONS: Record<TaskStatus, readonly TaskStatus[]> = {
   todo: ["in_progress", "blocked", "cancelled"],
@@ -73,4 +79,67 @@ export const RUN_STEP_TRANSITIONS: Record<RunStepState, readonly RunStepState[]>
 
 export function canTransitionRunStep(from: RunStepState, to: RunStepState): boolean {
   return RUN_STEP_TRANSITIONS[from]?.includes(to) ?? false;
+}
+
+/**
+ * AgentTurn legal edges from `data-model.md`.
+ * `required_actions` is terminal for that turn (RunStep stays nonterminal).
+ * Response-only resume turns use `intended → resuming → streaming`.
+ */
+export const AGENT_TURN_TRANSITIONS: Record<AgentTurnState, readonly AgentTurnState[]> = {
+  intended: ["acquiring", "resuming"],
+  acquiring: ["creating", "failed", "cancelled", "uncertain"],
+  creating: ["streaming", "failed", "cancelled", "uncertain"],
+  streaming: ["required_actions", "completed", "failed", "cancelled", "uncertain"],
+  required_actions: [],
+  resuming: ["streaming", "failed", "cancelled", "uncertain"],
+  completed: [],
+  failed: [],
+  cancelled: [],
+  uncertain: [],
+};
+
+export function canTransitionAgentTurn(from: AgentTurnState, to: AgentTurnState): boolean {
+  return AGENT_TURN_TRANSITIONS[from]?.includes(to) ?? false;
+}
+
+/** PauseGroup legal edges from `data-model.md` (CAS collecting/ready → resuming). */
+export const PAUSE_GROUP_TRANSITIONS: Record<PauseGroupState, readonly PauseGroupState[]> = {
+  collecting: ["ready", "stale", "expired", "cancelled"],
+  ready: ["resuming", "stale", "expired", "cancelled"],
+  resuming: ["resumed", "uncertain"],
+  resumed: [],
+  stale: [],
+  expired: [],
+  cancelled: [],
+  uncertain: [],
+};
+
+export function canTransitionPauseGroup(from: PauseGroupState, to: PauseGroupState): boolean {
+  return PAUSE_GROUP_TRANSITIONS[from]?.includes(to) ?? false;
+}
+
+/** ActionProposal legal edges from `data-model.md`. */
+export const ACTION_PROPOSAL_TRANSITIONS: Record<
+  ActionProposalState,
+  readonly ActionProposalState[]
+> = {
+  proposed: ["allowed", "denied", "expired", "stale"],
+  allowed: ["executing"],
+  denied: [],
+  expired: [],
+  stale: [],
+  executing: ["succeeded", "failed", "unknown"],
+  succeeded: [],
+  failed: [],
+  unknown: ["reconciled_succeeded", "reconciled_failed"],
+  reconciled_succeeded: [],
+  reconciled_failed: [],
+};
+
+export function canTransitionActionProposal(
+  from: ActionProposalState,
+  to: ActionProposalState,
+): boolean {
+  return ACTION_PROPOSAL_TRANSITIONS[from]?.includes(to) ?? false;
 }

@@ -38,11 +38,17 @@ export type {
 
 export { assertFoundationBoundary, DOMAIN_RELEASE } from "./boundary";
 export {
+  canTransitionActionProposal,
+  canTransitionAgentTurn,
   canTransitionCoworkerDraft,
+  canTransitionPauseGroup,
   canTransitionRunLifecycle,
   canTransitionRunStep,
   canTransitionTask,
+  ACTION_PROPOSAL_TRANSITIONS,
+  AGENT_TURN_TRANSITIONS,
   COWORKER_DRAFT_TRANSITIONS,
+  PAUSE_GROUP_TRANSITIONS,
   RUN_LIFECYCLE_TRANSITIONS,
   RUN_STEP_TRANSITIONS,
   TASK_TRANSITIONS,
