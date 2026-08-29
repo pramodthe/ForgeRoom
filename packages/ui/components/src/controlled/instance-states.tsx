@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import type { UiInstanceReplayResponse } from "@forgeroom/contracts";
 
 type UiInstanceStatus = UiInstanceReplayResponse["status"];
@@ -53,13 +54,38 @@ export function ControlledStatusFallback({
   textAlternative: string;
 }) {
   const labels: Record<UiInstanceStatus, { title: string; detail: string }> = {
-    building: { title: "Building", detail: "The component is still being prepared." },
+    building: {
+      title: "Preparing component",
+      detail: "Validated props are loading. The transcript remains available below.",
+    },
     ready: { title: "Ready", detail: "Waiting for render data." },
-    degraded: { title: "Degraded", detail: "Showing the last known-safe representation." },
+    degraded: {
+      title: "Stale render",
+      detail: "Showing the last known-safe representation while the surface catches up.",
+    },
     failed: { title: "Render failed", detail: "This surface could not be rendered safely." },
-    revoked: { title: "Revoked", detail: "Grants for this component were revoked." },
+    revoked: { title: "Refused", detail: "Grants for this component were revoked." },
     closed: { title: "Closed", detail: "This interactive surface has closed." },
   };
   const copy = labels[status];
   return <StateCard title={copy.title} detail={copy.detail} textAlternative={textAlternative} />;
+}
+
+export function DegradedControlledState({
+  textAlternative,
+  children,
+}: {
+  textAlternative: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className="space-y-2">
+      <StateCard
+        title="Stale render"
+        detail="Showing the last known-safe representation while the surface catches up."
+        textAlternative={textAlternative}
+      />
+      {children}
+    </div>
+  );
 }

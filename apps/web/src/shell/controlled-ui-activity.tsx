@@ -8,6 +8,10 @@ import {
 import { getUiInstanceReplay, postUiInstanceDataFunction } from "../api/channel-resources-api";
 import { ApiError } from "../api/http-client";
 import { useSession } from "../auth/session-context";
+import {
+  choiceSubmitErrorMessage,
+  useControlledChoiceSubmit,
+} from "./use-controlled-choice-submit";
 
 type ControlledUiActivityProps = {
   content: Extract<ForgeRoomActivityContent, { activityType: "forgeroom.controlled_ui.v1" }>;
@@ -20,7 +24,11 @@ const COMPONENT_DATA_REFS: Record<string, string> = {
   ArtifactCard: "artifact",
 };
 
-function mapDataFunctionResult(dataRef: string, data: unknown): ControlledInstanceData | undefined {
+function mapDataFunctionResult(
+  dataRef: string,
+  data: unknown,
+  artifactId?: string,
+): ControlledInstanceData | undefined {
   if (!data || typeof data !== "object") {
     return undefined;
   }
@@ -35,13 +43,26 @@ function mapDataFunctionResult(dataRef: string, data: unknown): ControlledInstan
     return { task: record.task as Record<string, unknown> };
   }
   if (dataRef === "artifact" && record.artifact && typeof record.artifact === "object") {
-    return { artifact: record.artifact as Record<string, unknown> };
+    return {
+      artifact: record.artifact as Record<string, unknown>,
+      artifactId,
+    };
   }
   return undefined;
 }
 
+function resolveArtifactId(
+  dataGrant: { dataRef: string; source: { kind: string; artifactId?: string } } | undefined,
+): string | undefined {
+  if (!dataGrant || dataGrant.dataRef !== "artifact") {
+    return undefined;
+  }
+  return dataGrant.source.kind === "artifactRevision" ? dataGrant.source.artifactId : undefined;
+}
+
 export function ControlledUiActivity({ content }: ControlledUiActivityProps) {
   const { session } = useSession();
+  const choiceSubmit = useControlledChoiceSubmit(content.surfaceId);
   const replayQuery = useQuery({
     queryKey: ["ui-instance-replay", content.surfaceId],
     queryFn: () => getUiInstanceReplay(content.surfaceId),
@@ -53,6 +74,7 @@ export function ControlledUiActivity({ content }: ControlledUiActivityProps) {
     replay && dataRef
       ? replay.dataGrants.find((grant) => grant.dataRef === dataRef && !grant.revoked)
       : undefined;
+  const artifactId = resolveArtifactId(dataGrant);
   const dataQuery = useQuery({
     queryKey: [
       "ui-instance-data",
@@ -148,10 +170,17 @@ export function ControlledUiActivity({ content }: ControlledUiActivityProps) {
 
   const instanceData =
     dataGrant && dataQuery.data
-      ? mapDataFunctionResult(dataGrant.dataRef, dataQuery.data)
+      ? mapDataFunctionResult(dataGrant.dataRef, dataQuery.data, artifactId)
       : undefined;
 
-  const interactionEnabled = replay.interactionEnabled && replay.componentName !== "ChoiceForm";
+  const submitGrantAvailable = replay.actionGrants.some(
+    (grant) =>
+      !grant.revoked &&
+      grant.mode === "complete_component_interrupt" &&
+      grant.actionRef === "submit",
+  );
+  const interactionEnabled =
+    replay.interactionEnabled && (replay.componentName !== "ChoiceForm" || submitGrantAvailable);
 
   return (
     <ControlledComponentSlot slotId={content.surfaceId}>
@@ -163,6 +192,15 @@ export function ControlledUiActivity({ content }: ControlledUiActivityProps) {
         validatedProps={replay.validatedProps}
         data={instanceData}
         interactionEnabled={interactionEnabled}
+        onSubmitChoice={
+          replay.componentName === "ChoiceForm" && interactionEnabled
+            ? (values) => {
+                choiceSubmit.mutate({ replay, values });
+              }
+            : undefined
+        }
+        choiceFormError={choiceSubmit.error ? choiceSubmitErrorMessage(choiceSubmit.error) : null}
+        choiceFormSubmitting={choiceSubmit.isPending}
       />
     </ControlledComponentSlot>
   );

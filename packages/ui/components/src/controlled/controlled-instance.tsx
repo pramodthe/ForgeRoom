@@ -12,16 +12,19 @@ import {
 } from "./renderers";
 import {
   ControlledStatusFallback,
+  DegradedControlledState,
   InertControlledState,
   PreparingControlledState,
 } from "./instance-states";
 import { validateControlledProps } from "./validate-props";
+import { safeArtifactDownloadPath } from "./artifact-download";
 
 export type ControlledInstanceData = {
   rows?: Array<Record<string, string | number>>;
   points?: Array<Record<string, string | number>>;
   task?: Record<string, unknown>;
   artifact?: Record<string, unknown>;
+  artifactId?: string;
 };
 
 export type ControlledInstanceProps = {
@@ -33,6 +36,8 @@ export type ControlledInstanceProps = {
   data?: ControlledInstanceData;
   interactionEnabled?: boolean;
   onSubmitChoice?: (values: Record<string, unknown>) => void;
+  choiceFormError?: string | null;
+  choiceFormSubmitting?: boolean;
 };
 
 function readRows(data?: ControlledInstanceData): Array<Record<string, string | number>> {
@@ -57,6 +62,8 @@ function renderValidatedComponent(
   props: Record<string, unknown>,
   data: ControlledInstanceData | undefined,
   onSubmitChoice?: (values: Record<string, unknown>) => void,
+  choiceFormError?: string | null,
+  choiceFormSubmitting?: boolean,
 ) {
   switch (componentName) {
     case "DataTable":
@@ -119,6 +126,7 @@ function renderValidatedComponent(
           show_preview={Boolean(props.show_preview)}
           show_source={Boolean(props.show_source)}
           download_label={String(props.download_label)}
+          downloadHref={safeArtifactDownloadPath(data?.artifactId)}
           artifact={
             data?.artifact as
               | {
@@ -127,7 +135,6 @@ function renderValidatedComponent(
                   revision?: number;
                   preview_label?: string;
                   creator_name?: string;
-                  download_href?: string;
                 }
               | undefined
           }
@@ -146,6 +153,8 @@ function renderValidatedComponent(
               : []
           }
           onSubmit={onSubmitChoice}
+          formError={choiceFormError}
+          submitting={choiceFormSubmitting}
         />
       );
     default:
@@ -162,6 +171,8 @@ export function ControlledInstance({
   data,
   interactionEnabled = false,
   onSubmitChoice,
+  choiceFormError,
+  choiceFormSubmitting,
 }: ControlledInstanceProps) {
   if (status === "building" || validatedProps === null) {
     return <PreparingControlledState textAlternative={textAlternative} />;
@@ -180,6 +191,8 @@ export function ControlledInstance({
     validation.value,
     data,
     interactionEnabled ? onSubmitChoice : undefined,
+    choiceFormError,
+    choiceFormSubmitting,
   );
   if (!rendered) {
     return (
@@ -190,9 +203,17 @@ export function ControlledInstance({
     );
   }
 
-  return (
+  const content = (
     <ComponentHostBoundary slotKind="controlled-component" slotId={instanceId}>
       {rendered}
     </ComponentHostBoundary>
   );
+
+  if (status === "degraded") {
+    return (
+      <DegradedControlledState textAlternative={textAlternative}>{content}</DegradedControlledState>
+    );
+  }
+
+  return content;
 }
