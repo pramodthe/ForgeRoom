@@ -230,7 +230,11 @@ export { loadSandboxArtifactDiscoveryBinding } from "./artifact-discovery-bindin
 export {
   createSkillDraftRecord,
   getSkillDraftById,
+  getSkillDraftBySkillId,
+  getPublishedSkillVersionBySkillId,
   getSkillVersionById,
+  listWorkspaceSkillDrafts,
+  listWorkspaceSkillVersions,
   loadSkillRunEvidence,
   publishSkillDraftRecord,
   slugifySkillStableName,

@@ -16,6 +16,9 @@ import type {
   CoworkerProfile,
   CoworkerUpdateCommand,
   SkillDraft,
+  SkillDraftCreateCommand,
+  SkillDraftPublishCommand,
+  SkillBindingCreateCommand,
   SkillVersion,
   TaskRecordV1,
   TaskStatus,
@@ -31,6 +34,7 @@ import {
   coworkerDraftSchema,
   coworkerProfileSchema,
   coworkerUpdateCommandSchema,
+  skillDraftSchema,
   skillVersionSchema,
   taskRecordV1Schema,
 } from "@forgeroom/contracts";
@@ -823,7 +827,11 @@ export async function listSkillDrafts(workspaceId: string): Promise<SkillDraft[]
     assertWorkspace(workspaceId);
     return MOCK_SKILL_DRAFTS;
   }
-  return [];
+  const body = await apiFetch<{ drafts: unknown[]; request_id: string }>(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/skills`,
+  );
+  const parsed = stripRequestId(body);
+  return (parsed.drafts as unknown[]).map((draft) => skillDraftSchema.parse(draft));
 }
 
 export async function listSkillVersions(workspaceId: string): Promise<SkillVersion[]> {
@@ -832,15 +840,35 @@ export async function listSkillVersions(workspaceId: string): Promise<SkillVersi
     const runSkill = storedFixtureRunSkill();
     return runSkill ? [...MOCK_SKILL_VERSIONS, runSkill] : MOCK_SKILL_VERSIONS;
   }
-  return [];
+  const body = await apiFetch<{ versions: unknown[]; request_id: string }>(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/skills`,
+  );
+  const parsed = stripRequestId(body);
+  return (parsed.versions as unknown[]).map((version) => skillVersionSchema.parse(version));
 }
 
-export async function getSkillDraft(workspaceId: string, skillId: string) {
+export async function getSkillDraft(workspaceId: string, skillOrDraftId: string) {
   if (useMockApi) {
     assertWorkspace(workspaceId);
-    return MOCK_SKILL_DRAFTS.find((skill) => skill.id === skillId) ?? null;
+    return MOCK_SKILL_DRAFTS.find((skill) => skill.id === skillOrDraftId) ?? null;
   }
-  return null;
+  try {
+    const body = await apiFetch<{ draft: unknown; request_id: string }>(
+      `/api/skill-drafts/${encodeURIComponent(skillOrDraftId)}`,
+    );
+    return skillDraftSchema.parse(stripRequestId(body).draft);
+  } catch (error) {
+    if (!(error instanceof ApiError) || error.status !== 404) {
+      throw error;
+    }
+  }
+  const body = await apiFetch<{
+    draft: unknown | null;
+    version: unknown | null;
+    request_id: string;
+  }>(`/api/skills/${encodeURIComponent(skillOrDraftId)}`);
+  const parsed = stripRequestId(body);
+  return parsed.draft ? skillDraftSchema.parse(parsed.draft) : null;
 }
 
 export async function getSkillVersion(workspaceId: string, skillId: string) {
@@ -850,7 +878,57 @@ export async function getSkillVersion(workspaceId: string, skillId: string) {
       (await listSkillVersions(workspaceId)).find((skill) => skill.skill_id === skillId) ?? null
     );
   }
-  return null;
+  const body = await apiFetch<{
+    draft: unknown | null;
+    version: unknown | null;
+    request_id: string;
+  }>(`/api/skills/${encodeURIComponent(skillId)}`);
+  const parsed = stripRequestId(body);
+  return parsed.version ? skillVersionSchema.parse(parsed.version) : null;
+}
+
+export async function createSkillDraftFromRun(input: {
+  runId: string;
+  command: SkillDraftCreateCommand;
+  csrfToken: string;
+}): Promise<SkillDraft> {
+  const body = await apiFetch<{ draft: unknown; request_id: string }>(
+    `/api/runs/${encodeURIComponent(input.runId)}/skill-drafts`,
+    {
+      method: "POST",
+      csrfToken: input.csrfToken,
+      body: JSON.stringify(input.command),
+    },
+  );
+  return skillDraftSchema.parse(stripRequestId(body).draft);
+}
+
+export async function publishSkillDraft(input: {
+  draftId: string;
+  command: SkillDraftPublishCommand;
+  csrfToken: string;
+}): Promise<SkillVersion> {
+  const body = await apiFetch<{ version: unknown; request_id: string }>(
+    `/api/skill-drafts/${encodeURIComponent(input.draftId)}/publish`,
+    {
+      method: "POST",
+      csrfToken: input.csrfToken,
+      body: JSON.stringify(input.command),
+    },
+  );
+  return skillVersionSchema.parse(stripRequestId(body).version);
+}
+
+export async function createSkillBinding(input: {
+  coworkerId: string;
+  command: SkillBindingCreateCommand;
+  csrfToken: string;
+}): Promise<void> {
+  await apiFetch(`/api/coworkers/${encodeURIComponent(input.coworkerId)}/skill-bindings`, {
+    method: "POST",
+    csrfToken: input.csrfToken,
+    body: JSON.stringify(input.command),
+  });
 }
 
 export async function publishFixtureRunSkill(workspaceId: string): Promise<SkillVersion> {

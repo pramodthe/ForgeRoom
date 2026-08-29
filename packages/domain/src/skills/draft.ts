@@ -7,6 +7,7 @@ import {
   collectRequiredTools,
   type SkillRunEvidence,
 } from "./evidence";
+import type { ParsedSkillDraftNarrative } from "./parse-markdown";
 
 export type SkillDraftBody = {
   when_to_use: string;
@@ -201,12 +202,34 @@ export function buildSkillDraftBody(evidence: SkillRunEvidence): SkillDraftBody 
   };
 }
 
-export function buildSkillDraft(input: BuildSkillDraftInput): SkillDraft {
+export function mergeSkillDraftNarrative(
+  narrative: ParsedSkillDraftNarrative,
+  evidence: SkillRunEvidence,
+): SkillDraftBody {
+  return {
+    when_to_use: narrative.when_to_use,
+    inputs: narrative.inputs.length > 0 ? narrative.inputs : [evidence.goal],
+    method: narrative.method,
+    validation: narrative.validation,
+    output: narrative.output,
+    failures:
+      narrative.failures.length > 0
+        ? narrative.failures
+        : ["If required tools or approvals are unavailable, stop without mutating provider state."],
+    required_tools: collectRequiredTools(evidence),
+    required_components: [...evidence.componentVersionIds].sort(),
+    required_approvals: collectRequiredApprovals(evidence),
+  };
+}
+
+export function buildSkillDraftWithBody(
+  input: BuildSkillDraftInput,
+  body: SkillDraftBody,
+): SkillDraft {
   const eligibility = assertRunEligibleForSkillDraft(input.evidence);
   if (eligibility) {
     throw new SkillDraftBuildError(eligibility);
   }
-  const body = buildSkillDraftBody(input.evidence);
   const sourceContentHash = hashSkillSourceContent(input.evidence);
   const revision = input.revision ?? 1;
   const draftHash = hashSkillDraftBody(body, revision, sourceContentHash);
@@ -232,4 +255,8 @@ export function buildSkillDraft(input: BuildSkillDraftInput): SkillDraft {
     created_by: input.createdBy,
     created_at: input.createdAt,
   };
+}
+
+export function buildSkillDraft(input: BuildSkillDraftInput): SkillDraft {
+  return buildSkillDraftWithBody(input, buildSkillDraftBody(input.evidence));
 }
