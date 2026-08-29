@@ -18,7 +18,7 @@ export function PendingQuestionsStrip(props: { channelId: string; archived: bool
 
   return (
     <section
-      className="border-b border-sky-200 bg-sky-50/80 px-4 py-3"
+      className="trusted-hitl-strip border-b border-sky-200 bg-sky-50/80 px-4 py-3"
       aria-label="Pending questions"
     >
       <div className="mx-auto max-w-3xl space-y-3">

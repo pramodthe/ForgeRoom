@@ -5,7 +5,7 @@
 | Overall | M0 Demo contract done; M1 Foundation done; P0-316/P0-410 done; P0-407 in_progress; P0-315–P0-317 in_review; P0-301–P0-314, P0-404, P0-405 done |
 | Current phase | Phase 1 — Foundation / M4 Product UI |
 | Active task | P0-315 (in_review), P0-317 (in_review), P0-407 (in_progress) |
-| Next task | P0-407 accessibility slice 2 or P0-317 closeout |
+| Next task | P0-407 slice 3 (axe/visual) or P0-317 closeout |
 | P0 blockers | Run-limit hard enforcement (P0-204/OD-008 evidence) |
 | Last updated | 2026-08-29 (P0-316 merged #55; P0-317 time-limit closeout in review PR #56) |
 

@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { LoadingState, RouteErrorState } from "@forgeroom/ui-components";
 import type { TaskRecordV1, TaskStatus } from "@forgeroom/contracts";
 import { TASK_TRANSITIONS } from "@forgeroom/domain/transitions";
-import { useRef, useState, type ReactNode } from "react";
+import { useRef, useState, useId, type ReactNode } from "react";
 import {
   createTask,
   getTask,
@@ -23,6 +23,7 @@ import {
   formatTaskRevisionSummary,
   isStaleTaskRevision,
 } from "./review-flow-helpers";
+import { PoliteStatus } from "../shell/polite-status";
 
 const STATUS_STYLE: Record<TaskRecordV1["status"], string> = {
   todo: "bg-zinc-100 text-zinc-700",
@@ -588,7 +589,9 @@ export function TaskDetailPage() {
 function TaskTransitionPanel({ workspaceId, task }: { workspaceId: string; task: TaskRecordV1 }) {
   const { session } = useSession();
   const queryClient = useQueryClient();
+  const statusId = useId();
   const [conflictNotice, setConflictNotice] = useState<string | null>(null);
+  const [successNotice, setSuccessNotice] = useState<string | null>(null);
   const [pendingStatus, setPendingStatus] = useState<TaskStatus | null>(null);
   const mutation = useMutation({
     mutationFn: (status: TaskStatus) =>
@@ -601,11 +604,13 @@ function TaskTransitionPanel({ workspaceId, task }: { workspaceId: string; task:
     onSuccess: async (updated) => {
       setConflictNotice(null);
       setPendingStatus(null);
+      setSuccessNotice(`Task moved to ${TASK_TRANSITION_LABEL[updated.status] ?? updated.status}.`);
       queryClient.setQueryData(["task", workspaceId, task.id], updated);
       await queryClient.invalidateQueries({ queryKey: ["tasks", workspaceId] });
       await queryClient.invalidateQueries({ queryKey: ["task-history", workspaceId, task.id] });
     },
     onError: async (error, status) => {
+      setSuccessNotice(null);
       if (isStaleTaskRevision(error)) {
         const latest = await getTask(workspaceId, task.id);
         if (latest) {
@@ -622,16 +627,23 @@ function TaskTransitionPanel({ workspaceId, task }: { workspaceId: string; task:
     },
   });
   const transitions = TASK_TRANSITIONS[task.status];
+  const statusMessage = mutation.isPending
+    ? "Saving task change."
+    : (conflictNotice ?? successNotice);
 
   return (
     <div className="mt-3 space-y-2">
+      <PoliteStatus id={statusId} message={statusMessage} />
       {conflictNotice ? (
         <div className="rounded-lg bg-amber-50 p-3 text-[11px] text-amber-900" role="status">
           {conflictNotice}
           {pendingStatus ? (
             <button
               type="button"
-              onClick={() => mutation.mutate(pendingStatus)}
+              onClick={() => {
+                setSuccessNotice(null);
+                mutation.mutate(pendingStatus);
+              }}
               disabled={mutation.isPending}
               className="mt-2 block w-full rounded-lg bg-amber-900 px-3 py-2 text-xs font-semibold text-white disabled:bg-amber-300"
             >
@@ -649,7 +661,10 @@ function TaskTransitionPanel({ workspaceId, task }: { workspaceId: string; task:
         <button
           key={status}
           type="button"
-          onClick={() => mutation.mutate(status)}
+          onClick={() => {
+            setSuccessNotice(null);
+            mutation.mutate(status);
+          }}
           disabled={mutation.isPending}
           className={`${index === 0 ? "bg-zinc-950 font-semibold text-white disabled:bg-zinc-300" : "border border-zinc-200 font-medium text-zinc-700 disabled:text-zinc-400"} w-full rounded-lg px-3 py-2 text-xs disabled:cursor-not-allowed`}
         >

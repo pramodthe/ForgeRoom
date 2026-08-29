@@ -54,3 +54,14 @@ body {
 .skip-link:focus-visible {
   left: 0.75rem;
 }
+
+.trusted-hitl-strip {
+  position: relative;
+  z-index: 30;
+  isolation: isolate;
+}
+
+.trusted-hitl-card {
+  position: relative;
+  z-index: 30;
+}

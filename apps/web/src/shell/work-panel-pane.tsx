@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useId, useState } from "react";
 import type { Channel } from "@forgeroom/contracts";
 import { useQuery } from "@tanstack/react-query";
 import { isFixtureMode } from "../api/mode";
@@ -13,7 +13,13 @@ const TABS = ["Work", "Artifacts", "Context"] as const;
 type WorkTab = (typeof TABS)[number];
 
 export function WorkPanelPane(props: { workspaceId: string; channelId: string; channel: Channel }) {
+  const tabListId = useId();
   const [activeTab, setActiveTab] = useState<WorkTab>("Work");
+  const tabPanelIds: Record<WorkTab, string> = {
+    Work: `${tabListId}-work`,
+    Artifacts: `${tabListId}-artifacts`,
+    Context: `${tabListId}-context`,
+  };
   const workroomUi = useChannelWorkroomUi();
   const rosterQuery = useQuery({
     queryKey: ["channel-roster", props.channelId],
@@ -25,12 +31,14 @@ export function WorkPanelPane(props: { workspaceId: string; channelId: string; c
   return (
     <aside className="hidden h-full w-80 shrink-0 flex-col border-l border-zinc-200 bg-white xl:flex">
       <div className="border-b border-zinc-200 px-3 py-3">
-        <div className="flex gap-1" role="tablist" aria-label="Work panel">
+        <div className="flex gap-1" role="tablist" aria-label="Work panel" id={tabListId}>
           {TABS.map((tab) => (
             <button
               key={tab}
               type="button"
               role="tab"
+              id={`${tabListId}-${tab.toLowerCase()}`}
+              aria-controls={tabPanelIds[tab]}
               aria-selected={activeTab === tab}
               className={`flex-1 rounded-lg px-2 py-1.5 text-xs ${
                 activeTab === tab
@@ -44,7 +52,12 @@ export function WorkPanelPane(props: { workspaceId: string; channelId: string; c
           ))}
         </div>
       </div>
-      <div className="flex-1 overflow-y-auto bg-zinc-50/60 p-3 text-sm text-zinc-600">
+      <div
+        className="flex-1 overflow-y-auto bg-zinc-50/60 p-3 text-sm text-zinc-600"
+        role="tabpanel"
+        id={tabPanelIds[activeTab]}
+        aria-labelledby={`${tabListId}-${activeTab.toLowerCase()}`}
+      >
         {showFixture ? (
           <EmptyPanel
             tab={activeTab}
