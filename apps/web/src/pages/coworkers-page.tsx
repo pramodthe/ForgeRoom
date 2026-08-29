@@ -11,6 +11,7 @@ import {
   getCoworker,
   getCoworkerDraft,
   listCoworkerDirectory,
+  reviseCoworkerDraft,
   updateCoworker,
   type CoworkerDetail,
 } from "../api/workspace-api";
@@ -24,6 +25,7 @@ import {
   buildFixtureCoworkerDraft,
   clearCoworkerDraftReview,
   formatTaskRecordGrant,
+  friendlyApiError,
   parseCoworkerDraftFromError,
   persistCoworkerDraftReview,
   readCoworkerDraftReview,
@@ -173,7 +175,7 @@ function CoworkerBuilder({
   useDialogFocus(dialogRef, onClose);
   const { session } = useSession();
   const [stage, setStage] = useState<
-    "prompt" | "gathering" | "review" | "confirming" | "creating" | "ready"
+    "prompt" | "gathering" | "review" | "revising" | "confirming" | "creating" | "ready" | "failed"
   >("prompt");
   const [prompt, setPrompt] = useState(
     "Create a Research coworker that can read GitHub and web data but cannot modify anything.",
@@ -276,8 +278,8 @@ function CoworkerBuilder({
         return;
       }
       if (error instanceof ApiError && error.code === "coworker_provisioning_failed") {
-        setCreationError(error.message);
-        setStage("review");
+        setCreationError(friendlyApiError(error));
+        setStage("failed");
         return;
       }
       if (error instanceof ApiError && error.code === "expired_proposal") {
@@ -287,7 +289,53 @@ function CoworkerBuilder({
         setStage("prompt");
         return;
       }
-      setCreationError(error instanceof Error ? error.message : "Unable to create coworker.");
+      setCreationError(friendlyApiError(error));
+      setStage("review");
+    }
+  }
+
+  async function reviseDraft(revisionRequest: string) {
+    if (!draft) return;
+    setCreationError(null);
+    setStaleNotice(null);
+    setStage("revising");
+    try {
+      if (isFixtureMode) {
+        await new Promise((resolve) => window.setTimeout(resolve, 400));
+        const nextDraft = buildFixtureCoworkerDraft(workspaceId, revisionRequest);
+        setDraft({ ...nextDraft, revision: draft.revision + 1 });
+        setStage("review");
+        return;
+      }
+      if (!session) {
+        throw new Error("Your session expired. Sign in again.");
+      }
+      const revised = await reviseCoworkerDraft({
+        draftId: draft.id,
+        csrfToken: session.csrf_token,
+        command: {
+          schemaVersion: 1,
+          draft_revision: draft.revision,
+          draft_hash: draft.draft_hash,
+          revision_request: revisionRequest,
+          idempotency_key: newIdempotencyKey("coworker_revise"),
+        },
+      });
+      setDraft(revised);
+      persistCoworkerDraftReview(workspaceId, revised.id);
+      setStage("review");
+    } catch (error) {
+      const refreshed = parseCoworkerDraftFromError(error);
+      if (refreshed) {
+        setDraft(refreshed);
+        persistCoworkerDraftReview(workspaceId, refreshed.id);
+        setStaleNotice(
+          "The draft changed on the server. Review the updated revision before creating.",
+        );
+        setStage("review");
+        return;
+      }
+      setCreationError(friendlyApiError(error));
       setStage("review");
     }
   }
@@ -362,6 +410,13 @@ function CoworkerBuilder({
               draft={draft}
               onBack={() => setStage("prompt")}
               onCreate={() => void confirmDraft()}
+              onRevise={(request) => void reviseDraft(request)}
+            />
+          ) : null}
+          {stage === "revising" ? (
+            <BuilderProgress
+              title="Revising draft…"
+              detail="Applying your requested changes to the trusted review draft."
             />
           ) : null}
           {staleNotice ? (
@@ -391,6 +446,24 @@ function CoworkerBuilder({
               title={`Provisioning ${draft?.proposal.name ?? "coworker"}…`}
               detail="Creating the immutable profile and provisioning channel sessions."
             />
+          ) : null}
+          {stage === "failed" ? (
+            <div className="py-10 text-center">
+              <span className="mx-auto grid h-12 w-12 place-items-center rounded-2xl bg-red-100 text-xl text-red-700">
+                !
+              </span>
+              <h3 className="mt-4 text-lg font-semibold text-zinc-950">Provisioning failed</h3>
+              <p className="mx-auto mt-2 max-w-md text-sm text-zinc-600">
+                {creationError ?? "Session provisioning did not complete."}
+              </p>
+              <button
+                type="button"
+                onClick={() => setStage("review")}
+                className="mt-5 rounded-xl border border-zinc-200 px-4 py-2.5 text-sm font-semibold text-zinc-700"
+              >
+                Back to review
+              </button>
+            </div>
           ) : null}
           {stage === "ready" ? (
             <div className="py-12 text-center">
@@ -433,11 +506,17 @@ function PermissionReview({
   draft,
   onBack,
   onCreate,
+  onRevise,
 }: {
   draft: CoworkerDraft | null;
   onBack: () => void;
   onCreate: () => void;
+  onRevise: (revisionRequest: string) => void;
 }) {
+  const [revisionOpen, setRevisionOpen] = useState(false);
+  const [revisionRequest, setRevisionRequest] = useState(
+    "Remove any write tools and keep GitHub read access only.",
+  );
   const name = draft?.proposal.name ?? "Researcher";
   const title = draft?.proposal.title ?? "Customer research specialist";
   const instructions =
@@ -510,6 +589,32 @@ function PermissionReview({
         <strong>Data boundary:</strong> support text may be sent to the selected model provider.
         Credentials and raw provider payloads are never included.
       </div>
+      <details
+        className="mt-4 rounded-xl border border-zinc-200 px-4 py-3"
+        open={revisionOpen}
+        onToggle={(event) => setRevisionOpen(event.currentTarget.open)}
+      >
+        <summary className="cursor-pointer text-sm font-medium text-zinc-700">
+          Request changes before creating
+        </summary>
+        <label className="mt-3 block text-xs text-zinc-500">
+          What should change in this draft?
+          <textarea
+            value={revisionRequest}
+            onChange={(event) => setRevisionRequest(event.target.value)}
+            rows={3}
+            className="mt-1.5 w-full rounded-xl border border-zinc-200 p-3 text-sm text-zinc-700"
+          />
+        </label>
+        <button
+          type="button"
+          onClick={() => onRevise(revisionRequest.trim())}
+          disabled={!revisionRequest.trim()}
+          className="mt-3 rounded-lg border border-zinc-200 px-3 py-2 text-xs font-semibold text-zinc-700 disabled:text-zinc-400"
+        >
+          Revise draft
+        </button>
+      </details>
       <div className="mt-5 flex items-center justify-between">
         <button type="button" onClick={onBack} className="text-sm font-medium text-zinc-500">
           ← Edit request

@@ -5,6 +5,7 @@ import {
   buildFixtureCoworkerDraft,
   clearCoworkerDraftReview,
   formatTaskRecordGrant,
+  friendlyApiError,
   isStaleTaskRevision,
   parseCoworkerDraftFromError,
   persistCoworkerDraftReview,
@@ -62,6 +63,13 @@ describe("review flow helpers", () => {
     expect(readCoworkerDraftReview("workspace_1")).toBe("cwd_123");
     clearCoworkerDraftReview("workspace_1");
     expect(readCoworkerDraftReview("workspace_1")).toBeNull();
+  });
+
+  it("maps common API error codes to user-facing messages", () => {
+    expect(friendlyApiError(new ApiError("manifest_mismatch", "x", 409))).toContain("manifest");
+    expect(friendlyApiError(new ApiError("stale_task_revision", "x", 409))).toContain(
+      "updated elsewhere",
+    );
   });
 
   it("parses coworker drafts from error details strictly", () => {
