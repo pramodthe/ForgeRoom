@@ -11,6 +11,7 @@ import {
   ToolCallActivityCard,
 } from "@forgeroom/ui-components";
 import { ControlledUiActivity } from "./controlled-ui-activity";
+import { ControlledUiPrimaryChrome } from "./controlled-ui-primary-response";
 import type {
   ActivityPresentationState,
   ToolCallPresentationState,
@@ -18,9 +19,12 @@ import type {
 import type { TimelineConnection } from "../ag-ui/use-channel-timeline";
 import type { TimelineItem, TimelineMessage, TimelineRun } from "../ag-ui/channel-timeline-reducer";
 import { resolveActivityEntry, resolveToolCallEntry } from "../ag-ui/channel-timeline-reducer";
+import { resolveBackendToolRenderer } from "../ag-ui/renderer-registry";
 import { isFixtureMode } from "../api/mode";
 import { PinSourceButton } from "./pin-source-button";
 import { pinLabelFromMessageBody } from "./pin-source-label";
+import { PoliteStatus } from "./polite-status";
+import { isNearBottom, timelineLiveAnnouncement } from "./timeline-scroll";
 import { Avatar } from "../ui/avatar";
 import {
   ConnectionRecoveryCards,
@@ -200,20 +204,43 @@ export function ChannelTimeline(props: {
   onOpenRun?: (runId: string) => void;
 }) {
   const bottomRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const stickToBottomRef = useRef(true);
+  const savedScrollTopRef = useRef(0);
   const coworkerById = new Map(props.roster.map((coworker) => [coworker.coworker_id, coworker]));
   const visibleRunCards = Object.values(props.runs).filter((run) => run.status !== "complete");
   const activeRuns = visibleRunCards.filter(
     (run) => run.status === "running" || run.status === "needs_input",
   );
+  const needsInputCount = visibleRunCards.filter((run) => run.status === "needs_input").length;
   const connectionLabel = CONNECTION_LABEL[props.connection];
   const connectionLive = props.connection === "live";
+  const liveAnnouncement = timelineLiveAnnouncement({
+    connection: props.connection,
+    activeRunCount: activeRuns.length,
+    needsInputCount,
+  });
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [props.items, props.runs]);
+    const node = scrollRef.current;
+    if (!node) return;
+    if (stickToBottomRef.current) {
+      bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+      return;
+    }
+    node.scrollTop = savedScrollTopRef.current;
+  }, [props.items, props.runs, props.connection]);
 
   return (
-    <div className="flex-1 overflow-y-auto bg-zinc-50/60 px-4 py-5">
+    <div
+      ref={scrollRef}
+      className="flex-1 overflow-y-auto bg-zinc-50/60 px-4 py-5"
+      onScroll={(event) => {
+        const node = event.currentTarget;
+        stickToBottomRef.current = isNearBottom(node);
+        savedScrollTopRef.current = node.scrollTop;
+      }}
+    >
       <div className="mx-auto max-w-3xl space-y-4">
         <div className="flex items-center justify-between gap-3 text-xs text-zinc-500">
           <span>{props.archived ? "Archived channel" : "Shared channel timeline"}</span>
@@ -276,14 +303,24 @@ export function ChannelTimeline(props: {
                   : entry.owner.actorKind === "system"
                     ? "System"
                     : undefined;
+              if (entry.content.activityType === "forgeroom.controlled_ui.v1") {
+                return (
+                  <ControlledUiPrimaryChrome
+                    key={item.key}
+                    content={entry.content}
+                    roster={props.roster}
+                    ownerCoworkerId={entry.owner.coworkerId}
+                  >
+                    <AgUiActivitySlot slotId={item.messageId}>
+                      <ControlledUiActivity content={entry.content} />
+                    </AgUiActivitySlot>
+                  </ControlledUiPrimaryChrome>
+                );
+              }
               return (
                 <div key={item.key} className="ml-9">
                   <AgUiActivitySlot slotId={item.messageId}>
-                    {entry.content.activityType === "forgeroom.controlled_ui.v1" ? (
-                      <ControlledUiActivity content={entry.content} />
-                    ) : (
-                      <ForgeRoomActivityCard content={entry.content} ownerLabel={ownerLabel} />
-                    )}
+                    <ForgeRoomActivityCard content={entry.content} ownerLabel={ownerLabel} />
                   </AgUiActivitySlot>
                 </div>
               );
@@ -296,6 +333,10 @@ export function ChannelTimeline(props: {
                 entry.owner.coworkerId !== undefined
                   ? coworkerById.get(entry.owner.coworkerId)?.name
                   : undefined;
+              const resolved = resolveBackendToolRenderer({
+                toolName: entry.toolName,
+                status: entry.status,
+              });
               return (
                 <div key={item.key} className="ml-9">
                   <AgUiActivitySlot slotId={item.toolCallId}>
@@ -303,6 +344,7 @@ export function ChannelTimeline(props: {
                       toolName={entry.toolName}
                       status={entry.status}
                       ownerLabel={ownerLabel}
+                      presentation={resolved.presentation}
                     />
                   </AgUiActivitySlot>
                 </div>
@@ -392,9 +434,7 @@ export function ChannelTimeline(props: {
           );
         })}
 
-        <div className="sr-only" aria-live="polite">
-          {activeRuns.map((run) => `${run.coworkerId} ${run.status}`).join(", ")}
-        </div>
+        <PoliteStatus id="channel-timeline-live" message={liveAnnouncement} />
         <div ref={bottomRef} aria-hidden="true" />
       </div>
     </div>
