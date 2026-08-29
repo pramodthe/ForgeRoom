@@ -1,7 +1,7 @@
 ---
 id: P0-318
 title: Save a successful Run as a reviewed private skill
-status: ready
+status: in_progress
 owner: unassigned
 depends_on: [P0-104, P0-106, P0-206, P0-208, P0-403]
 requirements: [SK-001, SK-002, SK-003, SK-004, SK-005]
@@ -28,10 +28,10 @@ The owner can turn one completed Run into an immutable instruction-only TrueForg
 
 ## Acceptance criteria
 
-- [ ] Only a completed successful/accepted application Run can start a draft; source Run/RunStep IDs and normalized evidence hashes are retained.
+- [x] Only a completed successful/accepted application Run can start a draft; source Run/RunStep IDs and normalized evidence hashes are retained. *(slice 1: `POST /api/runs/:runId/skill-drafts` + `GET /api/skill-drafts/:draftId`; completed-run gate, `source_content_hash` + `draft_hash`)*
 - [ ] Draft generation runs through a dedicated structured, no-external-tools path with no inherited coworker tools, MCP/Composio/external-application provider calls or mutation authority; pinned model inference remains allowed under its retention/redaction policy.
-- [ ] Draft contains when-to-use, inputs, ordered procedure, decision rules, validation, expected output, failure/no-data behavior, exact required tools/components/data and approval boundary.
-- [ ] Credentials, raw private reasoning, provider signatures, transient private answers, unrelated messages and unredacted tool bodies never enter draft/package/event/log/UI.
+- [x] Draft contains when-to-use, inputs, ordered procedure, decision rules, validation, expected output, failure/no-data behavior, exact required tools/components/data and approval boundary. *(deterministic structured builder from normalized run evidence in slice 1)*
+- [x] Credentials, raw private reasoning, provider signatures, transient private answers, unrelated messages and unredacted tool bodies never enter draft/package/event/log/UI. *(forbidden-key scan on evidence payloads; only normalized redacted run events ingested)*
 - [ ] Explicit confirmation publishes one immutable private version with manifest/content hashes; edits require a new draft/version.
 - [ ] Attachment intersects all requirements with existing coworker/channel/account grants and cannot grant or substitute anything.
 - [ ] Attach/detach rotates the exact affected sessions; live TrueForge manifest pins the expected skill version/hash and requires sandbox as documented.

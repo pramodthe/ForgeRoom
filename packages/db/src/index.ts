@@ -227,6 +227,13 @@ export type {
   UiInteractionDbResult,
 } from "./ui-interactions";
 export { loadSandboxArtifactDiscoveryBinding } from "./artifact-discovery-binding";
+export {
+  createSkillDraftRecord,
+  getSkillDraftById,
+  loadSkillRunEvidence,
+  slugifySkillStableName,
+} from "./skill-drafts";
+export type { CreateSkillDraftInput, LoadSkillRunEvidenceResult } from "./skill-drafts";
 export type { ArtifactDiscoveryBinding } from "./artifact-discovery-binding";
 export type {
   ArtifactRecord,
