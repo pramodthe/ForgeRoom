@@ -8,7 +8,9 @@ import {
   slugifySkillStableName,
   type createSql,
 } from "@forgeroom/db";
+import type { TrueForgeClient } from "@forgeroom/trueforge";
 import type { WorkspaceServiceResult } from "../workspace/service";
+import { buildSkillDraftBodyForCreate, SkillDraftTurnError } from "./draft-turn";
 
 type SqlClient = ReturnType<typeof createSql>;
 
@@ -31,6 +33,7 @@ export async function createSkillDraftForRun(
   command: SkillDraftCreateCommand,
   now: () => Date,
   ids: { draftId: string; skillId: string },
+  deps?: { trueforgeClient?: TrueForgeClient },
 ): Promise<WorkspaceServiceResult<SkillDraft>> {
   const loaded = await loadSkillRunEvidence(sql, {
     runId,
@@ -50,6 +53,14 @@ export async function createSkillDraftForRun(
   const createdAt = now().toISOString();
 
   try {
+    const draftBody = await buildSkillDraftBodyForCreate(
+      loaded.evidence,
+      deps?.trueforgeClient
+        ? {
+            client: deps.trueforgeClient,
+          }
+        : undefined,
+    );
     const draft = await createSkillDraftRecord(sql, {
       workspaceId: loaded.workspaceId,
       channelId: loaded.channelId,
@@ -60,10 +71,11 @@ export async function createSkillDraftForRun(
       displayName: loaded.evidence.goal,
       evidence: loaded.evidence,
       now: createdAt,
+      draftBody,
     });
     return { ok: true, value: draft };
   } catch (error) {
-    if (error instanceof SkillDraftBuildError) {
+    if (error instanceof SkillDraftBuildError || error instanceof SkillDraftTurnError) {
       return {
         ok: false,
         error: {

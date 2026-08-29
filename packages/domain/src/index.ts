@@ -147,12 +147,15 @@ export {
   buildSkillDraft,
   buildSkillDraftBody,
   buildSkillDraftMarkdown,
+  buildSkillDraftWithBody,
   hashSkillDraftBody,
   hashSkillMarkdown,
   hashSkillSourceContent,
+  mergeSkillDraftNarrative,
   SkillDraftBuildError,
   type SkillDraftBody,
 } from "./skills/draft";
+export { parseSkillDraftMarkdown, type ParsedSkillDraftNarrative } from "./skills/parse-markdown";
 export {
   buildSkillVersionFromDraft,
   hashSkillVersionManifest,

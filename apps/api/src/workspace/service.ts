@@ -80,6 +80,11 @@ import { getRunReceiptForSession } from "../runs/receipt";
 import { getRunForSession } from "../runs/detail";
 import { cancelRunForSession } from "../runs/cancel";
 import { createSkillDraftForRun, getSkillDraftForSession } from "../skills/drafts";
+import {
+  getSkillDraftBySkillForSession,
+  getSkillVersionBySkillForSession,
+  listWorkspaceSkillsForSession,
+} from "../skills/catalog";
 import { getSkillVersionForSession, publishSkillDraftForSession } from "../skills/publish";
 import {
   attachSkillBindingForSession,
@@ -623,6 +628,18 @@ export type WorkspaceService = {
     session: SessionResponse,
     draftId: string,
   ): Promise<WorkspaceServiceResult<SkillDraft>>;
+  listWorkspaceSkills(
+    session: SessionResponse,
+    workspaceId: string,
+  ): Promise<WorkspaceServiceResult<{ drafts: SkillDraft[]; versions: SkillVersion[] }>>;
+  getSkillDraftBySkill(
+    session: SessionResponse,
+    skillId: string,
+  ): Promise<WorkspaceServiceResult<SkillDraft>>;
+  getSkillVersionBySkill(
+    session: SessionResponse,
+    skillId: string,
+  ): Promise<WorkspaceServiceResult<SkillVersion>>;
   publishSkillDraft(
     session: SessionResponse,
     draftId: string,
@@ -4267,7 +4284,17 @@ export function createWorkspaceService(options?: {
           return loaded.draft;
         },
         run: async () =>
-          createSkillDraftForRun(sql, session, runId, command, now, { draftId, skillId }),
+          createSkillDraftForRun(
+            sql,
+            session,
+            runId,
+            command,
+            now,
+            { draftId, skillId },
+            {
+              trueforgeClient,
+            },
+          ),
       });
     },
 
@@ -4279,6 +4306,36 @@ export function createWorkspaceService(options?: {
         };
       }
       return getSkillDraftForSession(sql, session, draftId);
+    },
+
+    async listWorkspaceSkills(session, workspaceId) {
+      if (!sql) {
+        return {
+          ok: false,
+          error: { code: "not_found", message: "Skills require a database-backed API." },
+        };
+      }
+      return listWorkspaceSkillsForSession(sql, session, workspaceId);
+    },
+
+    async getSkillDraftBySkill(session, skillId) {
+      if (!sql) {
+        return {
+          ok: false,
+          error: { code: "not_found", message: "Skill drafts require a database-backed API." },
+        };
+      }
+      return getSkillDraftBySkillForSession(sql, session, skillId);
+    },
+
+    async getSkillVersionBySkill(session, skillId) {
+      if (!sql) {
+        return {
+          ok: false,
+          error: { code: "not_found", message: "Skill versions require a database-backed API." },
+        };
+      }
+      return getSkillVersionBySkillForSession(sql, session, skillId);
     },
 
     async publishSkillDraft(session, draftId, command) {

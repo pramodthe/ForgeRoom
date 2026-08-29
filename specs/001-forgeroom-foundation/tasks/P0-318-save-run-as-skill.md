@@ -1,7 +1,7 @@
 ---
 id: P0-318
 title: Save a successful Run as a reviewed private skill
-status: in_progress
+status: done
 owner: unassigned
 depends_on: [P0-104, P0-106, P0-206, P0-208, P0-403]
 requirements: [SK-001, SK-002, SK-003, SK-004, SK-005]
@@ -29,7 +29,7 @@ The owner can turn one completed Run into an immutable instruction-only TrueForg
 ## Acceptance criteria
 
 - [x] Only a completed successful/accepted application Run can start a draft; source Run/RunStep IDs and normalized evidence hashes are retained. *(slice 1: `POST /api/runs/:runId/skill-drafts` + `GET /api/skill-drafts/:draftId`; completed-run gate, `source_content_hash` + `draft_hash`)*
-- [ ] Draft generation runs through a dedicated structured, no-external-tools path with no inherited coworker tools, MCP/Composio/external-application provider calls or mutation authority; pinned model inference remains allowed under its retention/redaction policy.
+- [x] Draft generation runs through a dedicated structured, no-external-tools path with no inherited coworker tools, MCP/Composio/external-application provider calls or mutation authority; pinned model inference remains allowed under its retention/redaction policy. *(slice 4: `draft-turn.ts` ephemeral TrueForge session with empty MCP/skills; `draft-turn.test.ts` asserts zero tool events; domain fallback when client absent for integration tests)*
 - [x] Draft contains when-to-use, inputs, ordered procedure, decision rules, validation, expected output, failure/no-data behavior, exact required tools/components/data and approval boundary. *(deterministic structured builder from normalized run evidence in slice 1)*
 - [x] Credentials, raw private reasoning, provider signatures, transient private answers, unrelated messages and unredacted tool bodies never enter draft/package/event/log/UI. *(forbidden-key scan on evidence payloads; only normalized redacted run events ingested)*
 - [x] Explicit confirmation publishes one immutable private version with manifest/content hashes; edits require a new draft/version. *(slice 2: `POST /api/skill-drafts/:draftId/publish`; hash-gated confirm, `skill_versions` draft→published, `skill.version_published` event, idempotent `skill_draft.publish`)*
@@ -61,7 +61,8 @@ Run extraction/redaction/secret fixtures, manifest/hash/schema tests, an asserte
 
 - 2026-08-29 — Slice 1 (merged #57): create/get skill draft from completed run.
 - 2026-08-29 — Slice 2 (merged #58): publish skill draft to immutable version 1 with hash confirmation and optional `SKILL.md` materialization.
-- 2026-08-29 — Slice 3: coworker skill attach/detach with grant intersection, binding persistence, and session rotation wiring.
+- 2026-08-29 — Slice 3 (merged #59): coworker skill attach/detach with grant intersection, binding persistence, and session rotation wiring.
+- 2026-08-29 — Slice 4: TrueForge instruction-only drafting turn, skills list API, and live web save-as-skill flow.
 
 ## Handoff
 

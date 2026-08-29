@@ -1053,6 +1053,46 @@ export function mountWorkspaceRoutes(
     return okJson(c, { draft: result.value }, 200);
   });
 
+  app.get("/api/workspaces/:workspaceId/skills", async (c) => {
+    const authed = await requireSession(c, env, auth);
+    if (authed instanceof Response) {
+      return authed;
+    }
+    const workspaceId = requireParam(c, "workspaceId");
+    if (workspaceId instanceof Response) {
+      return workspaceId;
+    }
+    const result = await workspace.listWorkspaceSkills(authed.session, workspaceId);
+    if (!result.ok) {
+      return fail(c, result.error);
+    }
+    return okJson(c, result.value, 200);
+  });
+
+  app.get("/api/skills/:skillId", async (c) => {
+    const authed = await requireSession(c, env, auth);
+    if (authed instanceof Response) {
+      return authed;
+    }
+    const skillId = requireParam(c, "skillId");
+    if (skillId instanceof Response) {
+      return skillId;
+    }
+    const draftResult = await workspace.getSkillDraftBySkill(authed.session, skillId);
+    const versionResult = await workspace.getSkillVersionBySkill(authed.session, skillId);
+    if (!draftResult.ok && !versionResult.ok) {
+      return fail(c, { code: "not_found", message: "Skill not found." });
+    }
+    return okJson(
+      c,
+      {
+        draft: draftResult.ok ? draftResult.value : null,
+        version: versionResult.ok ? versionResult.value : null,
+      },
+      200,
+    );
+  });
+
   app.post("/api/skill-drafts/:draftId/publish", async (c) => {
     const authed = await requireMutationSession(c, env, auth);
     if (authed instanceof Response) {

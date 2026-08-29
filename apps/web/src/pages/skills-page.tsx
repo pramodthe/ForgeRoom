@@ -87,7 +87,7 @@ export function SkillsPage() {
                 </span>
                 <span className="text-zinc-300">→</span>
               </div>
-              <h2 className="mt-4 font-semibold text-zinc-950">Reconcile demo records</h2>
+              <h2 className="mt-4 font-semibold text-zinc-950">{skill.when_to_use}</h2>
               <p className="mt-1 text-sm leading-6 text-zinc-600">{skill.when_to_use}</p>
               <ol className="mt-4 space-y-2">
                 {skill.method.map((step, index) => (
@@ -163,7 +163,7 @@ export function SkillDetailPage() {
               </button>
             </div>
             <h1 className="mt-4 text-2xl font-semibold tracking-tight text-zinc-950">
-              {draft ? "Reconcile demo records" : "Support operations plan"}
+              {draft?.when_to_use ?? version?.source_run_id ?? "Skill"}
             </h1>
             <p className="mt-2 text-sm leading-6 text-zinc-600">
               {draft?.when_to_use ??
