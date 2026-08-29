@@ -2,12 +2,12 @@
 
 | Field | Current value |
 | --- | --- |
-| Overall | M0 Demo contract done; M1 Foundation done; P0-315/P0-317/P0-316/P0-410 done; P0-407 in_progress; P0-408 ready; P0-301–P0-314, P0-404, P0-405 done |
+| Overall | M0 Demo contract done; M1 Foundation done; P0-315/P0-317/P0-407/P0-316/P0-410 done; P0-408 ready; P0-301–P0-314, P0-404, P0-405 done |
 | Current phase | Phase 1 — Foundation / M4 Product UI |
-| Active task | P0-407 (in_progress) |
-| Next task | P0-407 slice 3 (#71), then P0-408 |
+| Active task | P0-408 (ready) |
+| Next task | P0-408 AG-UI rich timeline, then P0-504 |
 | P0 blockers | Run-limit hard enforcement (P0-204/OD-008 evidence) |
-| Last updated | 2026-08-29 (P0-317 closeout merged #69; P0-315 closeout #70 pending) |
+| Last updated | 2026-08-29 (P0-315/#70 and P0-317/#69 merged; P0-407 slice 3 #71 pending) |
 
 ## Milestones
 
@@ -61,9 +61,9 @@ Never put credentials in this file.
 
 ## Recently completed
 
-- P0-315 → `done` (2026-08-29): component/interaction gateway; P0-316/P0-317 follow-ups closed.
-- P0-317 → `done` (2026-08-29): `DataGrant.max_time_ms` enforced; row/byte/time breach tests green.
-- P0-407 slice 2 → merged #68 (2026-08-29): redacted previews, live regions, tab semantics, trusted HITL z-index.
+- P0-407 → `done` (2026-08-29): axe + 1440px visual baselines; slices 1–3 merged (#68, #71).
+- P0-315 → `done` (2026-08-29): component/interaction gateway merged #70.
+- P0-317 → `done` (2026-08-29): `DataGrant.max_time_ms` enforced merged #69.
 - P0-410 → `done` (2026-08-29): coworker/task/skill review flows merged PRs #62–#66.
 - P0-404 / P0-405 → `done` (2026-08-29): spec closeout after merged PR stack #48–#54; approval/question/run drawer and Work/Artifacts/Context tabs acceptance criteria verified.
 - P0-404 / P0-405 closeout (2026-08-29): merged PR #54 (trusted HITL host-open hook, Work tab stop, task evidence).
