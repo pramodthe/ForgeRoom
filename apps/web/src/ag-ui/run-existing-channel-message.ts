@@ -1,6 +1,5 @@
-import { HttpAgent } from "@forgeroom/ag-ui/browser";
+import { createCredentialedAgUiClient } from "./credentialed-agui-client";
 import type { PostedChannelMessage } from "../api/workspace-api";
-import { apiUrl } from "../api/http-client";
 import { isFixtureMode } from "../api/mode";
 
 export async function runExistingChannelMessage(input: {
@@ -14,20 +13,15 @@ export async function runExistingChannelMessage(input: {
 
   await Promise.all(
     input.posted.run_step_assignments.map(async (assignment) => {
-      const agent = new HttpAgent({
-        url: apiUrl(
-          `/api/ag-ui/channels/${encodeURIComponent(input.channelId)}/coworkers/${encodeURIComponent(assignment.coworker_id)}/runs`,
-        ),
-        threadId: assignment.logical_thread_id,
-        initialMessages: [
-          {
-            id: input.posted.message_id,
-            role: "user",
-            content: input.body,
-          },
-        ],
-        headers: { "x-csrf-token": input.csrfToken },
-        fetch: (url, init) => fetch(url, { ...init, credentials: "include" }),
+      const agent = createCredentialedAgUiClient({
+        channelId: input.channelId,
+        coworkerId: assignment.coworker_id,
+        logicalThreadId: assignment.logical_thread_id,
+        csrfToken: input.csrfToken,
+        initialUserMessage: {
+          id: input.posted.message_id,
+          content: input.body,
+        },
       });
       await agent.runAgent({
         runId: `agui_${assignment.run_step_id}`,

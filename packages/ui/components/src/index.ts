@@ -31,6 +31,7 @@ export {
   presentUnknownActivity,
   type ActivityCardShellProps,
   type ActivityCardTone,
+  type ActivityPresentation,
   type CustomEventActivityCardProps,
   type ToolCallActivityCardProps,
   type ForgeRoomActivityCardProps,

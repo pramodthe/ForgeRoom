@@ -19,8 +19,9 @@ export const P0_REQUIRED_STATE_SURFACES = {
   "coworker-builder-lifecycle": "coworkers-page CoworkerBuilder stages",
   "task-conflict": "tasks-page TaskTransitionPanel conflict notice",
   "skill-draft-stale": "run-detail-drawer SaveAsSkillReview stale notice",
-  "reconnecting-stream": "channel-timeline connection indicator",
-  "ag-ui-resync": "use-channel-timeline gap resume + controlled presentation phases",
+  "reconnecting-stream": "channel-timeline connection indicator + scroll restore",
+  "ag-ui-resync":
+    "use-channel-timeline gap resume + scroll stickiness + controlled presentation phases",
 } as const satisfies Record<string, string>;
 
 export type P0RequiredStateKey = keyof typeof P0_REQUIRED_STATE_SURFACES;

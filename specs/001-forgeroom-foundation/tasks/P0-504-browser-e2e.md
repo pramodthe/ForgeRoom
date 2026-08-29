@@ -1,7 +1,7 @@
 ---
 id: P0-504
 title: Implement complete browser end-to-end scenario
-status: blocked
+status: ready
 owner: unassigned
 depends_on: [P0-109, P0-213, P0-305, P0-309, P0-312, P0-313, P0-318, P0-407, P0-408, P0-410]
 requirements: [CH-005, OR-001, AG-010, TR-001, SK-001, AGUI-003, GUI-001, GUI-011, AP-008, SB-001]

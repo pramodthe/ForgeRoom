@@ -1,6 +1,7 @@
 import type { ForgeRoomActivityContent } from "@forgeroom/contracts";
 import type { RunActivityCounters, RunLifecycle } from "@forgeroom/contracts";
 import { ActivityCardShell } from "./activity-card-shell";
+import type { ActivityPresentation } from "./activity-presentation";
 import {
   activityIconForEyebrow,
   presentCustomEvent,
@@ -98,10 +99,16 @@ export type ToolCallActivityCardProps = {
   toolName: string;
   status: "running" | "complete";
   ownerLabel?: string;
+  presentation?: ActivityPresentation;
 };
 
-export function ToolCallActivityCard({ toolName, status, ownerLabel }: ToolCallActivityCardProps) {
-  const presentation = presentToolCall({ toolName, status });
+export function ToolCallActivityCard({
+  toolName,
+  status,
+  ownerLabel,
+  presentation: presentationOverride,
+}: ToolCallActivityCardProps) {
+  const presentation = presentationOverride ?? presentToolCall({ toolName, status });
   return (
     <ActivityCardShell
       icon={activityIconForEyebrow(presentation.eyebrow)}
@@ -111,6 +118,7 @@ export function ToolCallActivityCard({ toolName, status, ownerLabel }: ToolCallA
       status={presentation.status}
       tone={presentation.tone}
       ownerLabel={ownerLabel}
+      inert={presentation.inert}
     />
   );
 }
@@ -149,6 +157,7 @@ export {
   presentToolCall,
   presentUnsupportedCapability,
   presentUnknownActivity,
+  type ActivityPresentation,
   type ApplicationSourceName,
 } from "./activity-presentation";
 export {
