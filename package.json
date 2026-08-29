@@ -15,7 +15,7 @@
     "lint": "eslint . && prettier --check .",
     "format": "prettier --write .",
     "typecheck": "pnpm -r --sort --if-present typecheck",
-    "test": "pnpm -r --sort --if-present test",
+    "test": "node --test scripts/run-release-suite.test.mjs && pnpm -r --sort --if-present test",
     "test:integration": "node scripts/run-release-suite.mjs integration",
     "test:security": "node scripts/run-release-suite.mjs security",
     "test:e2e": "pnpm --filter @forgeroom/e2e test:e2e",

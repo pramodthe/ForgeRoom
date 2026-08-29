@@ -1,8 +1,8 @@
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { validateVitestReleaseResult, withTemporaryVitestReport } from "./release-suite-report.mjs";
 
 const [nodeMajor, nodeMinor] = process.versions.node.split(".").map(Number);
 if (nodeMajor < 22 || (nodeMajor === 22 && nodeMinor < 12)) {
@@ -210,45 +210,29 @@ function runGroup(group) {
   if (!workspaceDirectory) {
     throw new Error(`Release suite has no workspace directory for ${group.package}.`);
   }
-  const reportDirectory = mkdtempSync(join(tmpdir(), "forgeroom-release-suite-"));
-  const reportPath = join(reportDirectory, "vitest.json");
-  const args = [
-    vitestCli,
-    "run",
-    ...group.files,
-    "--reporter=default",
-    "--reporter=json",
-    `--outputFile.json=${reportPath}`,
-  ];
-  if (group.workers) {
-    args.push(`--maxWorkers=${group.workers}`);
-  }
-
-  try {
+  withTemporaryVitestReport((reportPath) => {
+    const args = [
+      vitestCli,
+      "run",
+      ...group.files,
+      "--reporter=default",
+      "--reporter=json",
+      `--outputFile.json=${reportPath}`,
+    ];
+    if (group.workers) {
+      args.push(`--maxWorkers=${group.workers}`);
+    }
     const result = spawnSync(process.execPath, args, {
       cwd: join(repositoryRoot, workspaceDirectory),
       stdio: "inherit",
       env: process.env,
     });
-    if (result.error) {
-      throw result.error;
-    }
-    if (result.status !== 0) {
-      throw new Error(`${group.package} failed with exit code ${String(result.status ?? 1)}.`);
-    }
-
-    const report = JSON.parse(readFileSync(reportPath, "utf8"));
-    const total = Number(report.numTotalTests);
-    const skipped = Number(report.numPendingTests) + Number(report.numTodoTests);
-    if (!Number.isInteger(total) || total < 1) {
-      throw new Error(`${group.package} did not execute any tests.`);
-    }
-    if (!Number.isInteger(skipped) || skipped !== 0) {
-      throw new Error(`${group.package} reported ${String(skipped)} skipped or todo tests.`);
-    }
-  } finally {
-    rmSync(reportDirectory, { recursive: true, force: true });
-  }
+    validateVitestReleaseResult({
+      packageName: group.package,
+      result,
+      readReport: () => readFileSync(reportPath, "utf8"),
+    });
+  });
 }
 
 try {
