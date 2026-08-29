@@ -121,6 +121,7 @@ describe("channelTimelineReducer", () => {
     });
     expect(state.messages["human:msg_human"]).toMatchObject({
       kind: "human",
+      messageId: "msg_human",
       content: "Hi team",
       status: "sent",
     });

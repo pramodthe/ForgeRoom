@@ -2,8 +2,14 @@ import { useQuery } from "@tanstack/react-query";
 import { getRunReceipt, getArtifact } from "../../api/channel-resources-api";
 import { artifactSchema } from "@forgeroom/contracts";
 import { apiUrl } from "../../api/http-client";
+import { PinSourceButton } from "../pin-source-button";
+import { pinLabelFromArtifactName } from "../pin-source-label";
 
-export function LiveArtifactsTab(props: { channelId: string; runId?: string | null }) {
+export function LiveArtifactsTab(props: {
+  channelId: string;
+  runId?: string | null;
+  archived?: boolean;
+}) {
   const receiptQuery = useQuery({
     queryKey: ["run-receipt-artifacts", props.runId],
     queryFn: () => getRunReceipt(props.runId!),
@@ -53,14 +59,26 @@ export function LiveArtifactsTab(props: { channelId: string; runId?: string | nu
         <p className="mt-0.5 text-[11px] text-zinc-500">
           {artifact.mime_type} · rev {artifact.revision}
         </p>
-        <div className="mt-3 flex items-center justify-between text-xs">
+        <div className="mt-3 flex items-center justify-between gap-2 text-xs">
           <span className="text-zinc-500">Run-linked artifact</span>
-          <a
-            href={apiUrl(`/api/artifacts/${encodeURIComponent(artifact.id)}/download`)}
-            className="font-medium text-violet-700"
-          >
-            Download
-          </a>
+          <div className="flex items-center gap-2">
+            <PinSourceButton
+              channelId={props.channelId}
+              archived={props.archived ?? false}
+              compact
+              target={{
+                kind: "artifact",
+                artifactId: artifact.id,
+                label: pinLabelFromArtifactName(artifact.name),
+              }}
+            />
+            <a
+              href={apiUrl(`/api/artifacts/${encodeURIComponent(artifact.id)}/download`)}
+              className="font-medium text-violet-700"
+            >
+              Download
+            </a>
+          </div>
         </div>
       </section>
     </div>
