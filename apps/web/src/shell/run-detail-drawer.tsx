@@ -19,6 +19,7 @@ import {
   friendlyApiError,
   persistSkillDraftReview,
   readSkillDraftReview,
+  refreshSkillDraftReview,
 } from "../pages/review-flow-helpers";
 import { useSession } from "../auth/session-context";
 import { Avatar } from "../ui/avatar";
@@ -208,7 +209,7 @@ function LiveRunDetailDrawer({
       setSkillReviewOpen(true);
     },
     onError: (error) => {
-      setSaveSkillError(error instanceof Error ? error.message : "Unable to create skill draft.");
+      setSaveSkillError(friendlyApiError(error));
     },
   });
 
@@ -550,6 +551,7 @@ function LiveRunDetailDrawer({
           runId={runId}
           draft={skillDraft}
           coworkerId={attachCoworkerId}
+          onDraftUpdated={setSkillDraft}
           onClose={() => {
             setSkillReviewOpen(false);
             setSkillDraft(null);
@@ -832,6 +834,7 @@ function SaveAsSkillReview({
   onClose,
   draft,
   coworkerId,
+  onDraftUpdated,
   fixture = false,
 }: {
   workspaceId: string;
@@ -839,12 +842,14 @@ function SaveAsSkillReview({
   onClose: () => void;
   draft?: SkillDraft;
   coworkerId?: string;
+  onDraftUpdated?: (draft: SkillDraft) => void;
   fixture?: boolean;
 }) {
   const { session } = useSession();
   const queryClient = useQueryClient();
   const [stage, setStage] = useState<"review" | "publishing" | "attached">("review");
   const [error, setError] = useState<string | null>(null);
+  const [staleNotice, setStaleNotice] = useState<string | null>(null);
   const dialogRef = useRef<HTMLElement>(null);
   useDialogFocus(dialogRef, onClose);
 
@@ -895,6 +900,16 @@ function SaveAsSkillReview({
       }
       setStage("attached");
     } catch (publishError) {
+      if (draft && !fixture) {
+        const refreshed = await refreshSkillDraftReview(workspaceId, draft.id);
+        if (refreshed && refreshed.revision !== draft.revision) {
+          onDraftUpdated?.(refreshed);
+          if (runId) {
+            persistSkillDraftReview(runId, refreshed.id);
+          }
+          setStaleNotice("The skill draft changed on the server. Review the updated revision.");
+        }
+      }
       setError(friendlyApiError(publishError));
       setStage("review");
     }
@@ -944,6 +959,14 @@ function SaveAsSkillReview({
         </header>
         {stage === "review" ? (
           <div className="p-6">
+            {staleNotice ? (
+              <p
+                className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"
+                role="status"
+              >
+                {staleNotice}
+              </p>
+            ) : null}
             <div className="grid grid-cols-2 gap-3">
               <ReviewBlock
                 title="When to use"

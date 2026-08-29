@@ -188,6 +188,9 @@ export function TasksPage() {
                     ? coworkers.get(task.assignee_id)?.name
                     : undefined
                 }
+                channelName={
+                  (channelsQuery.data ?? []).find((channel) => channel.id === task.channel_id)?.name
+                }
               />
             ))}
             {visibleTasks.length === 0 ? (
@@ -353,11 +356,21 @@ function TaskRow({
   task,
   workspaceId,
   assigneeName,
+  channelName,
 }: {
   task: TaskRecordV1;
   workspaceId: string;
   assigneeName?: string;
+  channelName?: string;
 }) {
+  const lineage = [
+    channelName ? `# ${channelName}` : task.channel_id,
+    task.source_run_id ? "from run" : null,
+    task.source_message_id ? "from message" : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+
   return (
     <Link
       to={workspaceTaskDetailPath(workspaceId, task.id)}
@@ -375,6 +388,7 @@ function TaskRow({
         <p className="mt-1 truncate text-xs text-zinc-500">
           {task.description ?? "No description"}
         </p>
+        <p className="mt-1 truncate text-[11px] text-zinc-400">{lineage}</p>
       </div>
       <div className="flex items-center gap-2">
         {assigneeName ? (

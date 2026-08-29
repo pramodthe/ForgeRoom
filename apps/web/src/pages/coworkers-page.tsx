@@ -25,6 +25,7 @@ import {
   buildFixtureCoworkerDraft,
   clearCoworkerDraftReview,
   formatTaskRecordGrant,
+  formatDenialReason,
   friendlyApiError,
   parseCoworkerDraftFromError,
   persistCoworkerDraftReview,
@@ -594,6 +595,9 @@ function PermissionReview({
               {title} · {draft?.proposal.model_preset ?? "default model preset"}
             </p>
             <p className="mt-2 text-sm leading-5 text-zinc-600">{instructions}</p>
+            <p className="mt-2 text-[11px] font-medium text-violet-700">
+              Reviewed server draft — not raw model output.
+            </p>
           </div>
         </div>
       </div>
@@ -602,18 +606,33 @@ function PermissionReview({
           title="Access"
           items={[
             draft.effective_preview.account,
-            `${channels.length} channel${channels.length === 1 ? "" : "s"}`,
+            ...channels.map((channelId) => `Channel ${channelId}`),
             ...tools.map((tool) => `${tool} · direct`),
           ]}
         />
         <ReviewGroup
           title="Capabilities"
           items={[
+            `Model ${draft.effective_preview.model}`,
             `Sandbox ${draft.effective_preview.sandbox ? "enabled" : "disabled"}`,
             `${draft.proposal.budget.max_tool_calls} calls · ${draft.proposal.budget.max_turn_tokens.toLocaleString()} tokens`,
-            `${skills.length} private skill${skills.length === 1 ? "" : "s"}`,
-            `${components.length} controlled component${components.length === 1 ? "" : "s"}`,
           ]}
+        />
+        <ReviewGroup
+          title="Private skills"
+          items={
+            skills.length > 0
+              ? skills.map((skillId) => `Skill version ${skillId}`)
+              : ["No private skills"]
+          }
+        />
+        <ReviewGroup
+          title="Controlled components"
+          items={
+            components.length > 0
+              ? components.map((componentId) => `Component ${componentId}`)
+              : ["No controlled components"]
+          }
         />
         <ReviewGroup
           title="Tool effects"
@@ -645,7 +664,11 @@ function PermissionReview({
             "Read provider data may leave workspace",
           ]}
         />
-        <ReviewGroup title="Unavailable / denied in P0" items={denials.slice(0, 6)} denied />
+        <ReviewGroup
+          title="Unavailable / denied in P0"
+          items={denials.slice(0, 8).map((denial) => formatDenialReason(denial))}
+          denied
+        />
       </div>
       <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs leading-5 text-amber-900">
         <strong>Data boundary:</strong> support text may be sent to the selected model provider.
