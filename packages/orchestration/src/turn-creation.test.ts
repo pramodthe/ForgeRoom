@@ -98,4 +98,31 @@ describe("turn creation intent", () => {
       }),
     ).toEqual({ action: "create_new" });
   });
+
+  it("rejects an id-only history hit whose predecessor and input do not match", () => {
+    const built = buildNormalTurnInput({
+      applicationRunToken: "art_expected",
+      content: "expected",
+      previousTrueforgeTurnId: "tf_expected_prev",
+    });
+    const idOnly = turn({
+      id: "tf_local",
+      previous_turn_id: "tf_wrong_prev",
+      input: buildNormalTurnInput({
+        applicationRunToken: "art_wrong",
+        content: "wrong",
+        previousTrueforgeTurnId: "tf_wrong_prev",
+      }).input,
+    });
+
+    expect(
+      decideCreateOrReconcile({
+        localTrueforgeTurnId: "tf_local",
+        history: [idOnly],
+        applicationRunToken: "art_expected",
+        inputHash: built.inputHash,
+        previousTurnId: built.previousTurnId,
+      }),
+    ).toEqual({ action: "fail_closed", reason: "ambiguous_history" });
+  });
 });

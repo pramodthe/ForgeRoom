@@ -100,13 +100,6 @@ export function decideCreateOrReconcile(args: {
   inputHash: string;
   previousTurnId: PreviousTurnIdInput;
 }): CreateOrReconcileDecision {
-  if (args.localTrueforgeTurnId) {
-    const existing = args.history.find((turn) => turn.id === args.localTrueforgeTurnId);
-    if (existing) {
-      return { action: "bind_existing", turn: existing, matchedBy: "application_run_token" };
-    }
-  }
-
   const matches = args.history.filter((turn) => {
     const previous = turn.previous_turn_id;
     const expectedPrevious = args.previousTurnId === "none" ? null : args.previousTurnId;
@@ -128,6 +121,9 @@ export function decideCreateOrReconcile(args: {
     return { action: "fail_closed", reason: "ambiguous_history" };
   }
   if (matches.length === 1) {
+    if (args.localTrueforgeTurnId && matches[0]!.id !== args.localTrueforgeTurnId) {
+      return { action: "fail_closed", reason: "ambiguous_history" };
+    }
     const matched = matchTurnFromHistory({
       turns: matches,
       applicationRunToken: args.applicationRunToken,
@@ -138,6 +134,9 @@ export function decideCreateOrReconcile(args: {
       return { action: "fail_closed", reason: "ambiguous_history" };
     }
     return { action: "bind_existing", turn: matched.turn, matchedBy: matched.matchedBy };
+  }
+  if (args.localTrueforgeTurnId) {
+    return { action: "fail_closed", reason: "ambiguous_history" };
   }
   return { action: "create_new" };
 }

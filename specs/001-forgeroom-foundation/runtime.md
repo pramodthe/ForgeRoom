@@ -123,7 +123,11 @@ Every input includes a deterministic application run token and explicit intended
 4. If remote creation is uncertain, query turn history and match application run token, predecessor and input hash.
 5. Never blindly create a second turn because a response was lost; a second turn can cancel the live first turn.
 
-P0 browser refresh reconnects to application SSE and the current TrueForge stream. After a process restart, uncertain work becomes `needs_attention` and fails closed until history reconciliation succeeds or the owner abandons the step. Automatic active-worker failover is P1.
+An exact history match may use the SC-001 reconciliation-only `uncertain → streaming` edge. A new
+create response may bind only `creating → streaming`; it cannot recover an uncertain row. P0
+browser refresh reconnects to application SSE and the current TrueForge stream. After a process
+restart, uncertain work becomes `needs_attention` and fails closed until history reconciliation
+succeeds or the owner abandons the step. Automatic active-worker failover is P1.
 
 ## TrueForge-to-AG-UI adapter
 

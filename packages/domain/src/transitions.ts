@@ -103,6 +103,21 @@ export function canTransitionAgentTurn(from: AgentTurnState, to: AgentTurnState)
   return AGENT_TURN_TRANSITIONS[from]?.includes(to) ?? false;
 }
 
+/**
+ * Recovery-only AgentTurn edges. These are deliberately excluded from
+ * `AGENT_TURN_TRANSITIONS`: callers must have matched a remote turn from
+ * provider history before using this guard.
+ */
+export const AGENT_TURN_RECONCILIATION_TRANSITIONS: Partial<
+  Record<AgentTurnState, readonly AgentTurnState[]>
+> = {
+  uncertain: ["streaming"],
+};
+
+export function canReconcileAgentTurn(from: AgentTurnState, to: AgentTurnState): boolean {
+  return AGENT_TURN_RECONCILIATION_TRANSITIONS[from]?.includes(to) ?? false;
+}
+
 /** PauseGroup legal edges from `data-model.md` (CAS collecting/ready → resuming). */
 export const PAUSE_GROUP_TRANSITIONS: Record<PauseGroupState, readonly PauseGroupState[]> = {
   collecting: ["ready", "stale", "expired", "cancelled"],

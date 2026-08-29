@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { bindTrueForgeTurnId, ingestNormalizedTrueForgeEvent } from "./turn-lifecycle";
+import {
+  bindTrueForgeTurnId,
+  ingestNormalizedTrueForgeEvent,
+  lockAgentTurnForCreate,
+} from "./turn-lifecycle";
 import { NOW, seedRuntime, withMigratedDatabase } from "./test-harness";
 
 async function clearSeedTurn(sql: Parameters<typeof seedRuntime>[0]) {
@@ -34,12 +38,16 @@ describe("turn lifecycle persistence", () => {
         )
       `;
 
+      expect(await lockAgentTurnForCreate(sql, { agentTurnId: "turn_life" })).toMatchObject({
+        ok: true,
+        state: "creating",
+      });
       expect(
         await bindTrueForgeTurnId(sql, {
           agentTurnId: "turn_life",
           trueforgeTurnId: "tf_life",
           previousTrueforgeTurnId: null,
-          expectedStates: ["acquiring", "creating", "uncertain"],
+          bindingSource: "create_response",
           now: NOW,
         }),
       ).toEqual({ ok: true });
@@ -102,6 +110,38 @@ describe("turn lifecycle persistence", () => {
         SELECT normalized_payload_redacted_json FROM run_events WHERE id = ${first.runEventId}
       `;
       expect(JSON.stringify(events[0]?.normalized_payload_redacted_json)).not.toContain("api_key");
+    });
+  }, 60_000);
+
+  it("requires a verified history-reconciliation source to recover an uncertain turn", async () => {
+    await withMigratedDatabase(async (sql) => {
+      await seedRuntime(sql);
+      await sql`UPDATE agent_turns SET state = 'uncertain' WHERE id = 'turn_1'`;
+
+      expect(
+        await bindTrueForgeTurnId(sql, {
+          agentTurnId: "turn_1",
+          trueforgeTurnId: "tf_recovered",
+          previousTrueforgeTurnId: null,
+          bindingSource: "create_response",
+          now: NOW,
+        }),
+      ).toEqual({ ok: false, reason: "state_mismatch" });
+
+      expect(
+        await bindTrueForgeTurnId(sql, {
+          agentTurnId: "turn_1",
+          trueforgeTurnId: "tf_recovered",
+          previousTrueforgeTurnId: null,
+          bindingSource: "history_reconciliation",
+          now: NOW,
+        }),
+      ).toEqual({ ok: true });
+
+      const turns = await sql<{ state: string; trueforge_turn_id: string | null }[]>`
+        SELECT state, trueforge_turn_id FROM agent_turns WHERE id = 'turn_1'
+      `;
+      expect(turns[0]).toEqual({ state: "streaming", trueforge_turn_id: "tf_recovered" });
     });
   }, 60_000);
 

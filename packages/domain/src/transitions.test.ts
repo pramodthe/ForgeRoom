@@ -10,6 +10,8 @@ import type {
 } from "@forgeroom/contracts";
 import {
   ACTION_PROPOSAL_TRANSITIONS,
+  AGENT_TURN_RECONCILIATION_TRANSITIONS,
+  canReconcileAgentTurn,
   AGENT_TURN_TRANSITIONS,
   canTransitionActionProposal,
   canTransitionAgentTurn,
@@ -91,6 +93,15 @@ describe("domain transition guards (P0-501)", () => {
     expect(canTransitionAgentTurn("resuming", "streaming")).toBe(true);
     expect(canTransitionAgentTurn("streaming", "required_actions")).toBe(true);
     expect(AGENT_TURN_TRANSITIONS.required_actions).toEqual([]);
+    expect(AGENT_TURN_TRANSITIONS.uncertain).toEqual([]);
+  });
+
+  it("allows uncertain recovery only through the history-reconciliation guard", () => {
+    expect(AGENT_TURN_RECONCILIATION_TRANSITIONS).toEqual({ uncertain: ["streaming"] });
+    expect(canReconcileAgentTurn("uncertain", "streaming")).toBe(true);
+    expect(canTransitionAgentTurn("uncertain", "streaming")).toBe(false);
+    expect(canReconcileAgentTurn("uncertain", "creating")).toBe(false);
+    expect(canReconcileAgentTurn("creating", "streaming")).toBe(false);
   });
 
   it("enumerates PauseGroup edges including CAS ready → resuming", () => {

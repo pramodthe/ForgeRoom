@@ -152,21 +152,18 @@ export async function executeCreateOrReconcileTurn(
           lockForCreate: async () =>
             lockAgentTurnForCreate(options.sql, {
               agentTurnId: command.payload.agent_turn_id,
-              expectedStates: ["intended", "acquiring", "creating", "uncertain"],
             }),
           bindTurn: async (input) => {
-            await bindTrueForgeTurnId(options.sql, {
+            return bindTrueForgeTurnId(options.sql, {
               agentTurnId: input.agentTurnId,
               trueforgeTurnId: input.trueforgeTurnId,
               previousTrueforgeTurnId: input.previousTrueforgeTurnId,
-              expectedStates: ["creating", "uncertain"],
-              nextState: "streaming",
+              bindingSource: input.bindingSource,
             });
           },
           markUncertain: async (input) => {
             await markAgentTurnUncertain(options.sql, {
               ...input,
-              expectedStates: ["intended", "acquiring", "creating", "uncertain"],
             });
           },
           onContinued: async ({ interruptId, agentTurnId }) => {
@@ -196,21 +193,18 @@ export async function executeCreateOrReconcileTurn(
         lockForCreate: async () =>
           lockAgentTurnForCreate(options.sql, {
             agentTurnId: command.payload.agent_turn_id,
-            expectedStates: ["intended", "acquiring", "creating", "uncertain"],
           }),
         bindTurn: async (input) => {
-          await bindTrueForgeTurnId(options.sql, {
+          return bindTrueForgeTurnId(options.sql, {
             agentTurnId: input.agentTurnId,
             trueforgeTurnId: input.trueforgeTurnId,
             previousTrueforgeTurnId: input.previousTrueforgeTurnId,
-            expectedStates: ["creating", "uncertain"],
-            nextState: "streaming",
+            bindingSource: input.bindingSource,
           });
         },
         markUncertain: async (input) => {
           await markAgentTurnUncertain(options.sql, {
             ...input,
-            expectedStates: ["intended", "acquiring", "creating", "uncertain"],
           });
         },
       },

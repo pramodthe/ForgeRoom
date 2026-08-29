@@ -20,12 +20,12 @@ All unit behaviors required by the canonical test plan are present, deterministi
 ## Acceptance criteria
 
 - [ ] Sequence, direct routing, CoworkerDraft, Task and skill capability tests pass. *(CoworkerDraft OD-012 fixture exactDiff/mustIncludeDenials unit-locked in slice 2; Task history still memory-API only)*
-- [x] Session/policy/argument hashing and transition guards pass. *(slice 1: AgentTurn/PauseGroup/ActionProposal tables + exhaustive transition unit suite)*
+- [x] Session/policy/argument hashing and transition guards pass. *(slices 1 and 3: AgentTurn/PauseGroup/ActionProposal tables + exhaustive ordinary transitions; SC-001 recovery-only AgentTurn guard)*
 - [ ] ToolPolicyDefinition golden/adversarial tests pass. *(present in composio tool-policies)*
 - [x] Event normalization/redaction and context exclusion tests pass. *(already covered by orchestration event-normalize + context-envelope units; checkbox close-out)*
 - [ ] Artifact path/MIME/hash tests pass. *(present)*
 - [ ] AG-UI mapping/reducer/patch, controlled component manifest/grant/props/interaction and unsupported P1 capability tests pass. *(slice 2: prop schema adversarial limits + presentation clamps; interaction CAS still integration-only)*
-- [x] No P0 unit suite is skipped or `.only`-filtered. *(verified 2026-08-29; one `skipIf(!DATABASE_URL)` on coworker-drafts Postgres path)*
+- [x] No P0 unit suite is skipped or `.only`-filtered. *(verified 2026-08-29; removed the stale `DATABASE_URL` skip from the self-provisioning coworker-drafts Postgres test)*
 
 ## Verification
 
@@ -47,4 +47,5 @@ pnpm --filter @forgeroom/ui-components exec vitest run src/controlled/validate-p
 
 - 2026-08-29 — Claimed after deps done (was falsely `blocked`). Gap analysis vs test-plan unit list. Slice 1: add `AGENT_TURN_TRANSITIONS` / `PAUSE_GROUP_TRANSITIONS` / `ACTION_PROPOSAL_TRANSITIONS` from `data-model.md` and exhaustive closed-graph unit tests including `canTransitionRunStep`.
 - 2026-08-29 — Slice 2: extract `clampToLimit` presentation clamps; adversarial prop-schema tests (chart series, ChoiceForm fields/options, string length, TaskCard/ArtifactCard/ChoiceForm minima); OD-012 Research draft exactDiff/mustIncludeDenials unit lock (in-process constant, no FS I/O); align ChoiceForm schema `maxItems` with `MAX_FORM_FIELDS` so validation rejects rather than silently truncating; resolve STATUS.md merge conflict from parallel P0-501/P0-504 merges. Next: interaction CAS helper extract or skill attach missing-component cases.
+- 2026-08-29 — Slice 3: SC-001 separates ordinary AgentTurn transitions from the exact-history reconciliation edge; create and reconciliation bindings carry distinct typed sources and unverified uncertain recovery is rejected.
 - Intended non-goals this slice: interaction CAS extraction from `ui-interactions.ts` (follow-up).

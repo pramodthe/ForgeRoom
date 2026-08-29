@@ -1,5 +1,7 @@
 import { randomBytes } from "node:crypto";
 import type postgres from "postgres";
+import type { AgentTurnState } from "@forgeroom/contracts";
+import { canReconcileAgentTurn, canTransitionAgentTurn } from "@forgeroom/domain";
 import { applyRunLifecycleProjection } from "./multi-agent-run";
 
 export type SqlClient = postgres.Sql;
@@ -32,14 +34,14 @@ function opaqueId(prefix: string): string {
 
 export async function lockAgentTurnForCreate(
   sql: SqlClient,
-  input: { agentTurnId: string; expectedStates: string[] },
+  input: { agentTurnId: string },
 ): Promise<
   | {
       ok: true;
       applicationRunToken: string;
       localTrueforgeTurnId: string | null;
       previousTrueforgeTurnId: string | null;
-      state: string;
+      state: "creating" | "uncertain";
     }
   | { ok: false; reason: "not_found" | "state_mismatch" }
 > {
@@ -47,7 +49,7 @@ export async function lockAgentTurnForCreate(
     const rows = await tx<
       {
         id: string;
-        state: string;
+        state: AgentTurnState;
         application_run_token: string;
         trueforge_turn_id: string | null;
         previous_trueforge_turn_id: string | null;
@@ -62,10 +64,10 @@ export async function lockAgentTurnForCreate(
     if (!row) {
       return { ok: false, reason: "not_found" };
     }
-    if (!input.expectedStates.includes(row.state)) {
+    if (row.state !== "acquiring" && row.state !== "creating" && row.state !== "uncertain") {
       return { ok: false, reason: "state_mismatch" };
     }
-    if (row.state === "acquiring" || row.state === "intended") {
+    if (row.state === "acquiring") {
       await tx`
         UPDATE agent_turns SET state = 'creating' WHERE id = ${input.agentTurnId}
       `;
@@ -75,7 +77,7 @@ export async function lockAgentTurnForCreate(
       applicationRunToken: row.application_run_token,
       localTrueforgeTurnId: row.trueforge_turn_id,
       previousTrueforgeTurnId: row.previous_trueforge_turn_id,
-      state: row.state === "acquiring" || row.state === "intended" ? "creating" : row.state,
+      state: row.state === "acquiring" ? "creating" : row.state,
     };
   });
 }
@@ -86,34 +88,43 @@ export async function bindTrueForgeTurnId(
     agentTurnId: string;
     trueforgeTurnId: string;
     previousTrueforgeTurnId: string | null;
-    expectedStates: string[];
-    nextState?: "creating" | "streaming";
+    bindingSource: "create_response" | "history_reconciliation";
     now?: string;
   },
 ): Promise<{ ok: true } | { ok: false; reason: "not_found" | "state_mismatch" }> {
   const now = input.now ?? new Date().toISOString();
-  const nextState = input.nextState ?? "streaming";
-  const rows = await sql`
-    UPDATE agent_turns
-    SET
-      trueforge_turn_id = ${input.trueforgeTurnId},
-      previous_trueforge_turn_id = ${input.previousTrueforgeTurnId},
-      state = ${nextState},
-      started_at = COALESCE(started_at, ${now})
-    WHERE id = ${input.agentTurnId}
-      AND state IN ${sql(input.expectedStates)}
-    RETURNING id
-  `;
-  if (rows.length === 0) {
-    const existing = await sql<{ state: string }[]>`
-      SELECT state FROM agent_turns WHERE id = ${input.agentTurnId} LIMIT 1
+  return sql.begin(async (tx) => {
+    const rows = await tx<{ state: AgentTurnState }[]>`
+      SELECT state
+      FROM agent_turns
+      WHERE id = ${input.agentTurnId}
+      FOR UPDATE
     `;
-    if (!existing[0]) {
+    const current = rows[0]?.state;
+    if (!current) {
       return { ok: false, reason: "not_found" };
     }
-    return { ok: false, reason: "state_mismatch" };
-  }
-  return { ok: true };
+
+    const allowed =
+      input.bindingSource === "create_response"
+        ? current === "creating" && canTransitionAgentTurn(current, "streaming")
+        : (current === "creating" && canTransitionAgentTurn(current, "streaming")) ||
+          canReconcileAgentTurn(current, "streaming");
+    if (!allowed) {
+      return { ok: false, reason: "state_mismatch" };
+    }
+
+    await tx`
+      UPDATE agent_turns
+      SET
+        trueforge_turn_id = ${input.trueforgeTurnId},
+        previous_trueforge_turn_id = ${input.previousTrueforgeTurnId},
+        state = 'streaming',
+        started_at = COALESCE(started_at, ${now})
+      WHERE id = ${input.agentTurnId}
+    `;
+    return { ok: true };
+  });
 }
 
 export async function markAgentTurnUncertain(
@@ -121,23 +132,28 @@ export async function markAgentTurnUncertain(
   input: {
     agentTurnId: string;
     error?: Record<string, unknown>;
-    expectedStates?: string[];
   },
 ): Promise<{ ok: true } | { ok: false; reason: "state_mismatch" }> {
-  const expected = input.expectedStates ?? ["intended", "acquiring", "creating", "uncertain"];
-  const rows = await sql`
-    UPDATE agent_turns
-    SET
-      state = 'uncertain',
-      error_json = ${JSON.stringify(input.error ?? { reason: "create_uncertain" })}::jsonb
-    WHERE id = ${input.agentTurnId}
-      AND state IN ${sql(expected)}
-    RETURNING id
-  `;
-  if (rows.length === 0) {
-    return { ok: false, reason: "state_mismatch" };
-  }
-  return { ok: true };
+  return sql.begin(async (tx) => {
+    const rows = await tx<{ state: AgentTurnState }[]>`
+      SELECT state
+      FROM agent_turns
+      WHERE id = ${input.agentTurnId}
+      FOR UPDATE
+    `;
+    const current = rows[0]?.state;
+    if (!current || (current !== "uncertain" && !canTransitionAgentTurn(current, "uncertain"))) {
+      return { ok: false, reason: "state_mismatch" };
+    }
+    await tx`
+      UPDATE agent_turns
+      SET
+        state = 'uncertain',
+        error_json = ${JSON.stringify(input.error ?? { reason: "create_uncertain" })}::jsonb
+      WHERE id = ${input.agentTurnId}
+    `;
+    return { ok: true };
+  });
 }
 
 export type IngestRunEventResult =
