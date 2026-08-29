@@ -1,6 +1,7 @@
 import { useId } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { QuestionCard } from "@forgeroom/contracts";
+import { formatQuestionPromptLabel } from "@forgeroom/domain";
 import { getQuestionCard, postQuestionAnswer } from "../api/channel-resources-api";
 import { ApiError } from "../api/http-client";
 import { useSession } from "../auth/session-context";
@@ -12,29 +13,6 @@ type TrustedQuestionCardProps = {
   questionId: string;
   onAnswered?: () => void;
 };
-
-function formatPrompt(promptRedacted: QuestionCard["prompt_redacted"]): string {
-  if (typeof promptRedacted === "string") {
-    return promptRedacted;
-  }
-  if (promptRedacted && typeof promptRedacted === "object" && !Array.isArray(promptRedacted)) {
-    const prompt = promptRedacted.prompt;
-    if (typeof prompt === "string") {
-      return prompt;
-    }
-    if (prompt && typeof prompt === "object" && !Array.isArray(prompt)) {
-      const nested = prompt.prompt;
-      if (typeof nested === "string") {
-        return nested;
-      }
-    }
-  }
-  try {
-    return JSON.stringify(promptRedacted, null, 2);
-  } catch {
-    return String(promptRedacted);
-  }
-}
 
 function groupWaitingMessage(card: QuestionCard): string | null {
   const remaining = card.pause_group_required_action_count - card.pause_group_resolved_action_count;
@@ -129,7 +107,7 @@ export function TrustedQuestionCard({ questionId, onAnswered }: TrustedQuestionC
   return (
     <section
       id={trustedHitlCardElementId({ kind: "question", id: questionId })}
-      className="rounded-2xl border border-sky-300 bg-sky-50/80 p-4 shadow-sm"
+      className="trusted-hitl-card rounded-2xl border border-sky-300 bg-sky-50/80 p-4 shadow-sm"
       aria-label="Trusted question card"
       aria-busy={busy}
       aria-describedby={`${credentialWarningId} ${statusId}`.trim()}
@@ -148,7 +126,9 @@ export function TrustedQuestionCard({ questionId, onAnswered }: TrustedQuestionC
         </span>
       </div>
 
-      <p className="mt-4 text-sm font-medium text-zinc-950">{formatPrompt(card.prompt_redacted)}</p>
+      <p className="mt-4 text-sm font-medium text-zinc-950">
+        {formatQuestionPromptLabel(card.prompt_redacted)}
+      </p>
 
       <p
         id={credentialWarningId}

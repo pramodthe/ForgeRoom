@@ -116,7 +116,7 @@ function MessageBubble(props: {
             ) : null}
             {props.message.status === "streaming" ? (
               <span className="mt-2 inline-flex items-center gap-1 text-xs text-zinc-500">
-                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-violet-500" />
+                <span className="h-1.5 w-1.5 motion-safe:animate-pulse rounded-full bg-violet-500" />
                 streaming
               </span>
             ) : null}
@@ -208,7 +208,7 @@ export function ChannelTimeline(props: {
                   ? "bg-emerald-500"
                   : props.connection === "offline"
                     ? "bg-red-500"
-                    : "animate-pulse bg-amber-500"
+                    : "motion-safe:animate-pulse bg-amber-500"
               }`}
             />
             {!connectionLive ? (

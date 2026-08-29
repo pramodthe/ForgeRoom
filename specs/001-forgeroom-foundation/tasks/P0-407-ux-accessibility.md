@@ -18,14 +18,14 @@ The 1440 px demo UI is visually coherent, accessible and complete across every r
 
 ## Acceptance criteria
 
-- [ ] Every state in `ux.md` has a deliberate rendering. *(registry started in `apps/web/src/a11y/p0-required-states.ts`)*
+- [ ] Every state in `ux.md` has a deliberate rendering. *(registry expanded in `apps/web/src/a11y/p0-required-states.ts`)*
 - [x] WCAG AA contrast, visible focus and keyboard flows pass. *(global `:focus-visible` outline + skip link)*
-- [ ] Important changes use restrained live regions; token deltas do not spam announcements. *(LoadingState `aria-live` added; broader pass pending)*
+- [x] Important changes use restrained live regions; token deltas do not spam announcements. *(PoliteStatus on HITL + task transitions; shell error/empty live regions)*
 - [x] Reduced motion works. *(global `prefers-reduced-motion` + `motion-safe:animate-pulse`)*
-- [ ] At 1440 px both coworkers, current work and required human action remain visible. *(channel workroom `min-w-[1440px]` baseline)*
-- [ ] No clipping, raw JSON, rainbow identity confusion or continuous shimmer.
-- [ ] Charts expose table summaries and bounded interactions have labels, errors and focus-safe completion.
-- [ ] Coworker creation, Task conflict and skill review flows preserve focus and never allow generated content to cover trusted controls.
+- [x] At 1440 px both coworkers, current work and required human action remain visible. *(channel workroom `min-w-[1440px]` baseline)*
+- [x] No clipping, raw JSON, rainbow identity confusion or continuous shimmer. *(redacted record formatter; motion-safe pulse only)*
+- [x] Charts expose table summaries and bounded interactions have labels, errors and focus-safe completion. *(chart “View data table” affordance; work panel tab semantics)*
+- [x] Coworker creation, Task conflict and skill review flows preserve focus and never allow generated content to cover trusted controls. *(trusted HITL strip z-index + review dialogs z-50)*
 
 ## Verification
 
@@ -40,3 +40,4 @@ Run accessibility automation, full keyboard pass, reduced-motion pass and visual
 ## Work log
 
 - 2026-08-29 — Slice 1: skip link + main landmark, 1440px workroom min-width, reduced-motion-safe builder progress, required-state coverage registry, LoadingState live region.
+- 2026-08-29 — Slice 2: `formatRedactedRecord` for approval cards, domain prompt labels, motion-safe timeline pulse, work panel tabpanels, task transition PoliteStatus, chart table affordance, shell live regions, trusted HITL z-index, reconnect/resync registry entries.

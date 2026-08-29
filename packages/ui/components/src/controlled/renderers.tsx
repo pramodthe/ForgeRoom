@@ -161,22 +161,31 @@ export function ControlledBarOrLineChart(props: ChartProps) {
       </div>
       <div className="p-4">
         {view === "chart" ? (
-          <div className="space-y-3" role="img" aria-label={props.accessible_table_caption}>
-            {points.map((point, index) => {
-              const label = String(point.label ?? point.name ?? `Point ${index + 1}`);
-              const value = Number(point[series[0]?.key ?? "value"] ?? 0);
-              const width = `${Math.max(4, (value / maxValue) * 100)}%`;
-              const color = CONTROLLED_CHART_COLORS[index % CONTROLLED_CHART_COLORS.length];
-              return (
-                <div key={label} className="grid grid-cols-[88px_1fr_36px] items-center gap-3">
-                  <span className="text-xs font-medium text-zinc-700">{label}</span>
-                  <div className="h-2.5 overflow-hidden rounded-full bg-zinc-100">
-                    <div className={`h-full rounded-full ${color}`} style={{ width }} />
+          <div className="space-y-3">
+            <div role="img" aria-label={props.accessible_table_caption}>
+              {points.map((point, index) => {
+                const label = String(point.label ?? point.name ?? `Point ${index + 1}`);
+                const value = Number(point[series[0]?.key ?? "value"] ?? 0);
+                const width = `${Math.max(4, (value / maxValue) * 100)}%`;
+                const color = CONTROLLED_CHART_COLORS[index % CONTROLLED_CHART_COLORS.length];
+                return (
+                  <div key={label} className="grid grid-cols-[88px_1fr_36px] items-center gap-3">
+                    <span className="text-xs font-medium text-zinc-700">{label}</span>
+                    <div className="h-2.5 overflow-hidden rounded-full bg-zinc-100">
+                      <div className={`h-full rounded-full ${color}`} style={{ width }} />
+                    </div>
+                    <span className="text-right text-xs tabular-nums text-zinc-500">{value}</span>
                   </div>
-                  <span className="text-right text-xs tabular-nums text-zinc-500">{value}</span>
-                </div>
-              );
-            })}
+                );
+              })}
+            </div>
+            <button
+              type="button"
+              className="text-xs font-medium text-violet-700 underline underline-offset-2"
+              onClick={() => setView("table")}
+            >
+              View data table
+            </button>
           </div>
         ) : (
           <table className="w-full text-left text-sm">

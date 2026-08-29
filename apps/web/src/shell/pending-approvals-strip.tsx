@@ -18,7 +18,7 @@ export function PendingApprovalsStrip(props: { channelId: string; archived: bool
 
   return (
     <section
-      className="border-b border-amber-200 bg-amber-50/80 px-4 py-3"
+      className="trusted-hitl-strip border-b border-amber-200 bg-amber-50/80 px-4 py-3"
       aria-label="Pending approvals"
     >
       <div className="mx-auto max-w-3xl space-y-3">

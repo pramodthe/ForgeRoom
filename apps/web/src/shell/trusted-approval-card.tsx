@@ -6,20 +6,13 @@ import { ApiError } from "../api/http-client";
 import { useSession } from "../auth/session-context";
 import { formatPauseGroupLifecycleMessage } from "./pause-group-lifecycle";
 import { PoliteStatus } from "./polite-status";
+import { formatRedactedRecord } from "../a11y/format-redacted-record";
 import { trustedHitlCardElementId } from "./trusted-hitl-host";
 
 type TrustedApprovalCardProps = {
   proposalId: string;
   onDecided?: () => void;
 };
-
-function formatJson(value: unknown): string {
-  try {
-    return JSON.stringify(value, null, 2);
-  } catch {
-    return String(value);
-  }
-}
 
 export function TrustedApprovalCard({ proposalId, onDecided }: TrustedApprovalCardProps) {
   const { session } = useSession();
@@ -109,7 +102,7 @@ export function TrustedApprovalCard({ proposalId, onDecided }: TrustedApprovalCa
   return (
     <section
       id={trustedHitlCardElementId({ kind: "approval", id: proposalId })}
-      className="rounded-2xl border border-amber-300 bg-amber-50/80 p-4 shadow-sm"
+      className="trusted-hitl-card rounded-2xl border border-amber-300 bg-amber-50/80 p-4 shadow-sm"
       aria-label="Trusted approval card"
       aria-busy={busy}
       aria-describedby={statusId}
@@ -139,14 +132,14 @@ export function TrustedApprovalCard({ proposalId, onDecided }: TrustedApprovalCa
         </div>
         <div>
           <dt className="font-medium text-zinc-500">Target</dt>
-          <dd className="mt-0.5 whitespace-pre-wrap font-mono text-[11px]">
-            {formatJson(card.redacted_target)}
+          <dd className="mt-0.5 whitespace-pre-wrap text-[11px] leading-5">
+            {formatRedactedRecord(card.redacted_target)}
           </dd>
         </div>
         <div>
           <dt className="font-medium text-zinc-500">Arguments</dt>
-          <dd className="mt-0.5 whitespace-pre-wrap font-mono text-[11px]">
-            {formatJson(card.redacted_arguments)}
+          <dd className="mt-0.5 whitespace-pre-wrap text-[11px] leading-5">
+            {formatRedactedRecord(card.redacted_arguments)}
           </dd>
         </div>
       </dl>

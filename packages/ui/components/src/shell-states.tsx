@@ -23,7 +23,11 @@ export function LoadingState({ title, description }: ShellStateProps) {
 
 export function ForbiddenState({ title, description, action }: ShellStateProps) {
   return (
-    <section className="flex flex-1 items-center justify-center p-8" role="alert">
+    <section
+      className="flex flex-1 items-center justify-center p-8"
+      role="alert"
+      aria-live="assertive"
+    >
       <div className="max-w-md text-center">
         <p className="text-sm font-medium text-zinc-900">{title}</p>
         {description ? <p className="mt-2 text-sm text-zinc-600">{description}</p> : null}
@@ -35,7 +39,11 @@ export function ForbiddenState({ title, description, action }: ShellStateProps) 
 
 export function RouteErrorState({ title, description, action }: ShellStateProps) {
   return (
-    <section className="flex flex-1 items-center justify-center p-8" role="alert">
+    <section
+      className="flex flex-1 items-center justify-center p-8"
+      role="alert"
+      aria-live="assertive"
+    >
       <div className="max-w-md text-center">
         <p className="text-sm font-medium text-red-900">{title}</p>
         {description ? <p className="mt-2 text-sm text-red-700">{description}</p> : null}
@@ -47,7 +55,7 @@ export function RouteErrorState({ title, description, action }: ShellStateProps)
 
 export function EmptyState({ title, description, action }: ShellStateProps) {
   return (
-    <section className="flex flex-1 items-center justify-center p-8">
+    <section className="flex flex-1 items-center justify-center p-8" aria-live="polite">
       <div className="max-w-md text-center">
         <p className="text-sm font-medium text-zinc-900">{title}</p>
         {description ? <p className="mt-2 text-sm text-zinc-600">{description}</p> : null}
