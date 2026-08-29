@@ -52,7 +52,7 @@ export function ChannelWorkroom({ workspaceId, channelId }: ChannelWorkroomProps
   return (
     <ChannelWorkroomUiProvider key={channelId}>
       <TrustedHitlHostProvider>
-        <div className="flex h-full min-h-0 flex-col lg:flex-row">
+        <div className="flex h-full min-h-0 min-w-[1440px] flex-col lg:flex-row">
           <ChannelListPane
             workspaceId={workspaceId}
             channels={channelsQuery.data ?? []}

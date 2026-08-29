@@ -36,3 +36,21 @@ body {
     scroll-behavior: auto !important;
   }
 }
+
+.skip-link {
+  position: absolute;
+  left: -9999px;
+  top: 0.75rem;
+  z-index: 100;
+  border-radius: 0.5rem;
+  background: #18181b;
+  color: #fff;
+  padding: 0.5rem 1rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.skip-link:focus-visible {
+  left: 0.75rem;
+}

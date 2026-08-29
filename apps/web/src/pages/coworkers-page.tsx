@@ -543,7 +543,7 @@ function CoworkerBuilder({
 function BuilderProgress({ title, detail }: { title: string; detail: string }) {
   return (
     <div className="py-16 text-center" aria-live="polite" aria-busy="true">
-      <span className="mx-auto block h-10 w-10 animate-pulse rounded-2xl bg-violet-100" />
+      <span className="mx-auto block h-10 w-10 rounded-2xl bg-violet-100 motion-safe:animate-pulse" />
       <h3 className="mt-4 font-semibold text-zinc-900">{title}</h3>
       <p className="mt-1 text-sm text-zinc-500">{detail}</p>
     </div>
