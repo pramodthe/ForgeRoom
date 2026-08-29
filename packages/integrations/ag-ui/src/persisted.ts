@@ -162,6 +162,34 @@ export function toPersistedAgUiEvent(input: unknown): P0PersistedAguiEvent | nul
       type,
       messages: event.messages,
     };
+  } else if (type === "TOOL_CALL_START") {
+    candidate = {
+      type,
+      toolCallId: stringField(event, "toolCallId"),
+      toolCallName: stringField(event, "toolCallName"),
+      ...(stringField(event, "parentMessageId")
+        ? { parentMessageId: stringField(event, "parentMessageId") }
+        : {}),
+    };
+  } else if (type === "TOOL_CALL_ARGS") {
+    candidate = {
+      type,
+      toolCallId: stringField(event, "toolCallId"),
+      delta: stringField(event, "delta"),
+    };
+  } else if (type === "TOOL_CALL_END") {
+    candidate = {
+      type,
+      toolCallId: stringField(event, "toolCallId"),
+    };
+  } else if (type === "TOOL_CALL_RESULT") {
+    candidate = {
+      type,
+      messageId: stringField(event, "messageId"),
+      toolCallId: stringField(event, "toolCallId"),
+      content: typeof event.content === "string" ? event.content : "",
+      ...(event.role === "tool" ? { role: "tool" as const } : {}),
+    };
   }
 
   const parsed = p0PersistedAguiEventSchema.safeParse(candidate);

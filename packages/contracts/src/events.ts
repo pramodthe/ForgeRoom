@@ -1157,6 +1157,40 @@ export const persistedMessagesSnapshotEventSchema = z
   })
   .strict();
 
+export const persistedToolCallStartEventSchema = z
+  .object({
+    type: z.literal("TOOL_CALL_START"),
+    toolCallId: opaqueIdSchema,
+    toolCallName: z.string().min(1).max(128),
+    parentMessageId: opaqueIdSchema.optional(),
+  })
+  .strict();
+
+export const persistedToolCallArgsEventSchema = z
+  .object({
+    type: z.literal("TOOL_CALL_ARGS"),
+    toolCallId: opaqueIdSchema,
+    delta: z.string().min(1).max(64_000),
+  })
+  .strict();
+
+export const persistedToolCallEndEventSchema = z
+  .object({
+    type: z.literal("TOOL_CALL_END"),
+    toolCallId: opaqueIdSchema,
+  })
+  .strict();
+
+export const persistedToolCallResultEventSchema = z
+  .object({
+    type: z.literal("TOOL_CALL_RESULT"),
+    messageId: opaqueIdSchema,
+    toolCallId: opaqueIdSchema,
+    content: z.string().max(64_000),
+    role: z.literal("tool").optional(),
+  })
+  .strict();
+
 export const p0PersistedAguiEventSchema = z.union([
   persistedRunStartedEventSchema,
   persistedRunFinishedEventSchema,
@@ -1165,6 +1199,10 @@ export const p0PersistedAguiEventSchema = z.union([
   persistedTextMessageContentEventSchema,
   persistedTextMessageEndEventSchema,
   persistedMessagesSnapshotEventSchema,
+  persistedToolCallStartEventSchema,
+  persistedToolCallArgsEventSchema,
+  persistedToolCallEndEventSchema,
+  persistedToolCallResultEventSchema,
   activitySnapshotEventSchema,
   activityDeltaEventSchema,
   stateSnapshotEventSchema,
@@ -1282,6 +1320,20 @@ export const agentChannelEnvelopeSchema = z
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         message: "MESSAGES_SNAPSHOT may only be emitted on a coworker lane",
+        path: ["actorKind"],
+      });
+    }
+
+    const toolCallEventTypes = new Set([
+      "TOOL_CALL_START",
+      "TOOL_CALL_ARGS",
+      "TOOL_CALL_END",
+      "TOOL_CALL_RESULT",
+    ]);
+    if (toolCallEventTypes.has(value.aguiEvent.type) && value.actorKind !== "coworker") {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "TOOL_CALL_* may only be emitted on a coworker lane",
         path: ["actorKind"],
       });
     }

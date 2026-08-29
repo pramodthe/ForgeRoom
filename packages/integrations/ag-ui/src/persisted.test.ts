@@ -232,4 +232,60 @@ describe("toPersistedAgUiEvent", () => {
       }),
     ).toBeNull();
   });
+
+  it("projects TOOL_CALL_* events while dropping provider metadata", () => {
+    expect(
+      toPersistedAgUiEvent({
+        type: "TOOL_CALL_START",
+        toolCallId: "tc_1",
+        toolCallName: "DataTable",
+        parentMessageId: "msg_1",
+        metadata: { provider: "hidden" },
+      }),
+    ).toEqual({
+      type: "TOOL_CALL_START",
+      toolCallId: "tc_1",
+      toolCallName: "DataTable",
+      parentMessageId: "msg_1",
+    });
+
+    expect(
+      toPersistedAgUiEvent({
+        type: "TOOL_CALL_ARGS",
+        toolCallId: "tc_1",
+        delta: '{"title":"Issues"}',
+        rawEvent: { secret: true },
+      }),
+    ).toEqual({
+      type: "TOOL_CALL_ARGS",
+      toolCallId: "tc_1",
+      delta: '{"title":"Issues"}',
+    });
+
+    expect(
+      toPersistedAgUiEvent({
+        type: "TOOL_CALL_END",
+        toolCallId: "tc_1",
+      }),
+    ).toEqual({
+      type: "TOOL_CALL_END",
+      toolCallId: "tc_1",
+    });
+
+    expect(
+      toPersistedAgUiEvent({
+        type: "TOOL_CALL_RESULT",
+        messageId: "msg_tool_1",
+        toolCallId: "tc_1",
+        content: '{"rendered":true}',
+        role: "tool",
+      }),
+    ).toEqual({
+      type: "TOOL_CALL_RESULT",
+      messageId: "msg_tool_1",
+      toolCallId: "tc_1",
+      content: '{"rendered":true}',
+      role: "tool",
+    });
+  });
 });

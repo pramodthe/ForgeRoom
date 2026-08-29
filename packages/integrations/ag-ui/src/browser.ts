@@ -12,7 +12,14 @@ export {
 export {
   initialActivityPresentationState,
   reduceActivityPresentationState,
+  type ActivityEntry,
   type ActivityLaneOwner,
   type ActivityPresentationState,
 } from "./activity-reducer";
+export {
+  initialToolCallPresentationState,
+  reduceToolCallPresentationState,
+  type ToolCallEntry,
+  type ToolCallPresentationState,
+} from "./tool-call-reducer";
 export { compactChannelEnvelopes, isMessagesSnapshotEvent } from "./messages-compaction";

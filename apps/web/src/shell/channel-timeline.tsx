@@ -8,11 +8,16 @@ import {
   InertUnsupportedActivityCard,
   InertUnknownActivityCard,
   RunCountersFooter,
+  ToolCallActivityCard,
 } from "@forgeroom/ui-components";
 import { ControlledUiActivity } from "./controlled-ui-activity";
-import type { ActivityPresentationState } from "@forgeroom/ag-ui/browser";
+import type {
+  ActivityPresentationState,
+  ToolCallPresentationState,
+} from "@forgeroom/ag-ui/browser";
 import type { TimelineConnection } from "../ag-ui/use-channel-timeline";
 import type { TimelineItem, TimelineMessage, TimelineRun } from "../ag-ui/channel-timeline-reducer";
+import { resolveActivityEntry, resolveToolCallEntry } from "../ag-ui/channel-timeline-reducer";
 import { isFixtureMode } from "../api/mode";
 import { PinSourceButton } from "./pin-source-button";
 import { pinLabelFromMessageBody } from "./pin-source-label";
@@ -36,6 +41,8 @@ function ownerLabelForItem(
   item: TimelineItem,
   roster: readonly ChannelRosterCoworker[],
   currentHumanName: string,
+  threadActivityStates: Record<string, ActivityPresentationState>,
+  threadToolCallStates: Record<string, ToolCallPresentationState>,
 ): string | undefined {
   if (item.kind === "message") {
     if (item.message.kind === "human") return currentHumanName;
@@ -43,6 +50,18 @@ function ownerLabelForItem(
   }
   if (item.kind === "custom" && item.custom.coworkerId) {
     return roster.find((coworker) => coworker.coworker_id === item.custom.coworkerId)?.name;
+  }
+  if (item.kind === "activity") {
+    const entry = resolveActivityEntry(threadActivityStates, item.messageId);
+    if (entry?.owner.coworkerId) {
+      return roster.find((coworker) => coworker.coworker_id === entry.owner.coworkerId)?.name;
+    }
+  }
+  if (item.kind === "tool") {
+    const entry = resolveToolCallEntry(threadToolCallStates, item.toolCallId);
+    if (entry?.owner.coworkerId) {
+      return roster.find((coworker) => coworker.coworker_id === entry.owner.coworkerId)?.name;
+    }
   }
   return undefined;
 }
@@ -171,7 +190,8 @@ export function ChannelTimeline(props: {
   channelId: string;
   items: TimelineItem[];
   runs: Record<string, TimelineRun>;
-  activityState: ActivityPresentationState;
+  threadActivityStates: Record<string, ActivityPresentationState>;
+  threadToolCallStates: Record<string, ToolCallPresentationState>;
   roster: readonly ChannelRosterCoworker[];
   connection: TimelineConnection;
   archived: boolean;
@@ -248,7 +268,7 @@ export function ChannelTimeline(props: {
             }
 
             if (item.kind === "activity") {
-              const entry = props.activityState.activities[item.messageId];
+              const entry = resolveActivityEntry(props.threadActivityStates, item.messageId);
               if (!entry) return null;
               const ownerLabel =
                 entry.owner.coworkerId !== undefined
@@ -269,6 +289,26 @@ export function ChannelTimeline(props: {
               );
             }
 
+            if (item.kind === "tool") {
+              const entry = resolveToolCallEntry(props.threadToolCallStates, item.toolCallId);
+              if (!entry) return null;
+              const ownerLabel =
+                entry.owner.coworkerId !== undefined
+                  ? coworkerById.get(entry.owner.coworkerId)?.name
+                  : undefined;
+              return (
+                <div key={item.key} className="ml-9">
+                  <AgUiActivitySlot slotId={item.toolCallId}>
+                    <ToolCallActivityCard
+                      toolName={entry.toolName}
+                      status={entry.status}
+                      ownerLabel={ownerLabel}
+                    />
+                  </AgUiActivitySlot>
+                </div>
+              );
+            }
+
             if (item.kind === "inert") {
               return (
                 <div key={item.key} className="ml-9">
@@ -283,7 +323,13 @@ export function ChannelTimeline(props: {
               );
             }
 
-            const ownerLabel = ownerLabelForItem(item, props.roster, props.currentHumanName);
+            const ownerLabel = ownerLabelForItem(
+              item,
+              props.roster,
+              props.currentHumanName,
+              props.threadActivityStates,
+              props.threadToolCallStates,
+            );
             return (
               <div key={item.key} className="ml-9">
                 <CustomEventActivityCard

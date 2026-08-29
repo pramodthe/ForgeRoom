@@ -10,8 +10,13 @@ import {
   reduceActivityPresentationState,
   initialUiPresentationState,
   reduceUiPresentationState,
+  initialToolCallPresentationState,
+  reduceToolCallPresentationState,
+  type ActivityEntry,
   type ActivityLaneOwner,
   type ActivityPresentationState,
+  type ToolCallEntry,
+  type ToolCallPresentationState,
   type UiPresentationState,
 } from "@forgeroom/ag-ui/browser";
 
@@ -61,18 +66,30 @@ export type TimelineActivityRef = {
   sequence: number;
   messageId: string;
   owner: ActivityLaneOwner;
+  logicalThreadId?: string;
+};
+
+export type TimelineToolCallRef = {
+  key: string;
+  sequence: number;
+  toolCallId: string;
+  logicalThreadId?: string;
+  coworkerId?: string;
 };
 
 export type ChannelTimelineState = {
   channelId: string;
   messages: Record<string, TimelineMessage>;
   runs: Record<string, TimelineRun>;
-  activityState: ActivityPresentationState;
+  threadActivityStates: Record<string, ActivityPresentationState>;
+  threadToolCallStates: Record<string, ToolCallPresentationState>;
   uiState: UiPresentationState;
   activitySequences: Record<string, number>;
   activityRefs: Record<string, TimelineActivityRef>;
+  toolCallRefs: Record<string, TimelineToolCallRef>;
   customEvents: Record<string, TimelineCustomEvent>;
   inertActivities: Record<string, TimelineInertActivity>;
+  projectedSourceMessageIds: Record<string, true>;
   seenSequences: Record<string, true>;
 };
 
@@ -80,6 +97,8 @@ export type ChannelTimelineAction =
   | { type: "reset"; channelId: string }
   | { type: "merge_messages"; messages: ChannelTimelineMessage[] }
   | { type: "event"; envelope: AgentChannelEnvelope };
+
+const CHANNEL_ACTIVITY_LANE = "__channel__";
 
 function isTerminalRunStatus(status: TimelineRun["status"]): boolean {
   return status === "complete" || status === "partial" || status === "failed";
@@ -90,14 +109,59 @@ export function initialChannelTimelineState(channelId: string): ChannelTimelineS
     channelId,
     messages: {},
     runs: {},
-    activityState: initialActivityPresentationState(),
+    threadActivityStates: {},
+    threadToolCallStates: {},
     uiState: initialUiPresentationState(),
     activitySequences: {},
     activityRefs: {},
+    toolCallRefs: {},
     customEvents: {},
     inertActivities: {},
+    projectedSourceMessageIds: {},
     seenSequences: {},
   };
+}
+
+function threadLaneKey(envelope: AgentChannelEnvelope): string {
+  if (envelope.logicalThreadId) return envelope.logicalThreadId;
+  if (envelope.actorKind === "system") return CHANNEL_ACTIVITY_LANE;
+  return envelope.coworkerId ?? CHANNEL_ACTIVITY_LANE;
+}
+
+function threadActivityState(
+  state: ChannelTimelineState,
+  laneKey: string,
+): ActivityPresentationState {
+  return state.threadActivityStates[laneKey] ?? initialActivityPresentationState();
+}
+
+function threadToolCallState(
+  state: ChannelTimelineState,
+  laneKey: string,
+): ToolCallPresentationState {
+  return state.threadToolCallStates[laneKey] ?? initialToolCallPresentationState();
+}
+
+export function resolveActivityEntry(
+  threadActivityStates: Record<string, ActivityPresentationState>,
+  messageId: string,
+): ActivityEntry | undefined {
+  for (const threadState of Object.values(threadActivityStates)) {
+    const entry = threadState.activities[messageId];
+    if (entry) return entry;
+  }
+  return undefined;
+}
+
+export function resolveToolCallEntry(
+  threadToolCallStates: Record<string, ToolCallPresentationState>,
+  toolCallId: string,
+): ToolCallEntry | undefined {
+  for (const threadState of Object.values(threadToolCallStates)) {
+    const entry = threadState.toolCalls[toolCallId];
+    if (entry) return entry;
+  }
+  return undefined;
 }
 
 function threadPhaseKeepsLogicalTurnBusy(phase: string | undefined): boolean {
@@ -247,6 +311,63 @@ function applyRunProjection(
   };
 }
 
+function reduceThreadToolCallState(
+  state: ChannelTimelineState,
+  envelope: AgentChannelEnvelope,
+): ChannelTimelineState {
+  const laneKey = threadLaneKey(envelope);
+  const prior = threadToolCallState(state, laneKey);
+  const nextThreadState = reduceToolCallPresentationState(prior, envelope);
+  if (nextThreadState === prior) return state;
+
+  const event = envelope.aguiEvent;
+  const toolCallRefs = { ...state.toolCallRefs };
+  if (
+    event.type === "TOOL_CALL_START" ||
+    event.type === "TOOL_CALL_ARGS" ||
+    event.type === "TOOL_CALL_END" ||
+    event.type === "TOOL_CALL_RESULT"
+  ) {
+    const toolCallId = event.toolCallId;
+    const refKey = `tool:${toolCallId}`;
+    const priorRef = toolCallRefs[refKey];
+    if (!priorRef || envelope.channelSequence >= priorRef.sequence) {
+      toolCallRefs[refKey] = {
+        key: refKey,
+        sequence: priorRef?.sequence ?? envelope.channelSequence,
+        toolCallId,
+        ...(envelope.logicalThreadId ? { logicalThreadId: envelope.logicalThreadId } : {}),
+        ...(envelope.coworkerId ? { coworkerId: envelope.coworkerId } : {}),
+      };
+    }
+  }
+
+  return {
+    ...state,
+    threadToolCallStates: {
+      ...state.threadToolCallStates,
+      [laneKey]: nextThreadState,
+    },
+    toolCallRefs,
+  };
+}
+
+function reduceThreadActivityState(
+  state: ChannelTimelineState,
+  envelope: AgentChannelEnvelope,
+): ChannelTimelineState {
+  const laneKey = threadLaneKey(envelope);
+  const prior = threadActivityState(state, laneKey);
+  const nextThreadState = reduceActivityPresentationState(prior, envelope);
+  return {
+    ...state,
+    threadActivityStates: {
+      ...state.threadActivityStates,
+      [laneKey]: nextThreadState,
+    },
+  };
+}
+
 export function channelTimelineReducer(
   state: ChannelTimelineState,
   action: ChannelTimelineAction,
@@ -255,8 +376,12 @@ export function channelTimelineReducer(
 
   if (action.type === "merge_messages") {
     const messages = { ...state.messages };
+    const projectedSourceMessageIds = { ...state.projectedSourceMessageIds };
     for (const message of action.messages) {
       if (message.author_type === "human") {
+        if (projectedSourceMessageIds[message.id]) {
+          continue;
+        }
         const key = `human:${message.id}`;
         const existing = messages[key];
         if (existing?.status === "streaming") continue;
@@ -269,6 +394,7 @@ export function channelTimelineReducer(
           content: message.body,
           status: "sent",
         };
+        projectedSourceMessageIds[message.id] = true;
         continue;
       }
 
@@ -297,7 +423,7 @@ export function channelTimelineReducer(
         status: "sent",
       };
     }
-    return { ...state, messages };
+    return { ...state, messages, projectedSourceMessageIds };
   }
 
   const envelope = action.envelope;
@@ -308,7 +434,7 @@ export function channelTimelineReducer(
     return state;
   }
 
-  const next = advanceSeenEnvelope(state, envelope);
+  let next = advanceSeenEnvelope(state, envelope);
   const event = envelope.aguiEvent;
   const runStepId = envelope.runStepId;
 
@@ -430,6 +556,15 @@ export function channelTimelineReducer(
     };
   }
 
+  if (
+    event.type === "TOOL_CALL_START" ||
+    event.type === "TOOL_CALL_ARGS" ||
+    event.type === "TOOL_CALL_END" ||
+    event.type === "TOOL_CALL_RESULT"
+  ) {
+    return reduceThreadToolCallState(next, envelope);
+  }
+
   if (event.type === "ACTIVITY_SNAPSHOT" || event.type === "ACTIVITY_DELTA") {
     const unsupported = isUnsupportedCapabilitySnapshot(event);
     if (unsupported) {
@@ -449,12 +584,13 @@ export function channelTimelineReducer(
       };
     }
 
-    const priorActivity = next.activityState.activities[event.messageId ?? ""];
-    const nextActivityState = reduceActivityPresentationState(next.activityState, envelope);
-    const nextActivity = nextActivityState.activities[event.messageId ?? ""];
+    const laneKey = threadLaneKey(envelope);
+    const priorActivity = threadActivityState(next, laneKey).activities[event.messageId ?? ""];
+    next = reduceThreadActivityState(next, envelope);
+    const nextActivity = threadActivityState(next, laneKey).activities[event.messageId ?? ""];
     const messageId = typeof event.messageId === "string" ? event.messageId : undefined;
     if (!messageId) {
-      return { ...next, activityState: nextActivityState };
+      return next;
     }
 
     const activityRefs = { ...next.activityRefs };
@@ -468,6 +604,7 @@ export function channelTimelineReducer(
         sequence: activitySequences[messageId] ?? envelope.channelSequence,
         messageId,
         owner: nextActivity.owner,
+        ...(envelope.logicalThreadId ? { logicalThreadId: envelope.logicalThreadId } : {}),
       };
       if (!activitySequences[messageId]) {
         activitySequences[messageId] = envelope.channelSequence;
@@ -484,7 +621,6 @@ export function channelTimelineReducer(
 
     return {
       ...next,
-      activityState: nextActivityState,
       activityRefs,
       activitySequences,
       inertActivities,
@@ -529,6 +665,7 @@ export function orderedTimelineMessages(state: ChannelTimelineState): TimelineMe
 export type TimelineItem =
   | { kind: "message"; sequence: number; key: string; message: TimelineMessage }
   | { kind: "activity"; sequence: number; key: string; messageId: string }
+  | { kind: "tool"; sequence: number; key: string; toolCallId: string }
   | { kind: "inert"; sequence: number; key: string; inert: TimelineInertActivity }
   | { kind: "custom"; sequence: number; key: string; custom: TimelineCustomEvent };
 
@@ -538,12 +675,22 @@ export function orderedTimelineItems(state: ChannelTimelineState): TimelineItem[
     items.push({ kind: "message", sequence: message.sequence, key: message.key, message });
   }
   for (const ref of Object.values(state.activityRefs)) {
-    if (state.activityState.activities[ref.messageId]) {
+    if (resolveActivityEntry(state.threadActivityStates, ref.messageId)) {
       items.push({
         kind: "activity",
         sequence: ref.sequence,
         key: ref.key,
         messageId: ref.messageId,
+      });
+    }
+  }
+  for (const ref of Object.values(state.toolCallRefs)) {
+    if (resolveToolCallEntry(state.threadToolCallStates, ref.toolCallId)) {
+      items.push({
+        kind: "tool",
+        sequence: ref.sequence,
+        key: ref.key,
+        toolCallId: ref.toolCallId,
       });
     }
   }

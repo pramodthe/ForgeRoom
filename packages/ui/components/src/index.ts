@@ -17,6 +17,7 @@ export { validateControlledProps, type PropValidationResult } from "./controlled
 export {
   ActivityCardShell,
   CustomEventActivityCard,
+  ToolCallActivityCard,
   ForgeRoomActivityCard,
   InertUnknownActivityCard,
   InertUnsupportedActivityCard,
@@ -24,12 +25,14 @@ export {
   activityIconForEyebrow,
   formatRunActivityCounters,
   presentCustomEvent,
+  presentToolCall,
   presentForgeRoomActivity,
   presentUnsupportedCapability,
   presentUnknownActivity,
   type ActivityCardShellProps,
   type ActivityCardTone,
   type CustomEventActivityCardProps,
+  type ToolCallActivityCardProps,
   type ForgeRoomActivityCardProps,
   type ApplicationSourceName,
 } from "./activity-cards";

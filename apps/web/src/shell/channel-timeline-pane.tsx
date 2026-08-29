@@ -140,7 +140,8 @@ export function ChannelTimelinePane({
         channelId={channel.id}
         items={timeline.items}
         runs={timeline.runs}
-        activityState={timeline.activityState}
+        threadActivityStates={timeline.threadActivityStates}
+        threadToolCallStates={timeline.threadToolCallStates}
         roster={rosterQuery.data.coworkers}
         connection={timeline.connection}
         archived={archived}
