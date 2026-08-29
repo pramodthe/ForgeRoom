@@ -475,6 +475,52 @@ export const channelPendingApprovalsResponseSchema = z
   })
   .strict();
 
+/** Trusted-host question card projection. Never sourced from model props. */
+export const questionCardSchema = z
+  .object({
+    schemaVersion: schemaVersion1,
+    question_id: opaqueIdSchema,
+    required_action_id: opaqueIdSchema,
+    pause_group_id: opaqueIdSchema,
+    channel_id: opaqueIdSchema,
+    run_id: opaqueIdSchema,
+    run_step_id: opaqueIdSchema,
+    agent_turn_id: opaqueIdSchema,
+    coworker_id: opaqueIdSchema,
+    coworker_handle: z.string().min(1),
+    coworker_name: z.string().min(1),
+    prompt_hash: sha256Schema,
+    prompt_redacted: safeJsonValueSchema,
+    state: z.enum(["requested", "answered", "expired", "stale"]),
+    expires_at: isoDateTimeSchema,
+    pause_group_state: pauseGroupStateSchema,
+    pause_group_required_action_count: z.number().int().positive(),
+    pause_group_resolved_action_count: nonNegativeIntSchema,
+    pause_group_has_pending_approvals: z.boolean(),
+  })
+  .strict();
+
+export const questionAnswerResultSchema = z
+  .object({
+    schemaVersion: schemaVersion1,
+    question_id: opaqueIdSchema,
+    question_state: z.literal("answered"),
+    pause_group_id: opaqueIdSchema,
+    pause_group_state: pauseGroupStateSchema,
+    pause_group_ready: z.boolean(),
+    required_action_count: z.number().int().positive(),
+    resolved_action_count: nonNegativeIntSchema,
+  })
+  .strict();
+
+export const channelPendingQuestionsResponseSchema = z
+  .object({
+    schemaVersion: schemaVersion1,
+    channel_id: opaqueIdSchema,
+    question_ids: z.array(opaqueIdSchema),
+  })
+  .strict();
+
 export const questionSchema = z
   .object({
     schemaVersion: schemaVersion1,
@@ -539,5 +585,8 @@ export type ApprovalDecisionCommand = z.infer<typeof approvalDecisionCommandSche
 export type ApprovalCard = z.infer<typeof approvalCardSchema>;
 export type ApprovalDecisionResult = z.infer<typeof approvalDecisionResultSchema>;
 export type ChannelPendingApprovalsResponse = z.infer<typeof channelPendingApprovalsResponseSchema>;
+export type QuestionCard = z.infer<typeof questionCardSchema>;
+export type QuestionAnswerResult = z.infer<typeof questionAnswerResultSchema>;
+export type ChannelPendingQuestionsResponse = z.infer<typeof channelPendingQuestionsResponseSchema>;
 export type Question = z.infer<typeof questionSchema>;
 export type QuestionAnswerCommand = z.infer<typeof questionAnswerCommandSchema>;

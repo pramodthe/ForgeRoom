@@ -108,6 +108,7 @@ export {
   type ProposalDecisionGateResult,
   type ProposalDecisionSnapshot,
 } from "./approvals/decision";
+export { buildQuestionCard, type QuestionCardSnapshot } from "./questions/answer";
 export {
   COWORKER_DRAFT_TTL_MS,
   GOLDEN_RESEARCH_PROMPT,

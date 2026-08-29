@@ -133,6 +133,8 @@ export type {
   RecordApprovalDecisionResult,
   SqlClient as ApprovalDecisionSqlClient,
 } from "./approval-decision";
+export { loadQuestionForCard, listPendingQuestionIds } from "./question-card";
+export type { QuestionCardSnapshot, SqlClient as QuestionCardSqlClient } from "./question-card";
 export {
   derivePausePayloadKey,
   sealPauseResponsePayload,

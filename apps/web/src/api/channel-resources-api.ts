@@ -4,6 +4,10 @@ import type {
   ApprovalDecisionResult,
   AuditReceipt,
   ChannelPendingApprovalsResponse,
+  ChannelPendingQuestionsResponse,
+  QuestionAnswerCommand,
+  QuestionAnswerResult,
+  QuestionCard,
   RunCancelCommand,
   RunCancelResult,
   RunDetailResponse,
@@ -15,6 +19,9 @@ import {
   approvalDecisionResultSchema,
   auditReceiptSchema,
   channelPendingApprovalsResponseSchema,
+  channelPendingQuestionsResponseSchema,
+  questionAnswerResultSchema,
+  questionCardSchema,
   runCancelResultSchema,
   runDetailResponseSchema,
   uiInstanceReplayResponseSchema,
@@ -51,6 +58,40 @@ export async function listChannelPendingApprovals(
     `/api/channels/${encodeURIComponent(channelId)}/pending-approvals`,
   );
   return channelPendingApprovalsResponseSchema.parse(
+    stripRequestId(body as { request_id: string }),
+  );
+}
+
+export async function getQuestionCard(questionId: string): Promise<QuestionCard> {
+  const body = await apiFetch<{ card: unknown; request_id: string }>(
+    `/api/questions/${encodeURIComponent(questionId)}`,
+  );
+  return questionCardSchema.parse(stripRequestId(body).card);
+}
+
+export async function postQuestionAnswer(input: {
+  questionId: string;
+  command: QuestionAnswerCommand;
+  csrfToken: string;
+}): Promise<QuestionAnswerResult> {
+  const body = await apiFetch<unknown>(
+    `/api/questions/${encodeURIComponent(input.questionId)}/answer`,
+    {
+      method: "POST",
+      csrfToken: input.csrfToken,
+      body: JSON.stringify(input.command),
+    },
+  );
+  return questionAnswerResultSchema.parse(stripRequestId(body as { request_id: string }));
+}
+
+export async function listChannelPendingQuestions(
+  channelId: string,
+): Promise<ChannelPendingQuestionsResponse> {
+  const body = await apiFetch<unknown>(
+    `/api/channels/${encodeURIComponent(channelId)}/pending-questions`,
+  );
+  return channelPendingQuestionsResponseSchema.parse(
     stripRequestId(body as { request_id: string }),
   );
 }
