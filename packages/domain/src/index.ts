@@ -110,6 +110,11 @@ export {
 } from "./approvals/decision";
 export { buildQuestionCard, type QuestionCardSnapshot } from "./questions/answer";
 export {
+  formatQuestionPromptLabel,
+  formatRunEventDetail,
+  formatRunEventTitle,
+} from "./runs/drawer";
+export {
   COWORKER_DRAFT_TTL_MS,
   GOLDEN_RESEARCH_PROMPT,
   P0_COWORKER_CATALOG_REVISION,

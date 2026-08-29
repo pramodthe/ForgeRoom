@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { Run, RunStep } from "@forgeroom/contracts";
 import { useRef, useState } from "react";
 import { cancelRun, getRun, getRunReceipt } from "../api/channel-resources-api";
+import { apiUrl } from "../api/http-client";
 import { newIdempotencyKey } from "../api/http-client";
 import { isFixtureMode } from "../api/mode";
 import { listChannelRoster, publishFixtureRunSkill } from "../api/workspace-api";
@@ -29,6 +30,18 @@ const STOPPABLE_STEP_STATES = new Set<RunStep["state"]>([
 
 function formatStepState(state: RunStep["state"]): string {
   return state.replaceAll("_", " ");
+}
+
+function formatEventTime(iso: string): string {
+  try {
+    return new Date(iso).toLocaleTimeString([], {
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    });
+  } catch {
+    return iso;
+  }
 }
 
 function lifecycleLabel(lifecycle: Run["lifecycle"]): string {
@@ -104,6 +117,7 @@ function LiveRunDetailDrawer({
   });
 
   const run = runQuery.data?.run;
+  const runDetail = runQuery.data;
   const isLoading = runQuery.isLoading || receiptQuery.isLoading;
   const hasLoadError = runQuery.error || receiptQuery.error;
   const stoppable = run?.steps.some((step) => STOPPABLE_STEP_STATES.has(step.state)) ?? false;
@@ -217,6 +231,135 @@ function LiveRunDetailDrawer({
                   })}
                 </div>
               </section>
+
+              {runDetail && runDetail.events.length > 0 ? (
+                <section className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
+                  <h3 className="text-sm font-semibold text-zinc-900">Normalized activity</h3>
+                  <ol className="mt-4 space-y-4">
+                    {runDetail.events.map((event) => (
+                      <RunTimelineEvent
+                        key={event.id}
+                        time={formatEventTime(event.occurred_at)}
+                        title={event.title}
+                        detail={event.detail}
+                        waiting={event.waiting}
+                      />
+                    ))}
+                  </ol>
+                </section>
+              ) : null}
+
+              {runDetail &&
+              (runDetail.tasks.length > 0 ||
+                runDetail.artifacts.length > 0 ||
+                runDetail.decisions.length > 0) ? (
+                <div className="grid grid-cols-2 gap-3">
+                  <RunDrawerSummary
+                    title="Tasks"
+                    body={
+                      runDetail.tasks.length === 0 ? "None" : `${runDetail.tasks.length} linked`
+                    }
+                    detail={
+                      runDetail.tasks.length === 0
+                        ? "No TaskRecords from this run"
+                        : runDetail.tasks
+                            .map((task) => `${task.title} · rev ${task.current_revision}`)
+                            .join(" · ")
+                    }
+                  />
+                  <RunDrawerSummary
+                    title="Artifacts"
+                    body={
+                      runDetail.artifacts.length === 0
+                        ? "None"
+                        : `${runDetail.artifacts.length} revision${
+                            runDetail.artifacts.length === 1 ? "" : "s"
+                          }`
+                    }
+                    detail={
+                      runDetail.artifacts.length === 0
+                        ? "No durable artifacts"
+                        : runDetail.artifacts.map((artifact) => artifact.name).join(" · ")
+                    }
+                  />
+                  <RunDrawerSummary
+                    title="Decisions"
+                    body={`${runDetail.decisions.filter((decision) => decision.waiting).length} waiting`}
+                    detail={
+                      runDetail.decisions.length === 0
+                        ? "No approvals or questions"
+                        : runDetail.decisions
+                            .map(
+                              (decision) =>
+                                `${decision.kind === "approval" ? "Approval" : "Question"}: ${decision.label}`,
+                            )
+                            .join(" · ")
+                    }
+                    className="col-span-2"
+                  />
+                </div>
+              ) : null}
+
+              {runDetail && runDetail.artifacts.length > 0 ? (
+                <section className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
+                  <h3 className="text-sm font-semibold text-zinc-900">Artifacts</h3>
+                  <div className="mt-4 space-y-3">
+                    {runDetail.artifacts.map((artifact) => (
+                      <div
+                        key={artifact.id}
+                        className="flex items-center justify-between gap-3 rounded-xl border border-zinc-100 p-3"
+                      >
+                        <div className="min-w-0">
+                          <div className="truncate text-sm font-medium text-zinc-900">
+                            {artifact.name}
+                          </div>
+                          <div className="mt-0.5 text-[11px] text-zinc-500">
+                            {artifact.mime_type} · rev {artifact.revision}
+                          </div>
+                        </div>
+                        <a
+                          href={apiUrl(
+                            `/api/artifacts/${encodeURIComponent(artifact.id)}/download`,
+                          )}
+                          className="shrink-0 text-xs font-medium text-violet-700"
+                        >
+                          Download
+                        </a>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              ) : null}
+
+              {runDetail && runDetail.decisions.length > 0 ? (
+                <section className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
+                  <h3 className="text-sm font-semibold text-zinc-900">Approvals and questions</h3>
+                  <ul className="mt-4 space-y-3">
+                    {runDetail.decisions.map((decision) => (
+                      <li
+                        key={`${decision.kind}-${decision.id}`}
+                        className="flex items-start justify-between gap-3 rounded-xl border border-zinc-100 p-3 text-xs"
+                      >
+                        <div className="min-w-0">
+                          <div className="font-medium capitalize text-zinc-900">
+                            {decision.kind}
+                          </div>
+                          <div className="mt-1 text-zinc-600">{decision.label}</div>
+                        </div>
+                        <span
+                          className={`shrink-0 rounded-full px-2 py-0.5 font-medium capitalize ${
+                            decision.waiting
+                              ? "bg-amber-50 text-amber-700"
+                              : "bg-emerald-50 text-emerald-700"
+                          }`}
+                        >
+                          {decision.state.replaceAll("_", " ")}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              ) : null}
             </>
           ) : null}
           {receiptQuery.data ? (
@@ -492,9 +635,37 @@ function Event(props: { time: string; title: string; detail: string; waiting?: b
   );
 }
 
+function RunTimelineEvent(props: {
+  time: string;
+  title: string;
+  detail: string;
+  waiting?: boolean;
+}) {
+  return <Event {...props} />;
+}
+
 function Summary(props: { title: string; body: string; detail: string }) {
   return (
     <section className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
+      <div className="text-[10px] font-semibold uppercase tracking-wide text-zinc-400">
+        {props.title}
+      </div>
+      <div className="mt-2 text-sm font-semibold text-zinc-900">{props.body}</div>
+      <div className="mt-1 text-xs text-zinc-500">{props.detail}</div>
+    </section>
+  );
+}
+
+function RunDrawerSummary(props: {
+  title: string;
+  body: string;
+  detail: string;
+  className?: string;
+}) {
+  return (
+    <section
+      className={`rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm ${props.className ?? ""}`}
+    >
       <div className="text-[10px] font-semibold uppercase tracking-wide text-zinc-400">
         {props.title}
       </div>

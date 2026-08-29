@@ -6,6 +6,7 @@ import {
   schemaVersion1,
 } from "./primitives";
 import { routingModeSchema } from "./channels";
+import { taskStatusSchema } from "./tasks";
 
 export const runLifecycleSchema = z.enum([
   "queued",
@@ -126,10 +127,58 @@ export const runStepCancelCommandSchema = z
   })
   .strict();
 
+export const runEventSummarySchema = z
+  .object({
+    schemaVersion: schemaVersion1,
+    id: opaqueIdSchema,
+    normalized_type: z.string().min(1),
+    title: z.string().min(1),
+    detail: z.string().min(1),
+    occurred_at: isoDateTimeSchema,
+    waiting: z.boolean(),
+  })
+  .strict();
+
+export const runTaskSummarySchema = z
+  .object({
+    schemaVersion: schemaVersion1,
+    id: opaqueIdSchema,
+    title: z.string().min(1),
+    status: taskStatusSchema,
+    current_revision: z.number().int().positive(),
+  })
+  .strict();
+
+export const runArtifactSummarySchema = z
+  .object({
+    schemaVersion: schemaVersion1,
+    id: opaqueIdSchema,
+    name: z.string().min(1),
+    mime_type: z.string().min(1),
+    revision: z.number().int().positive(),
+    byte_size: nonNegativeIntSchema,
+  })
+  .strict();
+
+export const runDecisionSummarySchema = z
+  .object({
+    schemaVersion: schemaVersion1,
+    kind: z.enum(["approval", "question"]),
+    id: opaqueIdSchema,
+    state: z.string().min(1),
+    label: z.string().min(1),
+    waiting: z.boolean(),
+  })
+  .strict();
+
 export const runDetailResponseSchema = z
   .object({
     run: runSchema,
     source_message_body: z.string(),
+    events: z.array(runEventSummarySchema),
+    tasks: z.array(runTaskSummarySchema),
+    artifacts: z.array(runArtifactSummarySchema),
+    decisions: z.array(runDecisionSummarySchema),
   })
   .strict();
 
@@ -148,5 +197,9 @@ export type RunStepState = z.infer<typeof runStepStateSchema>;
 export type AgentTurnState = z.infer<typeof agentTurnStateSchema>;
 export type RunCancelCommand = z.infer<typeof runCancelCommandSchema>;
 export type RunSteerCommand = z.infer<typeof runSteerCommandSchema>;
+export type RunEventSummary = z.infer<typeof runEventSummarySchema>;
+export type RunTaskSummary = z.infer<typeof runTaskSummarySchema>;
+export type RunArtifactSummary = z.infer<typeof runArtifactSummarySchema>;
+export type RunDecisionSummary = z.infer<typeof runDecisionSummarySchema>;
 export type RunDetailResponse = z.infer<typeof runDetailResponseSchema>;
 export type RunCancelResult = z.infer<typeof runCancelResultSchema>;
