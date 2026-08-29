@@ -8,6 +8,15 @@ import {
   P0_MAX_ARTIFACT_BYTES,
 } from "./index";
 
+function testCrc32(content: Buffer): number {
+  let crc = 0xffffffff;
+  for (const byte of content) {
+    crc ^= byte;
+    for (let bit = 0; bit < 8; bit++) crc = (crc >>> 1) ^ (0xedb88320 & -(crc & 1));
+  }
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
 function createStoredZip(
   name: string,
   content: Buffer,
@@ -15,26 +24,43 @@ function createStoredZip(
   entryComment = "",
   extra: string | Buffer = "",
   gap: string | Buffer = "",
+  useDescriptor = false,
 ): Buffer {
   const nameBytes = Buffer.from(name, "utf8");
   const commentBytes = Buffer.from(comment, "utf8");
   const entryCommentBytes = Buffer.from(entryComment, "utf8");
   const extraBytes = Buffer.isBuffer(extra) ? extra : Buffer.from(extra, "utf8");
   const gapBytes = Buffer.isBuffer(gap) ? gap : Buffer.from(gap, "utf8");
-  const local = Buffer.alloc(30 + nameBytes.length + extraBytes.length + content.length);
+  const descriptorSize = useDescriptor ? 16 : 0;
+  const local = Buffer.alloc(
+    30 + nameBytes.length + extraBytes.length + content.length + descriptorSize,
+  );
+  const crc = testCrc32(content);
   local.writeUInt32LE(0x04034b50, 0);
+  local.writeUInt16LE(useDescriptor ? 0x8 : 0, 6);
+  local.writeUInt32LE(crc, 14);
   local.writeUInt32LE(content.length, 18);
   local.writeUInt32LE(content.length, 22);
   local.writeUInt16LE(nameBytes.length, 26);
   local.writeUInt16LE(extraBytes.length, 28);
   nameBytes.copy(local, 30);
   extraBytes.copy(local, 30 + nameBytes.length);
-  content.copy(local, 30 + nameBytes.length + extraBytes.length);
+  const dataOffset = 30 + nameBytes.length + extraBytes.length;
+  content.copy(local, dataOffset);
+  if (useDescriptor) {
+    const descriptorOffset = dataOffset + content.length;
+    local.writeUInt32LE(0x08074b50, descriptorOffset);
+    local.writeUInt32LE(crc, descriptorOffset + 4);
+    local.writeUInt32LE(content.length, descriptorOffset + 8);
+    local.writeUInt32LE(content.length, descriptorOffset + 12);
+  }
 
   const central = Buffer.alloc(
     46 + nameBytes.length + extraBytes.length + entryCommentBytes.length,
   );
   central.writeUInt32LE(0x02014b50, 0);
+  central.writeUInt16LE(useDescriptor ? 0x8 : 0, 8);
+  central.writeUInt32LE(crc, 16);
   central.writeUInt32LE(content.length, 20);
   central.writeUInt32LE(content.length, 24);
   central.writeUInt16LE(nameBytes.length, 28);
@@ -248,6 +274,7 @@ describe("P0-312 download validation", () => {
     unicodePathExtra.writeUInt16LE(0x7075, 0);
     unicodePathExtra.writeUInt16LE(5 + unicodePath.length, 2);
     unicodePathExtra[4] = 1;
+    unicodePathExtra.writeUInt32LE(testCrc32(Buffer.from("summary.txt", "utf8")), 5);
     unicodePath.copy(unicodePathExtra, 9);
     const sensitiveUnicodePathZip = createStoredZip(
       "summary.txt",
@@ -262,6 +289,39 @@ describe("P0-312 download validation", () => {
         content: sensitiveUnicodePathZip,
       }),
     ).toMatchObject({ ok: false, reason: "sensitive_content" });
+    const staleUnicodePathExtra = Buffer.from(unicodePathExtra);
+    staleUnicodePathExtra.writeUInt32LE(0, 5);
+    const staleUnicodePathZip = createStoredZip(
+      "summary.txt",
+      Buffer.from("safe"),
+      "",
+      "",
+      staleUnicodePathExtra,
+    );
+    expect(
+      validateDiscoveredArtifactDownload({
+        discovery: zipDiscovery,
+        content: staleUnicodePathZip,
+      }).ok,
+    ).toBe(true);
+
+    const traversalPath = Buffer.from("../x", "utf8");
+    const traversalExtra = Buffer.alloc(9 + traversalPath.length);
+    traversalExtra.writeUInt16LE(0x7075, 0);
+    traversalExtra.writeUInt16LE(5 + traversalPath.length, 2);
+    traversalExtra[4] = 1;
+    traversalExtra.writeUInt32LE(testCrc32(Buffer.from("summary.txt", "utf8")), 5);
+    traversalPath.copy(traversalExtra, 9);
+    const traversalZip = createStoredZip(
+      "summary.txt",
+      Buffer.from("safe"),
+      "",
+      "",
+      traversalExtra,
+    );
+    expect(
+      validateDiscoveredArtifactDownload({ discovery: zipDiscovery, content: traversalZip }),
+    ).toMatchObject({ ok: false, reason: "archive_invalid" });
 
     const gapZip = createStoredZip(
       "summary.txt",
@@ -273,6 +333,20 @@ describe("P0-312 download validation", () => {
     );
     expect(
       validateDiscoveredArtifactDownload({ discovery: zipDiscovery, content: gapZip }),
+    ).toMatchObject({ ok: false, reason: "archive_invalid" });
+
+    const descriptorZip = createStoredZip("summary.txt", Buffer.from("safe"), "", "", "", "", true);
+    expect(
+      validateDiscoveredArtifactDownload({ discovery: zipDiscovery, content: descriptorZip }).ok,
+    ).toBe(true);
+    const invalidDescriptorZip = Buffer.from(descriptorZip);
+    const descriptorOffset = 30 + Buffer.byteLength("summary.txt") + Buffer.byteLength("safe");
+    invalidDescriptorZip.writeUInt32LE(0, descriptorOffset + 4);
+    expect(
+      validateDiscoveredArtifactDownload({
+        discovery: zipDiscovery,
+        content: invalidDescriptorZip,
+      }),
     ).toMatchObject({ ok: false, reason: "archive_invalid" });
 
     const nestedZip = createStoredZip(

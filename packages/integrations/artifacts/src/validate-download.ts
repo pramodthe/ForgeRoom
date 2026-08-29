@@ -63,7 +63,22 @@ function looksLikeZip(content: Buffer): boolean {
   return signature === 0x04034b50 || signature === 0x06054b50 || signature === 0x02014b50;
 }
 
-function inspectZipExtra(extra: Buffer): "safe" | "sensitive" | "invalid" {
+function crc32(content: Buffer): number {
+  let crc = 0xffffffff;
+  for (const byte of content) {
+    crc ^= byte;
+    for (let bit = 0; bit < 8; bit++) {
+      crc = (crc >>> 1) ^ (0xedb88320 & -(crc & 1));
+    }
+  }
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+function isSafeZipEntryPath(path: string): boolean {
+  return !path.startsWith("/") && !/^[A-Za-z]:/u.test(path) && validateSandboxArtifactPath(path).ok;
+}
+
+function inspectZipExtra(extra: Buffer, legacyName: Buffer): "safe" | "sensitive" | "invalid" {
   if (containsSensitiveText(extra)) return "sensitive";
   let offset = 0;
   while (offset < extra.length) {
@@ -76,7 +91,11 @@ function inspectZipExtra(extra: Buffer): "safe" | "sensitive" | "invalid" {
     if (headerId === 0x7075) {
       const data = extra.subarray(dataStart, dataEnd);
       if (data.length < 5 || data[0] !== 1) return "invalid";
-      if (isSensitiveArtifactPath(data.subarray(5).toString("utf8"))) return "sensitive";
+      if (data.readUInt32LE(1) === crc32(legacyName)) {
+        const unicodePath = data.subarray(5).toString("utf8");
+        if (!isSafeZipEntryPath(unicodePath)) return "invalid";
+        if (isSensitiveArtifactPath(unicodePath)) return "sensitive";
+      }
     }
     offset = dataEnd;
   }
@@ -125,6 +144,7 @@ function inspectZipContent(content: Buffer): "safe" | "sensitive" | "invalid" {
       }
       const flags = content.readUInt16LE(offset + 8);
       const method = content.readUInt16LE(offset + 10);
+      const expectedCrc = content.readUInt32LE(offset + 16);
       const compressedSize = content.readUInt32LE(offset + 20);
       const uncompressedSize = content.readUInt32LE(offset + 24);
       const nameLength = content.readUInt16LE(offset + 28);
@@ -133,11 +153,16 @@ function inspectZipContent(content: Buffer): "safe" | "sensitive" | "invalid" {
       const localOffset = content.readUInt32LE(offset + 42);
       const nameEnd = offset + 46 + nameLength;
       if (nameEnd > content.length || (flags & 0x1) !== 0) return "invalid";
-      const name = content.subarray(offset + 46, nameEnd).toString("utf8");
+      const nameBytes = content.subarray(offset + 46, nameEnd);
+      const name = nameBytes.toString("utf8");
+      if (!isSafeZipEntryPath(name)) return "invalid";
       if (isSensitiveArtifactPath(name)) return "sensitive";
       const centralExtraEnd = nameEnd + extraLength;
       if (centralExtraEnd > content.length) return "invalid";
-      const centralExtraInspection = inspectZipExtra(content.subarray(nameEnd, centralExtraEnd));
+      const centralExtraInspection = inspectZipExtra(
+        content.subarray(nameEnd, centralExtraEnd),
+        nameBytes,
+      );
       if (centralExtraInspection !== "safe") return centralExtraInspection;
       const entryCommentStart = centralExtraEnd;
       const entryCommentEnd = entryCommentStart + commentLength;
@@ -154,9 +179,14 @@ function inspectZipContent(content: Buffer): "safe" | "sensitive" | "invalid" {
       const localNameEnd = localNameStart + localNameLength;
       const localExtraEnd = localNameEnd + localExtraLength;
       if (localExtraEnd > content.length) return "invalid";
-      const localName = content.subarray(localNameStart, localNameEnd).toString("utf8");
+      const localNameBytes = content.subarray(localNameStart, localNameEnd);
+      const localName = localNameBytes.toString("utf8");
+      if (!isSafeZipEntryPath(localName)) return "invalid";
       if (isSensitiveArtifactPath(localName)) return "sensitive";
-      const localExtraInspection = inspectZipExtra(content.subarray(localNameEnd, localExtraEnd));
+      const localExtraInspection = inspectZipExtra(
+        content.subarray(localNameEnd, localExtraEnd),
+        localNameBytes,
+      );
       if (localExtraInspection !== "safe") return localExtraInspection;
       const dataStart = localExtraEnd;
       const dataEnd = dataStart + compressedSize;
@@ -165,8 +195,16 @@ function inspectZipContent(content: Buffer): "safe" | "sensitive" | "invalid" {
       if ((flags & 0x8) !== 0) {
         const hasSignature =
           dataEnd + 4 <= centralOffset && content.readUInt32LE(dataEnd) === 0x08074b50;
-        localEnd += hasSignature ? 16 : 12;
+        const descriptorStart = dataEnd + (hasSignature ? 4 : 0);
+        localEnd = descriptorStart + 12;
         if (localEnd > centralOffset) return "invalid";
+        if (
+          content.readUInt32LE(descriptorStart) !== expectedCrc ||
+          content.readUInt32LE(descriptorStart + 4) !== compressedSize ||
+          content.readUInt32LE(descriptorStart + 8) !== uncompressedSize
+        ) {
+          return "invalid";
+        }
       }
       localRanges.push({ start: localOffset, end: localEnd });
       inspectedBytes += uncompressedSize;
@@ -179,6 +217,7 @@ function inspectZipContent(content: Buffer): "safe" | "sensitive" | "invalid" {
             ? inflateRawSync(compressed, { maxOutputLength: P0_MAX_ARTIFACT_BYTES })
             : null;
       if (!entry || entry.byteLength !== uncompressedSize) return "invalid";
+      if (crc32(entry) !== expectedCrc) return "invalid";
       if (/\.zip$/iu.test(name) || looksLikeZip(entry)) return "invalid";
       if (containsSensitiveText(entry)) return "sensitive";
       offset = nameEnd + extraLength + commentLength;
