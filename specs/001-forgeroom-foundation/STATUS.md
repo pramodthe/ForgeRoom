@@ -2,10 +2,10 @@
 
 | Field | Current value |
 | --- | --- |
-| Overall | M0 Demo contract done; M1 Foundation done; P0-404/P0-405 in_review; P0-315 in_review; P0-301–P0-314 done |
+| Overall | M0 Demo contract done; M1 Foundation done; P0-410 in_progress; P0-315–P0-317 in_review; P0-301–P0-314, P0-404, P0-405 done |
 | Current phase | Phase 1 — Foundation / M4 Product UI |
-| Active task | P0-315 (in_review), P0-316 (in_review), P0-317 (in_review), P0-404 (in_review), P0-405 (in_review) |
-| Next task | P0-410 review flows or P0-407 accessibility; P0-404/405 review closeout |
+| Active task | P0-315 (in_review), P0-316 (in_review), P0-317 (in_review), P0-410 (in_progress) |
+| Next task | P0-410 closeout or P0-407 accessibility (unblocks when P0-410 done) |
 | P0 blockers | Run-limit hard enforcement (P0-204/OD-008 evidence) |
 | Last updated | 2026-08-29 (P0-316 merged #55; P0-317 time-limit closeout in review PR #56) |
 
@@ -61,6 +61,8 @@ Never put credentials in this file.
 
 ## Recently completed
 
+- P0-404 / P0-405 → `done` (2026-08-29): spec closeout after merged PR stack #48–#54; approval/question/run drawer and Work/Artifacts/Context tabs acceptance criteria verified.
+- P0-410 slices 1–3 (2026-08-29): merged PRs #62–#64 — coworker/task/skill review flows (stale recovery, task creation, revision history, tool effects).
 - P0-404 / P0-405 closeout (2026-08-29): merged PR #54 (trusted HITL host-open hook, Work tab stop, task evidence).
 - P0-317 → `in_review` (2026-08-29): `DataGrant.max_time_ms` enforced in `applySnapshotLimits` and `invokeUiDataFunction`; attributed limit errors; integration tests for bytes/time breach.
 - P0-315 → `in_review` (2026-08-28). Nine of eleven open acceptance criteria verified with

@@ -1,7 +1,7 @@
 ---
 id: P0-404
 title: Build approval/question UI and Run drawer
-status: in_review
+status: done
 owner: cursor-agent
 depends_on: [P0-307, P0-308, P0-403]
 requirements: [AP-003, AP-004, AP-008, AP-011, RUN-004, RUN-007, GUI-010]
@@ -41,3 +41,7 @@ Run component tests for stale/concurrent/expired states and browser decision/que
   - `pnpm lint`, `pnpm typecheck`, targeted vitest green locally
 - Notes:
   - P0 host-open uses `TrustedHitlHostProvider` + stable card anchors; `ControlledInstance` accepts `onRequestOpenHitlCard` but renderers do not invoke it without server-bound links (P1 `open_existing_hitl` remains unsupported at the grant boundary).
+
+## Work log
+
+- 2026-08-29 — Task marked `done` after PR stack #50–#52 and closeout #54; all acceptance criteria verified.
