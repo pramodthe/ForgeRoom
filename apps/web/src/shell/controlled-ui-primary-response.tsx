@@ -26,7 +26,11 @@ export function ControlledUiPrimaryChrome(props: {
     .join(" · ");
 
   return (
-    <article className="flex justify-start" data-primary-response="controlled-ui">
+    <article
+      className="flex justify-start"
+      data-primary-response="controlled-ui"
+      data-ui-instance-id={props.content.surfaceId}
+    >
       <div className="flex max-w-[92%] items-start gap-2.5">
         <Avatar
           name={ownerName}

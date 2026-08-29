@@ -13,11 +13,21 @@ export const TASK_RECORD_UPSERT_TOOL_DESCRIPTOR = {
   inputSchema: {
     type: "object",
     additionalProperties: false,
-    required: ["channel_id", "idempotency_key"],
+    required: ["operation", "channel_id", "idempotency_key"],
     properties: {
+      operation: {
+        type: "string",
+        enum: ["create", "update"],
+        description:
+          "Use create for a new task and omit task_id/expected_revision. Use update for an existing task and include both task_id and expected_revision.",
+      },
       channel_id: { type: "string" },
-      task_id: { type: "string" },
-      expected_revision: { type: "integer", minimum: 1 },
+      task_id: { type: "string", description: "Required only for operation=update." },
+      expected_revision: {
+        type: "integer",
+        minimum: 1,
+        description: "Required only for operation=update.",
+      },
       idempotency_key: { type: "string", minLength: 1 },
       title: { type: "string", minLength: 1 },
       description: { type: ["string", "null"] },
@@ -35,6 +45,7 @@ export const TASK_RECORD_UPSERT_TOOL_DESCRIPTOR = {
 };
 
 export type TaskRecordUpsertToolArgs = {
+  operation: "create" | "update";
   channel_id: string;
   task_id?: string;
   expected_revision?: number;
@@ -58,6 +69,7 @@ function readString(value: unknown): string | undefined {
 }
 
 const TASK_TOOL_KEYS = new Set([
+  "operation",
   "channel_id",
   "task_id",
   "expected_revision",
@@ -96,6 +108,10 @@ export const taskRecordUpsertToolArgsSchema = {
     }
     const unknownKey = Object.keys(raw).find((key) => !TASK_TOOL_KEYS.has(key));
     if (unknownKey) return parseFailure(`unknown field: ${unknownKey}`);
+    const operation = raw.operation;
+    if (operation !== "create" && operation !== "update") {
+      return parseFailure("operation must be create or update");
+    }
     const channelId = readString(raw.channel_id);
     const idempotencyKey = readString(raw.idempotency_key);
     if (!channelId || !idempotencyKey) {
@@ -145,6 +161,7 @@ export const taskRecordUpsertToolArgsSchema = {
     }
 
     const value: TaskRecordUpsertToolArgs = {
+      operation,
       channel_id: channelId,
       idempotency_key: idempotencyKey,
       ...(taskId ? { task_id: taskId } : {}),
@@ -161,7 +178,10 @@ export const taskRecordUpsertToolArgsSchema = {
       ...(dueAt.present ? { due_at: dueAt.value } : {}),
     };
 
-    if (!taskId) {
+    if (operation === "create") {
+      if (taskId) {
+        return parseFailure("create must not include task_id");
+      }
       const create = taskCreateCommandSchema.safeParse({
         schemaVersion: 1,
         title: value.title,
@@ -186,7 +206,14 @@ export const taskRecordUpsertToolArgsSchema = {
       return { success: true as const, data: value };
     }
 
-    if (sourceMessageId.present || sourceRunId.present) {
+    if (!taskId) {
+      return parseFailure("update must include task_id");
+    }
+
+    if (
+      (sourceMessageId.present && sourceMessageId.value !== null) ||
+      (sourceRunId.present && sourceRunId.value !== null)
+    ) {
       return parseFailure("updates must not include source_message_id or source_run_id");
     }
 

@@ -32,7 +32,9 @@ export function buildComponentContinuationTurnInput(
   responsePayloadHash: string;
   redactedSummary: Record<string, unknown>;
 } {
-  const content = canonicalizeJson(args.response.resultRedacted);
+  // Response-only turns cannot mix in a user.message marker. Put the non-secret application
+  // token in the tool-response content so provider history retains the full create intent.
+  const content = `[[forgeroom:application_run_token=${args.applicationRunToken}]]\n${canonicalizeJson(args.response.resultRedacted)}`;
   const input: TurnInputItem[] = [
     {
       type: "user.tool_response",
@@ -76,13 +78,6 @@ export function decideCreateOrReconcileComponentContinuationTurn(args: {
   inputHash: string;
   previousTurnId: PreviousTurnIdInput;
 }): ComponentContinuationTurnCreateDecision {
-  if (args.localTrueforgeTurnId) {
-    const existing = args.history.find((turn) => turn.id === args.localTrueforgeTurnId);
-    if (existing) {
-      return { action: "bind_existing", turn: existing, matchedBy: "input_hash" };
-    }
-  }
-
   const expectedPrevious = args.previousTurnId === "none" ? null : args.previousTurnId;
   const matches = args.history.filter((turn) => {
     if (turn.previous_turn_id !== expectedPrevious) {
@@ -99,7 +94,13 @@ export function decideCreateOrReconcileComponentContinuationTurn(args: {
     return { action: "fail_closed", reason: "ambiguous_history" };
   }
   if (matches.length === 1) {
+    if (args.localTrueforgeTurnId && matches[0]!.id !== args.localTrueforgeTurnId) {
+      return { action: "fail_closed", reason: "ambiguous_history" };
+    }
     return { action: "bind_existing", turn: matches[0]!, matchedBy: "input_hash" };
+  }
+  if (args.localTrueforgeTurnId) {
+    return { action: "fail_closed", reason: "ambiguous_history" };
   }
   return { action: "create_new" };
 }

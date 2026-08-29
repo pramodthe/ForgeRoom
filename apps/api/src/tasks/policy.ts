@@ -3,7 +3,7 @@ import { TASK_RECORD_TOOL_DESCRIPTOR_HASH, TASK_RECORD_UPSERT_TOOL_NAME } from "
 import type { TaskRecordUpsertToolArgs } from "./schema";
 
 function summarizeTarget(args: TaskRecordUpsertToolArgs) {
-  if (args.task_id) {
+  if (args.operation === "update" && args.task_id) {
     return {
       kind: "task_record" as const,
       taskId: args.task_id,
@@ -25,6 +25,7 @@ function redactTaskArgs(args: unknown): Record<string, unknown> {
   }
   const input = args as Record<string, unknown>;
   const allowed = [
+    "operation",
     "channel_id",
     "task_id",
     "expected_revision",
@@ -79,9 +80,10 @@ export const taskRecordUpsertPolicy: ToolPolicyDefinition = {
         display: target.display,
       },
       redactedArguments,
-      expectedEffect: parsed.task_id
-        ? `Update TaskRecord ${parsed.task_id} revision ${parsed.expected_revision ?? "?"}`
-        : `Create TaskRecord "${parsed.title ?? ""}" in channel ${parsed.channel_id}`,
+      expectedEffect:
+        parsed.operation === "update" && parsed.task_id
+          ? `Update TaskRecord ${parsed.task_id} revision ${parsed.expected_revision ?? "?"}`
+          : `Create TaskRecord "${parsed.title ?? ""}" in channel ${parsed.channel_id}`,
       dataLeavingWorkspace:
         "TaskRecord mutations stay in the application database; no external provider call is made.",
     };

@@ -14,6 +14,7 @@ import {
 } from "@forgeroom/db";
 import { actionGrantSchema } from "@forgeroom/contracts";
 import { canonicalizeJson } from "@forgeroom/domain";
+import { ApplicationWatchdog, type ApplicationWatchdogViolation } from "@forgeroom/orchestration";
 import { createHash } from "node:crypto";
 import { HASH, NOW, seedRuntime, withMigratedDatabase } from "@forgeroom/db/test-harness";
 
@@ -172,6 +173,98 @@ describe("standalone worker process", () => {
           now: NOW,
         }),
       ).toEqual({ ok: false, reason: "session_busy" });
+    });
+  }, 60_000);
+
+  it("starts and feeds the application watchdog only after accepted turn work", async () => {
+    await withMigratedDatabase(async (sql) => {
+      await seedRuntime(sql);
+      await sql`
+        UPDATE turn_queue_items
+        SET input_payload_redacted_json = '{"content":"Inspect the fixture"}'::jsonb
+        WHERE id = 'q_1'
+      `;
+      await sql`
+        UPDATE agent_turns
+        SET state = 'acquiring', trueforge_turn_id = NULL
+        WHERE id = 'turn_1'
+      `;
+
+      const violations: ApplicationWatchdogViolation[] = [];
+      const watchdog = new ApplicationWatchdog({
+        limits: {
+          runMs: 180_000,
+          maxObservedTurnTokens: 1,
+          maxObservedToolCalls: 20,
+          sandboxCommandMs: 60_000,
+        },
+        onLimitExceeded: (violation) => {
+          violations.push(violation);
+        },
+      });
+      const trueforge = {
+        createTurn: vi.fn(async () => ({
+          id: "tf_watchdog",
+          session_id: "tf_sess_1",
+          previous_turn_id: null,
+          input: [],
+          state: { status: "running" as const },
+          created_at: NOW,
+        })),
+        listTurns: vi.fn(async () => ({ turns: [], nextPageToken: null })),
+        cancelSession: vi.fn(async () => ({ cancelled: true, raw: {} })),
+        downloadSandboxFile: vi.fn(),
+        deleteHeaderAuthMcpServer: vi.fn(async () => undefined),
+      };
+      const handle = startWorkerProcess({ sql, trueforge, watchdog });
+
+      const created = await handle.dispatchCommand({
+        schemaVersion: 1,
+        command_id: "cmd_watchdog_create",
+        name: "create_or_reconcile_turn",
+        payload: {
+          run_id: "run_1",
+          run_step_id: "step_1",
+          agent_turn_id: "turn_1",
+          logical_thread_id: "thread_1",
+          expected_turn_state: "acquiring",
+          session_generation_id: "gen_1",
+          expected_session_generation: 1,
+          application_run_token: "token_1",
+        },
+      });
+      expect(created.createOrReconcile?.ok).toBe(true);
+
+      const ingested = await handle.dispatchCommand({
+        schemaVersion: 1,
+        command_id: "cmd_watchdog_usage",
+        name: "ingest_trueforge_event",
+        payload: {
+          run_id: "run_1",
+          run_step_id: "step_1",
+          agent_turn_id: "turn_1",
+          expected_turn_state: "streaming",
+          session_generation_id: "gen_1",
+          expected_session_generation: 1,
+          upstream_event_id: "event_watchdog_usage",
+          upstream_event_type: "model.message",
+          event_payload: { usage: { total_tokens: 2 } },
+        },
+      });
+      expect(ingested.ingest?.ok).toBe(true);
+      expect(violations).toMatchObject([
+        {
+          agentTurnId: "turn_1",
+          runId: "run_1",
+          runStepId: "step_1",
+          reason: "observed_token_limit",
+          observed: 2,
+          limit: 1,
+          enforcement: "application_cancel",
+          providerHardLimit: false,
+        },
+      ]);
+      await handle.stop();
     });
   }, 60_000);
 
@@ -441,7 +534,7 @@ describe("standalone worker process", () => {
             type: "user.tool_response" as const,
             thread_id: "thread_1",
             tool_call_id: "tc_1",
-            content: '{"selectedRowId":"row_1"}',
+            content: `[[forgeroom:application_run_token=${claim.applicationRunToken}]]\n{"selectedRowId":"row_1"}`,
           },
         ],
         state: { status: "running" as const },
@@ -483,7 +576,7 @@ describe("standalone worker process", () => {
             type: "user.tool_response",
             thread_id: "thread_1",
             tool_call_id: "tc_1",
-            content: '{"selectedRowId":"row_1"}',
+            content: `[[forgeroom:application_run_token=${claim.applicationRunToken}]]\n{"selectedRowId":"row_1"}`,
           },
         ],
         previousTurnId: "tf_source",

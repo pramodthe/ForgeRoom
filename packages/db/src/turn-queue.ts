@@ -20,6 +20,23 @@ export const TURN_QUEUE_PRIORITY: Record<TurnQueueInputType, number> = {
 
 export type SqlClient = postgres.Sql;
 
+function asRecord(value: unknown): Record<string, unknown> {
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    return value as Record<string, unknown>;
+  }
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value) as unknown;
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        return parsed as Record<string, unknown>;
+      }
+    } catch {
+      return {};
+    }
+  }
+  return {};
+}
+
 export type EnqueueTurnQueueItemInput = {
   id?: string;
   channelAgentSessionId: string;
@@ -58,6 +75,7 @@ export type ClaimTurnQueueItemResult =
         | "not_found"
         | "not_queued"
         | "not_next"
+        | "channel_archived"
         | "session_rotating"
         | "session_disabled"
         | "session_busy"
@@ -175,12 +193,13 @@ export async function claimTurnQueueItem(
         run_step_id: string;
         bound_session_generation_id: string | null;
         input_type: TurnQueueInputType;
+        input_payload_redacted_json: unknown;
         state: string;
         lease_expires_at: string | Date | null;
       }[]
     >`
       SELECT id, channel_agent_session_id, run_step_id, bound_session_generation_id,
-             input_type, state, lease_expires_at
+             input_type, input_payload_redacted_json, state, lease_expires_at
       FROM turn_queue_items
       WHERE id = ${input.queueItemId}
       FOR UPDATE
@@ -233,11 +252,12 @@ export async function claimTurnQueueItem(
     const sessions = await tx<
       {
         id: string;
+        channel_id: string;
         state: "active" | "rotating" | "disabled";
         current_generation_id: string | null;
       }[]
     >`
-      SELECT id, state, current_generation_id
+      SELECT id, channel_id, state, current_generation_id
       FROM channel_agent_sessions
       WHERE id = ${item.channel_agent_session_id}
       FOR UPDATE
@@ -245,6 +265,22 @@ export async function claimTurnQueueItem(
     const session = sessions[0];
     if (!session) {
       return { ok: false, reason: "not_found" };
+    }
+
+    // Serialize with archival before creating a local turn or permitting
+    // provider network work. Existing remote turns remain ingestible so their
+    // terminal outcome can still be persisted after the channel is archived.
+    const channels = await tx<{ status: "active" | "archived" }[]>`
+      SELECT status
+      FROM channels
+      WHERE id = ${session.channel_id}
+      FOR UPDATE
+    `;
+    if (!channels[0]) {
+      return { ok: false, reason: "not_found" };
+    }
+    if (channels[0].status === "archived") {
+      return { ok: false, reason: "channel_archived" };
     }
 
     const next = await tx<{ id: string }[]>`
@@ -283,9 +319,42 @@ export async function claimTurnQueueItem(
       WHERE t.channel_agent_session_id = ${item.channel_agent_session_id}
         AND pg.state IN ('collecting', 'ready')
       LIMIT 1
+      FOR UPDATE OF pg
     `;
+    let linkedCorrectionPauseGroupId: string | null = null;
     if (unresolvedPause.length > 0 && item.input_type !== "pause_group_response") {
-      return { ok: false, reason: "pause_group_unresolved" };
+      const payload = asRecord(item.input_payload_redacted_json);
+      const pauseGroupId =
+        typeof payload.pause_group_id === "string" ? payload.pause_group_id : null;
+      const requiredActionId =
+        typeof payload.required_action_id === "string" ? payload.required_action_id : null;
+      let isLinkedPauseCorrection = false;
+      if (
+        item.input_type === "correction" &&
+        pauseGroupId === unresolvedPause[0]!.id &&
+        requiredActionId
+      ) {
+        const authorizedCorrection = await tx<{ id: string }[]>`
+          SELECT ra.id
+          FROM required_actions AS ra
+          JOIN pause_groups AS pg ON pg.id = ra.pause_group_id
+          JOIN agent_turns AS source_turn ON source_turn.id = pg.agent_turn_id
+          WHERE ra.id = ${requiredActionId}
+            AND pg.id = ${pauseGroupId}
+            AND source_turn.channel_agent_session_id = ${item.channel_agent_session_id}
+            AND pg.state = 'collecting'
+            AND ra.state = 'resolved'
+            AND ra.response_redacted_json->>'request_changes' = 'true'
+          LIMIT 1
+        `;
+        isLinkedPauseCorrection = authorizedCorrection.length === 1;
+        if (isLinkedPauseCorrection) {
+          linkedCorrectionPauseGroupId = pauseGroupId;
+        }
+      }
+      if (!isLinkedPauseCorrection) {
+        return { ok: false, reason: "pause_group_unresolved" };
+      }
     }
 
     const cancelling = await tx<{ id: string }[]>`
@@ -307,6 +376,61 @@ export async function claimTurnQueueItem(
     });
     if (!binding.ok) {
       return binding;
+    }
+
+    if (linkedCorrectionPauseGroupId) {
+      // Claiming the exact encrypted request-changes correction supersedes the
+      // source provider pause. Terminalize the whole group in this transaction
+      // so sibling actions cannot remain live and normal work can continue once
+      // the correction turn settles.
+      await tx`
+        UPDATE action_proposals
+        SET state = 'stale'
+        WHERE state = 'proposed'
+          AND required_action_id IN (
+            SELECT id FROM required_actions
+            WHERE pause_group_id = ${linkedCorrectionPauseGroupId}
+          )
+      `;
+      await tx`
+        UPDATE questions
+        SET state = 'stale'
+        WHERE state = 'requested'
+          AND required_action_id IN (
+            SELECT id FROM required_actions
+            WHERE pause_group_id = ${linkedCorrectionPauseGroupId}
+          )
+      `;
+      await tx`
+        UPDATE required_actions
+        SET state = 'cancelled'
+        WHERE pause_group_id = ${linkedCorrectionPauseGroupId}
+          AND state = 'pending'
+      `;
+      const cancelled = await tx<{ agent_turn_id: string }[]>`
+        UPDATE pause_groups
+        SET state = 'cancelled'
+        WHERE id = ${linkedCorrectionPauseGroupId}
+          AND state = 'collecting'
+        RETURNING agent_turn_id
+      `;
+      if (!cancelled[0]) {
+        return { ok: false, reason: "pause_group_unresolved" };
+      }
+      await tx`
+        UPDATE agent_turns
+        SET state = 'cancelled', completed_at = ${now}
+        WHERE id = ${cancelled[0].agent_turn_id}
+          AND state = 'required_actions'
+      `;
+      await tx`
+        UPDATE run_steps
+        SET state = 'cancelled', completed_at = ${now}
+        WHERE id = (
+          SELECT run_step_id FROM agent_turns WHERE id = ${cancelled[0].agent_turn_id}
+        )
+          AND state IN ('awaiting_approval', 'awaiting_input', 'blocked_connection')
+      `;
     }
 
     const agentTurnId = opaqueId("aturn");

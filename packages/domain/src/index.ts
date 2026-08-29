@@ -40,18 +40,28 @@ export { assertFoundationBoundary, DOMAIN_RELEASE } from "./boundary";
 export {
   canTransitionActionProposal,
   canTransitionAgentTurn,
+  canReconcileAgentTurn,
   canTransitionCoworkerDraft,
   canTransitionPauseGroup,
   canTransitionRunLifecycle,
   canTransitionRunStep,
   canTransitionTask,
+  canTransitionUiComponentInterrupt,
+  canTransitionUiInteraction,
+  transitionUiComponentInterrupt,
+  transitionUiInteraction,
   ACTION_PROPOSAL_TRANSITIONS,
+  AGENT_TURN_RECONCILIATION_TRANSITIONS,
   AGENT_TURN_TRANSITIONS,
   COWORKER_DRAFT_TRANSITIONS,
   PAUSE_GROUP_TRANSITIONS,
   RUN_LIFECYCLE_TRANSITIONS,
   RUN_STEP_TRANSITIONS,
   TASK_TRANSITIONS,
+  UI_COMPONENT_INTERRUPT_TRANSITIONS,
+  UI_INTERACTION_TRANSITIONS,
+  type UiComponentInterruptState,
+  type UiInteractionState,
 } from "./transitions";
 export { isOwnerRole, isRecentAuthentication, OWNER_ROLE, type WorkspaceRole } from "./auth";
 export {

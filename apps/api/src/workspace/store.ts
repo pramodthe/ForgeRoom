@@ -106,6 +106,22 @@ export type TaskGrantRecord = {
 export type TaskRecord = TaskRecordV1;
 export type TaskRevisionRecord = TaskRevision;
 
+/**
+ * Generation-scoped authority carried only by the application MCP task tool.
+ * Durable task writers recheck this authority in the same critical section as
+ * the task mutation so a rotation or tool revocation cannot race the route's
+ * initial offer lookup.
+ */
+export type TaskToolGenerationGuard = {
+  channelAgentSessionId: string;
+  generationId: string;
+  expectedGeneration: number;
+  workspaceId: string;
+  channelId: string;
+  coworkerId: string;
+  applicationToolName: string;
+};
+
 export type RunProvenanceRecord = {
   id: string;
   workspaceId: string;
@@ -127,7 +143,13 @@ export type AuditEventRecord = {
 };
 
 export type TaskWriteFailureReason =
-  "not_found" | "conflict" | "channel_archived" | "invalid_provenance" | "invalid_assignee";
+  | "not_found"
+  | "conflict"
+  | "channel_archived"
+  | "invalid_provenance"
+  | "invalid_assignee"
+  | "stale_generation"
+  | "application_tool_not_offered";
 
 export type TaskWriteResult =
   | {
@@ -426,6 +448,7 @@ export type WorkspaceCatalogStore = {
     revision: TaskRevisionRecord;
     event: ChannelEventInsert;
     audit: AuditEventRecord;
+    generationGuard?: TaskToolGenerationGuard;
   }): Promise<TaskWriteResult>;
   updateTaskWithRevision(input: {
     task: TaskRecord;
@@ -433,6 +456,7 @@ export type WorkspaceCatalogStore = {
     expectedRevision: number;
     event: ChannelEventInsert;
     audit: AuditEventRecord;
+    generationGuard?: TaskToolGenerationGuard;
   }): Promise<TaskWriteResult>;
 
   listParticipants(channelId: string): Promise<ParticipantRecord[]>;
@@ -665,6 +689,10 @@ export type WorkspaceCatalogStore = {
   }): Promise<AppendChannelEventResult & { pin: PinRecord }>;
 
   insertCoworkerDraft(draft: CoworkerDraftRecord): Promise<void>;
+  insertCoworkerDraftWithSupersede(input: {
+    draft: CoworkerDraftRecord;
+    supersededBefore: string;
+  }): Promise<CoworkerDraftRecord>;
   getCoworkerDraft(id: string): Promise<CoworkerDraftRecord | null>;
   listCoworkerDrafts(workspaceId: string): Promise<CoworkerDraftRecord[]>;
   supersedeCoworkerDrafts(input: {
@@ -706,6 +734,7 @@ export function createMemoryWorkspaceStore(): WorkspaceCatalogStore {
   const taskGrants = new Map<string, TaskGrantRecord>();
   const receipts = new Map<string, CommandReceipt>();
   const coworkerDrafts = new Map<string, CoworkerDraftRecord>();
+  const coworkerDraftLocks = new Map<string, Promise<void>>();
   let draftProvisionLock: Promise<void> = Promise.resolve();
   const events = new Map<string, ChannelEventRecord>();
   const messages = new Map<string, MessageRecord>();
@@ -764,6 +793,28 @@ export function createMemoryWorkspaceStore(): WorkspaceCatalogStore {
       release();
       if (channelLocks.get(channelId) === chained) {
         channelLocks.delete(channelId);
+      }
+    }
+  }
+
+  async function withCoworkerDraftLock<T>(
+    workspaceId: string,
+    fn: () => T | Promise<T>,
+  ): Promise<T> {
+    const previous = coworkerDraftLocks.get(workspaceId) ?? Promise.resolve();
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const chained = previous.catch(() => undefined).then(() => gate);
+    coworkerDraftLocks.set(workspaceId, chained);
+    await previous.catch(() => undefined);
+    try {
+      return await fn();
+    } finally {
+      release();
+      if (coworkerDraftLocks.get(workspaceId) === chained) {
+        coworkerDraftLocks.delete(workspaceId);
       }
     }
   }
@@ -836,6 +887,40 @@ export function createMemoryWorkspaceStore(): WorkspaceCatalogStore {
       ) {
         return "invalid_assignee";
       }
+    }
+    return null;
+  }
+
+  function validateTaskToolGenerationGuard(
+    task: TaskRecord,
+    guard: TaskToolGenerationGuard | undefined,
+  ): TaskWriteFailureReason | null {
+    if (!guard) return null;
+    const generation = sessionGenerations.get(guard.generationId);
+    const session = generation ? agentSessions.get(generation.channelAgentSessionId) : null;
+    if (
+      !generation ||
+      !session ||
+      generation.channelAgentSessionId !== guard.channelAgentSessionId ||
+      generation.generation !== guard.expectedGeneration ||
+      generation.state !== "ready" ||
+      session.currentGenerationId !== generation.id ||
+      session.state !== "active" ||
+      session.workspaceId !== guard.workspaceId ||
+      session.channelId !== guard.channelId ||
+      session.agentProfileId !== guard.coworkerId ||
+      task.workspace_id !== guard.workspaceId ||
+      task.channel_id !== guard.channelId
+    ) {
+      return "stale_generation";
+    }
+    const revision = sessionRevisions.get(generation.sessionRevisionId);
+    const applicationToolNames = revision?.effectiveConfigRedactedJson.application_tool_names;
+    if (
+      !Array.isArray(applicationToolNames) ||
+      !applicationToolNames.includes(guard.applicationToolName)
+    ) {
+      return "application_tool_not_offered";
     }
     return null;
   }
@@ -969,6 +1054,8 @@ export function createMemoryWorkspaceStore(): WorkspaceCatalogStore {
     },
     async insertTaskWithRevision(input) {
       return withChannelLock(input.task.channel_id, () => {
+        const guardFailure = validateTaskToolGenerationGuard(input.task, input.generationGuard);
+        if (guardFailure) return { ok: false, reason: guardFailure };
         if (tasks.has(input.task.id)) return { ok: false, reason: "conflict" };
         const invalid = validateTaskWrite(input.task);
         if (invalid) return { ok: false, reason: invalid };
@@ -986,6 +1073,8 @@ export function createMemoryWorkspaceStore(): WorkspaceCatalogStore {
     },
     async updateTaskWithRevision(input) {
       return withChannelLock(input.task.channel_id, () => {
+        const guardFailure = validateTaskToolGenerationGuard(input.task, input.generationGuard);
+        if (guardFailure) return { ok: false, reason: guardFailure };
         const current = tasks.get(input.task.id);
         if (!current) return { ok: false, reason: "not_found" };
         if (current.current_revision !== input.expectedRevision) {
@@ -1462,6 +1551,47 @@ export function createMemoryWorkspaceStore(): WorkspaceCatalogStore {
     },
     async insertCoworkerDraft(draft) {
       coworkerDrafts.set(draft.id, structuredClone(draft));
+    },
+    async insertCoworkerDraftWithSupersede(input) {
+      return withCoworkerDraftLock(input.draft.workspaceId, () => {
+        const existing = [...coworkerDrafts.values()].find(
+          (row) =>
+            row.workspaceId === input.draft.workspaceId &&
+            row.draftHash === input.draft.draftHash &&
+            row.revision === input.draft.revision &&
+            (row.state === "draft" || row.state === "awaiting_review"),
+        );
+        if (existing) return structuredClone(existing);
+        const priorEquivalentRevision = Math.max(
+          0,
+          ...[...coworkerDrafts.values()]
+            .filter(
+              (row) =>
+                row.workspaceId === input.draft.workspaceId &&
+                row.draftHash === input.draft.draftHash,
+            )
+            .map((row) => row.revision),
+        );
+        const draftToInsert = {
+          ...input.draft,
+          revision: Math.max(input.draft.revision, priorEquivalentRevision + 1),
+        };
+        for (const draft of coworkerDrafts.values()) {
+          if (
+            draft.workspaceId === input.draft.workspaceId &&
+            draft.id !== draftToInsert.id &&
+            (draft.state === "draft" || draft.state === "awaiting_review")
+          ) {
+            coworkerDrafts.set(draft.id, {
+              ...draft,
+              state: "superseded",
+              decidedAt: input.supersededBefore,
+            });
+          }
+        }
+        coworkerDrafts.set(draftToInsert.id, structuredClone(draftToInsert));
+        return structuredClone(draftToInsert);
+      });
     },
     async getCoworkerDraft(id) {
       const draft = coworkerDrafts.get(id);

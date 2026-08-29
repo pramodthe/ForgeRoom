@@ -1,6 +1,6 @@
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
 import type postgres from "postgres";
-import { canonicalizeJson } from "@forgeroom/domain";
+import { canonicalizeJson, transitionUiInteraction } from "@forgeroom/domain";
 import type {
   ActionGrant,
   SafeJsonValue,
@@ -69,7 +69,79 @@ export type StoredInteractionResult = {
   resultRef: string | null;
   renderRevision: number;
   stateRevision: number | null;
+  /** Internal dispatch hint; never serialized into the public interaction result. */
+  continuationQueueItemId?: string;
 };
+
+export type UiInteractionCommitCasInput = {
+  interactionState: string;
+  tokenExpiresAt: string | Date | null;
+  now: string;
+  grantAuthorityValid: boolean;
+  actionRevokedAt: string | Date | null;
+  actionExpiresAt: string | Date;
+  actionMaxUses: number | null;
+  actionUseCount: number;
+  instanceStatus: string;
+  currentRenderRevision: number | null;
+  interactionRenderRevision: number;
+  currentStateRevision: number | null;
+  expectedStateRevision: number | null;
+  channelStatus: string;
+};
+
+export type UiInteractionCommitCasDecision =
+  | { status: "proceed" }
+  | {
+      status: "stale";
+      reason:
+        | "interaction_not_pending"
+        | "token_missing_or_expired"
+        | "grant_authority_changed"
+        | "grant_revoked_or_expired"
+        | "grant_use_limit_reached"
+        | "instance_not_ready"
+        | "render_revision_changed"
+        | "state_revision_changed"
+        | "channel_not_active";
+      stateRevision: number | null;
+    };
+
+/** Pure commit-time CAS decision; SQL still supplies serialization and atomic writes. */
+export function evaluateUiInteractionCommitCas(
+  input: UiInteractionCommitCasInput,
+): UiInteractionCommitCasDecision {
+  const stale = (
+    reason: Extract<UiInteractionCommitCasDecision, { status: "stale" }>["reason"],
+  ): UiInteractionCommitCasDecision => ({
+    status: "stale",
+    reason,
+    stateRevision: input.currentStateRevision,
+  });
+  if (input.interactionState !== "token_issued") return stale("interaction_not_pending");
+  if (!input.tokenExpiresAt || new Date(input.tokenExpiresAt).getTime() <= Date.parse(input.now)) {
+    return stale("token_missing_or_expired");
+  }
+  if (!input.grantAuthorityValid) return stale("grant_authority_changed");
+  if (
+    input.actionRevokedAt !== null ||
+    new Date(input.actionExpiresAt).getTime() <= Date.parse(input.now)
+  ) {
+    return stale("grant_revoked_or_expired");
+  }
+  if (input.actionMaxUses !== null && input.actionUseCount >= input.actionMaxUses) {
+    return stale("grant_use_limit_reached");
+  }
+  if (input.instanceStatus !== "ready") return stale("instance_not_ready");
+  if (input.currentRenderRevision !== input.interactionRenderRevision) {
+    return stale("render_revision_changed");
+  }
+  if (input.currentStateRevision !== input.expectedStateRevision) {
+    return stale("state_revision_changed");
+  }
+  if (input.channelStatus !== "active") return stale("channel_not_active");
+  return { status: "proceed" };
+}
 
 function opaqueId(prefix: string): string {
   return `${prefix}_${randomBytes(16).toString("base64url")}`;
@@ -987,22 +1059,27 @@ export async function commitUiInteraction(
     if (prior) {
       return { ok: true, value: { ...prior, interactionId: row.interaction_id } };
     }
-    if (
-      row.state !== "token_issued" ||
-      !row.token_expires_at ||
-      new Date(row.token_expires_at).getTime() <= Date.parse(now) ||
-      !grantAuthorityValid ||
-      row.action_revoked_at !== null ||
-      new Date(row.action_expires_at).getTime() <= Date.parse(now) ||
-      (row.action_max_uses !== null && row.action_use_count >= row.action_max_uses) ||
-      row.status !== "ready" ||
-      row.current_render_revision !== row.render_revision ||
-      row.current_state_revision !== row.expected_state_revision ||
-      row.channel_status !== "active"
-    ) {
+    const cas = evaluateUiInteractionCommitCas({
+      interactionState: row.state,
+      tokenExpiresAt: row.token_expires_at,
+      now,
+      grantAuthorityValid,
+      actionRevokedAt: row.action_revoked_at,
+      actionExpiresAt: row.action_expires_at,
+      actionMaxUses: row.action_max_uses,
+      actionUseCount: row.action_use_count,
+      instanceStatus: row.status,
+      currentRenderRevision: row.current_render_revision,
+      interactionRenderRevision: row.render_revision,
+      currentStateRevision: row.current_state_revision,
+      expectedStateRevision: row.expected_state_revision,
+      channelStatus: row.channel_status,
+    });
+    if (cas.status === "stale") {
+      const staleInteractionState = transitionUiInteraction("token_issued", "stale");
       await tx`
         UPDATE ui_interactions
-        SET state = 'stale', consumed_at = ${now},
+        SET state = ${staleInteractionState}, consumed_at = ${now},
             result_redacted_json = ${JSON.stringify({ stateRevision: row.current_state_revision })}::jsonb
         WHERE id = ${row.interaction_id} AND state = 'token_issued'
       `;
@@ -1042,6 +1119,7 @@ export async function commitUiInteraction(
     const payloadInput = parseJson(row.payload_redacted_json) as SafeJsonValue;
     let result: SafeJsonValue;
     let resultRef: string | null = null;
+    let continuationQueueItemId: string | undefined;
     let nextStateRevision = row.current_state_revision;
 
     if (row.action_mode === "local_state") {
@@ -1196,6 +1274,7 @@ export async function commitUiInteraction(
       }
       result = payloadInput;
       resultRef = continuation.queueItemId;
+      continuationQueueItemId = continuation.queueItemId;
     }
 
     await tx`
@@ -1221,6 +1300,7 @@ export async function commitUiInteraction(
         resultRef,
         renderRevision: row.render_revision,
         stateRevision: nextStateRevision,
+        ...(continuationQueueItemId ? { continuationQueueItemId } : {}),
       },
     };
   });

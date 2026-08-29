@@ -132,6 +132,7 @@ import {
   type TaskGrantRecord,
   type TaskRecord,
   type TaskRevisionRecord,
+  type TaskToolGenerationGuard,
   type WorkspaceCatalogStore,
 } from "./store";
 
@@ -386,15 +387,18 @@ export type WorkspaceService = {
     coworkerId: string,
     channelId: string,
     command: TaskCreateCommand,
+    generationGuard?: TaskToolGenerationGuard,
   ): Promise<WorkspaceServiceResult<TaskRecordV1>>;
   updateTaskForCoworker(
     coworkerId: string,
     taskId: string,
     command: TaskUpdateCommand,
+    generationGuard?: TaskToolGenerationGuard,
   ): Promise<WorkspaceServiceResult<TaskRecordV1>>;
   executeTaskRecordTool(
     coworkerId: string,
     args: TaskRecordUpsertToolArgs,
+    generationGuard?: TaskToolGenerationGuard,
   ): Promise<WorkspaceServiceResult<TaskRecordV1>>;
   listTaskHistory(
     session: SessionResponse,
@@ -701,6 +705,7 @@ export type WorkspaceService = {
   ): Promise<
     WorkspaceServiceResult<{
       coworker: { id: string; handle: string };
+      channelAgentSessionId: string | null;
       logicalThreadId: string;
       trueforgeSessionId: string | null;
       availability: ChannelRosterResponse["coworkers"][number]["availability"];
@@ -1604,7 +1609,7 @@ export function createWorkspaceService(options?: {
       });
     },
 
-    async createTaskForCoworker(coworkerId, channelId, command) {
+    async createTaskForCoworker(coworkerId, channelId, command, generationGuard) {
       const coworker = await store.getCoworker(coworkerId);
       if (!coworker || coworker.status !== "active") {
         return { ok: false, error: { code: "not_found", message: "Coworker not found." } };
@@ -1742,6 +1747,7 @@ export function createWorkspaceService(options?: {
           const written = await store.insertTaskWithRevision({
             task,
             revision,
+            ...(generationGuard ? { generationGuard } : {}),
             event: systemCustomEvent(channelId, "task.created", coworkerId, createdAt),
             audit: taskAuditEvent({
               task,
@@ -1752,6 +1758,19 @@ export function createWorkspaceService(options?: {
             }),
           });
           if (!written.ok) {
+            if (
+              written.reason === "stale_generation" ||
+              written.reason === "application_tool_not_offered"
+            ) {
+              return {
+                ok: false,
+                error: {
+                  code: "conflict",
+                  message: "Application tool offer is stale; refresh and retry.",
+                  details: { reason: written.reason },
+                },
+              };
+            }
             if (written.reason === "channel_archived") {
               return {
                 ok: false,
@@ -1784,7 +1803,7 @@ export function createWorkspaceService(options?: {
       });
     },
 
-    async updateTaskForCoworker(coworkerId, taskId, command) {
+    async updateTaskForCoworker(coworkerId, taskId, command, generationGuard) {
       const coworker = await store.getCoworker(coworkerId);
       if (!coworker || coworker.status !== "active") {
         return { ok: false, error: { code: "not_found", message: "Coworker not found." } };
@@ -1913,6 +1932,7 @@ export function createWorkspaceService(options?: {
             task: next,
             revision,
             expectedRevision: command.expected_revision,
+            ...(generationGuard ? { generationGuard } : {}),
             event: systemCustomEvent(
               loaded.channel_id,
               "task.updated",
@@ -1928,6 +1948,19 @@ export function createWorkspaceService(options?: {
             }),
           });
           if (!written.ok) {
+            if (
+              written.reason === "stale_generation" ||
+              written.reason === "application_tool_not_offered"
+            ) {
+              return {
+                ok: false,
+                error: {
+                  code: "conflict",
+                  message: "Application tool offer is stale; refresh and retry.",
+                  details: { reason: written.reason },
+                },
+              };
+            }
             if (written.reason === "not_found")
               return { ok: false, error: { code: "not_found", message: "Task not found." } };
             if (written.reason === "channel_archived") {
@@ -1974,20 +2007,35 @@ export function createWorkspaceService(options?: {
       });
     },
 
-    async executeTaskRecordTool(coworkerId, args) {
+    async executeTaskRecordTool(coworkerId, args, generationGuard) {
+      if (args.operation === "create") {
+        return this.createTaskForCoworker(
+          coworkerId,
+          args.channel_id,
+          {
+            schemaVersion: 1,
+            title: args.title ?? "Untitled task",
+            description: args.description ?? null,
+            status: args.status ?? "todo",
+            assignee_type: args.assignee_type ?? null,
+            assignee_id: args.assignee_id ?? null,
+            source_message_id: args.source_message_id ?? null,
+            source_run_id: args.source_run_id ?? null,
+            due_at: args.due_at ?? null,
+            idempotency_key: args.idempotency_key,
+          },
+          generationGuard,
+        );
+      }
+
       if (!args.task_id) {
-        return this.createTaskForCoworker(coworkerId, args.channel_id, {
-          schemaVersion: 1,
-          title: args.title ?? "Untitled task",
-          description: args.description ?? null,
-          status: args.status ?? "todo",
-          assignee_type: args.assignee_type ?? null,
-          assignee_id: args.assignee_id ?? null,
-          source_message_id: args.source_message_id ?? null,
-          source_run_id: args.source_run_id ?? null,
-          due_at: args.due_at ?? null,
-          idempotency_key: args.idempotency_key,
-        });
+        return {
+          ok: false,
+          error: {
+            code: "validation_failed",
+            message: "task_id is required for task updates.",
+          },
+        };
       }
 
       const update: TaskUpdateCommand = {
@@ -2013,7 +2061,7 @@ export function createWorkspaceService(options?: {
         };
       }
 
-      return this.updateTaskForCoworker(coworkerId, args.task_id, update);
+      return this.updateTaskForCoworker(coworkerId, args.task_id, update, generationGuard);
     },
 
     async listTaskHistory(session, taskId) {
@@ -4567,6 +4615,7 @@ export function createWorkspaceService(options?: {
         ok: true,
         value: {
           coworker: { id: coworker.id, handle: coworker.handle },
+          channelAgentSessionId: agentSession?.id ?? null,
           logicalThreadId,
           trueforgeSessionId,
           availability: mapRosterAvailability(coworker, sessionStateByCoworker.get(coworkerId)),

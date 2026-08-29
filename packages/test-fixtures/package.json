@@ -14,8 +14,10 @@
     "reset": "tsx src/demo-cli.ts reset"
   },
   "dependencies": {
+    "@forgeroom/composio": "workspace:*",
     "@forgeroom/contracts": "workspace:*",
     "@forgeroom/db": "workspace:*",
+    "@forgeroom/domain": "workspace:*",
     "postgres": "^3.4.7"
   },
   "devDependencies": {

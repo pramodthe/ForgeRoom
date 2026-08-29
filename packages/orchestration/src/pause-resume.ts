@@ -167,8 +167,8 @@ export function decideCreateOrReconcileResponseTurn(args: {
  */
 export function authorizeAgUiPauseGroupResume(input: {
   resume: AgUiResumeInterrupt[];
-  /** Canonical RequiredAction ids and/or provider interrupt ids for the group. */
-  interruptIds: string[];
+  /** Each durable RequiredAction id and its provider alias identify one canonical action. */
+  actionAliases: Array<{ requiredActionId: string; providerActionId: string }>;
   requiredActionCount: number;
   pauseGroupReady: boolean;
   pauseGroupExpired?: boolean;
@@ -195,19 +195,33 @@ export function authorizeAgUiPauseGroupResume(input: {
     return { ok: false, reason: "empty_resume" };
   }
 
-  const allowed = new Set(input.interruptIds);
-  const seen = new Set<string>();
+  if (input.actionAliases.length !== input.requiredActionCount) {
+    return { ok: false, reason: "incomplete_group" };
+  }
+  const canonicalByAlias = new Map<string, string>();
+  for (const action of input.actionAliases) {
+    for (const alias of [action.requiredActionId, action.providerActionId]) {
+      const existing = canonicalByAlias.get(alias);
+      if (existing && existing !== action.requiredActionId) {
+        // An alias that identifies two actions is not safe to authorize.
+        return { ok: false, reason: "forged_interrupt" };
+      }
+      canonicalByAlias.set(alias, action.requiredActionId);
+    }
+  }
+  const seenCanonicalActions = new Set<string>();
   for (const item of input.resume) {
     if (item.status === "cancelled") {
       return { ok: false, reason: "cancelled_interrupt" };
     }
-    if (!allowed.has(item.interruptId)) {
+    const canonicalActionId = canonicalByAlias.get(item.interruptId);
+    if (!canonicalActionId) {
       return { ok: false, reason: "forged_interrupt" };
     }
-    if (seen.has(item.interruptId)) {
+    if (seenCanonicalActions.has(canonicalActionId)) {
       return { ok: false, reason: "forged_interrupt" };
     }
-    seen.add(item.interruptId);
+    seenCanonicalActions.add(canonicalActionId);
     if (item.payload !== undefined && item.payload !== null) {
       if (hasDecisionBypassPayload(item.payload)) {
         return { ok: false, reason: "payload_bypass" };
@@ -215,7 +229,7 @@ export function authorizeAgUiPauseGroupResume(input: {
     }
   }
   // Must cover every RequiredAction exactly once (ids may be provider or durable).
-  if (seen.size !== input.requiredActionCount) {
+  if (seenCanonicalActions.size !== input.requiredActionCount) {
     return { ok: false, reason: "partial_resume" };
   }
   return { ok: true };

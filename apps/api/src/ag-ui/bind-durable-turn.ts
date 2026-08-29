@@ -150,7 +150,6 @@ export async function bindDurableTrueForgeTurn(input: {
         await markAgentTurnUncertain(input.sql, {
           agentTurnId: claim.agentTurnId,
           error: { reason: "missing_trueforge_session" },
-          expectedStates: ["intended", "acquiring", "creating", "uncertain"],
         });
         await markRunStepFailed(input.sql, input.runStepId);
         return { ok: false, reason: "create_failed" };
@@ -168,21 +167,18 @@ export async function bindDurableTrueForgeTurn(input: {
           lockForCreate: async () =>
             lockAgentTurnForCreate(input.sql, {
               agentTurnId: claim.agentTurnId,
-              expectedStates: ["intended", "acquiring", "creating", "uncertain"],
             }),
           bindTurn: async (bind) => {
-            await bindTrueForgeTurnId(input.sql, {
+            return bindTrueForgeTurnId(input.sql, {
               agentTurnId: bind.agentTurnId,
               trueforgeTurnId: bind.trueforgeTurnId,
               previousTrueforgeTurnId: bind.previousTrueforgeTurnId,
-              expectedStates: ["creating", "uncertain"],
-              nextState: "streaming",
+              bindingSource: bind.bindingSource,
             });
           },
           markUncertain: async (uncertain) => {
             await markAgentTurnUncertain(input.sql, {
               ...uncertain,
-              expectedStates: ["intended", "acquiring", "creating", "uncertain"],
             });
           },
         },

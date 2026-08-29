@@ -58,6 +58,7 @@ import type {
   TaskWriteResult,
   RunProvenanceRecord,
   TaskWriteFailureReason,
+  TaskToolGenerationGuard,
   WorkspaceCatalogStore,
 } from "./store";
 import {
@@ -115,10 +116,18 @@ function mapCoworkerDraft(row: {
 }
 
 function asConfig(value: unknown): CoworkerEditableConfig {
-  if (!value || typeof value !== "object") {
+  let decoded = value;
+  if (typeof decoded === "string") {
+    try {
+      decoded = JSON.parse(decoded) as unknown;
+    } catch {
+      return emptyEditableConfig();
+    }
+  }
+  if (!decoded || typeof decoded !== "object" || Array.isArray(decoded)) {
     return emptyEditableConfig();
   }
-  const raw = value as Partial<CoworkerEditableConfig>;
+  const raw = decoded as Partial<CoworkerEditableConfig>;
   return {
     ...emptyEditableConfig(),
     ...raw,
@@ -371,6 +380,60 @@ async function validateTaskWriteSql(
     }
   }
   return null;
+}
+
+function applicationToolNames(value: unknown): string[] {
+  const config =
+    typeof value === "string"
+      ? (() => {
+          try {
+            return JSON.parse(value) as unknown;
+          } catch {
+            return null;
+          }
+        })()
+      : value;
+  if (!config || typeof config !== "object" || Array.isArray(config)) return [];
+  const names = (config as Record<string, unknown>).application_tool_names;
+  return Array.isArray(names)
+    ? names.filter((name): name is string => typeof name === "string")
+    : [];
+}
+
+async function validateTaskToolGenerationGuardSql(
+  tx: SqlClient,
+  task: TaskRecord,
+  guard: TaskToolGenerationGuard | undefined,
+): Promise<TaskWriteFailureReason | null> {
+  if (!guard) return null;
+  const rows = await tx<
+    {
+      effective_config: unknown;
+    }[]
+  >`
+    SELECT sr.effective_config_redacted_json AS effective_config
+    FROM channel_agent_sessions AS cas
+    JOIN channel_agent_session_generations AS gen
+      ON gen.channel_agent_session_id = cas.id
+    JOIN session_revisions AS sr ON sr.id = gen.session_revision_id
+    WHERE cas.id = ${guard.channelAgentSessionId}
+      AND gen.id = ${guard.generationId}
+      AND gen.generation = ${guard.expectedGeneration}
+      AND gen.id = cas.current_generation_id
+      AND gen.state = 'ready'
+      AND cas.state = 'active'
+      AND cas.workspace_id = ${guard.workspaceId}
+      AND cas.channel_id = ${guard.channelId}
+      AND cas.agent_profile_id = ${guard.coworkerId}
+      AND ${task.workspace_id} = ${guard.workspaceId}
+      AND ${task.channel_id} = ${guard.channelId}
+    FOR UPDATE OF cas, gen
+  `;
+  const row = rows[0];
+  if (!row) return "stale_generation";
+  return applicationToolNames(row.effective_config).includes(guard.applicationToolName)
+    ? null
+    : "application_tool_not_offered";
 }
 
 function mapAgentSession(row: typeof channelAgentSessions.$inferSelect): ChannelAgentSessionRecord {
@@ -642,6 +705,12 @@ export function createPostgresWorkspaceStore(sql: SqlClient): WorkspaceCatalogSt
       let result: AppendChannelEventResult | TaskWriteResult;
       try {
         result = await sql.begin(async (tx) => {
+          const guardFailure = await validateTaskToolGenerationGuardSql(
+            tx as unknown as SqlClient,
+            input.task,
+            input.generationGuard,
+          );
+          if (guardFailure) return { ok: false, reason: guardFailure } satisfies TaskWriteResult;
           const channelRows = await tx<
             {
               id: string;
@@ -738,6 +807,12 @@ export function createPostgresWorkspaceStore(sql: SqlClient): WorkspaceCatalogSt
     },
     async updateTaskWithRevision(input): Promise<TaskWriteResult> {
       return sql.begin(async (tx) => {
+        const guardFailure = await validateTaskToolGenerationGuardSql(
+          tx as unknown as SqlClient,
+          input.task,
+          input.generationGuard,
+        );
+        if (guardFailure) return { ok: false, reason: guardFailure } satisfies TaskWriteResult;
         const rows = await tx<{ current_revision: number; channel_id: string }[]>`
           SELECT current_revision, channel_id FROM tasks WHERE id = ${input.task.id} FOR UPDATE
         `;
@@ -2210,6 +2285,97 @@ export function createPostgresWorkspaceStore(sql: SqlClient): WorkspaceCatalogSt
           ${draft.decidedAt}
         )
       `;
+    },
+
+    async insertCoworkerDraftWithSupersede(input) {
+      return sql.begin(async (tx) => {
+        const locked = await tx<{ id: string }[]>`
+          SELECT id FROM workspaces WHERE id = ${input.draft.workspaceId} FOR UPDATE
+        `;
+        if (!locked[0]) {
+          throw new Error("workspace_not_found");
+        }
+        const existingRows = await tx<
+          Array<{
+            id: string;
+            workspace_id: string;
+            source_text_encrypted: string;
+            proposal_json: unknown;
+            effective_preview_json: unknown;
+            draft_hash: string;
+            revision: number;
+            policy_revision: number;
+            catalog_revision: number;
+            state: string;
+            created_by: string;
+            expires_at: string | Date;
+            created_at: string | Date;
+            decided_at: string | Date | null;
+          }>
+        >`
+          SELECT *
+          FROM coworker_drafts
+          WHERE workspace_id = ${input.draft.workspaceId}
+            AND draft_hash = ${input.draft.draftHash}
+            AND revision = ${input.draft.revision}
+            AND state IN ('draft', 'awaiting_review')
+          LIMIT 1
+          FOR UPDATE
+        `;
+        if (existingRows[0]) {
+          return mapCoworkerDraft(existingRows[0]);
+        }
+        const priorEquivalentRows = await tx<Array<{ max_revision: number | null }>>`
+          SELECT max(revision)::int AS max_revision
+          FROM coworker_drafts
+          WHERE workspace_id = ${input.draft.workspaceId}
+            AND draft_hash = ${input.draft.draftHash}
+        `;
+        const insertRevision = Math.max(
+          input.draft.revision,
+          (priorEquivalentRows[0]?.max_revision ?? 0) + 1,
+        );
+        await tx`
+          UPDATE coworker_drafts
+          SET state = 'superseded', decided_at = ${input.supersededBefore}
+          WHERE workspace_id = ${input.draft.workspaceId}
+            AND id <> ${input.draft.id}
+            AND state IN ('draft', 'awaiting_review')
+        `;
+        const inserted = await tx<
+          Array<{
+            id: string;
+            workspace_id: string;
+            source_text_encrypted: string;
+            proposal_json: unknown;
+            effective_preview_json: unknown;
+            draft_hash: string;
+            revision: number;
+            policy_revision: number;
+            catalog_revision: number;
+            state: string;
+            created_by: string;
+            expires_at: string | Date;
+            created_at: string | Date;
+            decided_at: string | Date | null;
+          }>
+        >`
+          INSERT INTO coworker_drafts (
+            id, workspace_id, source_text_encrypted, proposal_json, effective_preview_json,
+            draft_hash, revision, policy_revision, catalog_revision, state, created_by,
+            expires_at, created_at, decided_at
+          ) VALUES (
+            ${input.draft.id}, ${input.draft.workspaceId}, ${input.draft.sourceTextEncrypted},
+            ${JSON.stringify(input.draft.proposal)}::jsonb,
+            ${JSON.stringify(input.draft.effectivePreview)}::jsonb,
+            ${input.draft.draftHash}, ${insertRevision}, ${input.draft.policyRevision},
+            ${input.draft.catalogRevision}, ${input.draft.state}, ${input.draft.createdBy},
+            ${input.draft.expiresAt}, ${input.draft.createdAt}, ${input.draft.decidedAt}
+          )
+          RETURNING *
+        `;
+        return mapCoworkerDraft(inserted[0]!);
+      });
     },
 
     async getCoworkerDraft(id) {

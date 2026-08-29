@@ -1,6 +1,7 @@
 {
   "name": "forgeroom",
   "version": "0.1.0",
+  "license": "Apache-2.0",
   "private": true,
   "type": "module",
   "packageManager": "pnpm@10.34.5",
@@ -15,9 +16,12 @@
     "lint": "eslint . && prettier --check .",
     "format": "prettier --write .",
     "typecheck": "pnpm -r --sort --if-present typecheck",
-    "test": "pnpm -r --sort --if-present test",
+    "test": "node --test scripts/run-release-suite.test.mjs scripts/preflight.test.mjs && pnpm -r --sort --if-present test",
+    "test:integration": "node scripts/run-release-suite.mjs integration",
+    "test:security": "node scripts/run-release-suite.mjs security",
     "test:e2e": "pnpm --filter @forgeroom/e2e test:e2e",
     "test:e2e:providers": "FORGEROOM_E2E_LIVE=providers pnpm --filter @forgeroom/e2e test:e2e",
+    "preflight": "node scripts/preflight.mjs",
     "build": "pnpm -r --sort --if-present build",
     "fixtures:seed": "pnpm --filter @forgeroom/test-fixtures seed",
     "fixtures:reset": "pnpm --filter @forgeroom/test-fixtures reset"

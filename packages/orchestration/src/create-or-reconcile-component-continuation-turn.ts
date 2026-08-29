@@ -8,12 +8,15 @@ import {
 
 export type CreateOrReconcileComponentContinuationTurnDeps = {
   client: Pick<TrueForgeClient, "createTurn" | "listTurns">;
-  lockForCreate: () => Promise<{ ok: true } | { ok: false; reason: string }>;
+  lockForCreate: () => Promise<
+    { ok: true; state: "creating" | "uncertain" } | { ok: false; reason: string }
+  >;
   bindTurn: (input: {
     agentTurnId: string;
     trueforgeTurnId: string;
     previousTrueforgeTurnId: string | null;
-  }) => Promise<void>;
+    bindingSource: "create_response" | "history_reconciliation";
+  }) => Promise<{ ok: true } | { ok: false; reason: string }>;
   markUncertain: (input: { agentTurnId: string; error: Record<string, unknown> }) => Promise<void>;
   onContinued?: (input: { interruptId: string; agentTurnId: string }) => Promise<void>;
 };
@@ -92,22 +95,45 @@ export async function createOrReconcileComponentContinuationTurn(
     return { ok: false, reason: "ambiguous_history" };
   }
 
-  const bind = async (trueforgeTurnId: string, previousTrueforgeTurnId: string | null) => {
-    await deps.bindTurn({
+  if (decision.action === "create_new" && (input.forceReconcile || locked.state === "uncertain")) {
+    await deps.markUncertain({
+      agentTurnId: input.agentTurnId,
+      error: { reason: "history_no_exact_match" },
+    });
+    return { ok: false, reason: "ambiguous_history" };
+  }
+
+  const bind = async (
+    trueforgeTurnId: string,
+    previousTrueforgeTurnId: string | null,
+    bindingSource: "create_response" | "history_reconciliation",
+  ): Promise<boolean> => {
+    const bound = await deps.bindTurn({
       agentTurnId: input.agentTurnId,
       trueforgeTurnId,
       previousTrueforgeTurnId,
+      bindingSource,
     });
+    if (!bound.ok) {
+      await deps.markUncertain({
+        agentTurnId: input.agentTurnId,
+        error: { reason: "bind_failed", detail: bound.reason },
+      });
+      return false;
+    }
     if (deps.onContinued) {
       await deps.onContinued({
         interruptId: input.response.interruptId,
         agentTurnId: input.agentTurnId,
       });
     }
+    return true;
   };
 
   if (decision.action === "bind_existing") {
-    await bind(decision.turn.id, decision.turn.previous_turn_id);
+    if (!(await bind(decision.turn.id, decision.turn.previous_turn_id, "history_reconciliation"))) {
+      return { ok: false, reason: "create_failed" };
+    }
     return {
       ok: true,
       trueforgeTurnId: decision.turn.id,
@@ -123,7 +149,9 @@ export async function createOrReconcileComponentContinuationTurn(
       previousTurnId: built.previousTurnId,
       stream: false,
     });
-    await bind(created.id, created.previous_turn_id);
+    if (!(await bind(created.id, created.previous_turn_id, "create_response"))) {
+      return { ok: false, reason: "create_failed" };
+    }
     return {
       ok: true,
       trueforgeTurnId: created.id,

@@ -50,7 +50,7 @@ describe("turn creation intent", () => {
         inputHash: built.inputHash,
         previousTurnId: "tf_prev",
       }),
-    ).toEqual({ turn: remote, matchedBy: "application_run_token" });
+    ).toEqual({ turn: remote, matchedBy: "application_run_token_and_input_hash" });
 
     expect(
       decideCreateOrReconcile({
@@ -60,7 +60,38 @@ describe("turn creation intent", () => {
         inputHash: built.inputHash,
         previousTurnId: "tf_prev",
       }),
-    ).toEqual({ action: "bind_existing", turn: remote, matchedBy: "application_run_token" });
+    ).toEqual({
+      action: "bind_existing",
+      turn: remote,
+      matchedBy: "application_run_token_and_input_hash",
+    });
+  });
+
+  it("rejects a matching token and predecessor when the input hash differs", () => {
+    const expected = buildNormalTurnInput({
+      applicationRunToken: "art_1",
+      content: "expected",
+      previousTrueforgeTurnId: "tf_prev",
+    });
+    const remoteInput = buildNormalTurnInput({
+      applicationRunToken: "art_1",
+      content: "different",
+      previousTrueforgeTurnId: "tf_prev",
+    });
+    const remote = turn({
+      id: "tf_partial",
+      previous_turn_id: "tf_prev",
+      input: remoteInput.input,
+    });
+
+    expect(
+      matchTurnFromHistory({
+        turns: [remote],
+        applicationRunToken: "art_1",
+        inputHash: expected.inputHash,
+        previousTurnId: "tf_prev",
+      }),
+    ).toBeNull();
   });
 
   it("fails closed on ambiguous history instead of blind create", () => {
@@ -97,5 +128,32 @@ describe("turn creation intent", () => {
         previousTurnId: "none",
       }),
     ).toEqual({ action: "create_new" });
+  });
+
+  it("rejects an id-only history hit whose predecessor and input do not match", () => {
+    const built = buildNormalTurnInput({
+      applicationRunToken: "art_expected",
+      content: "expected",
+      previousTrueforgeTurnId: "tf_expected_prev",
+    });
+    const idOnly = turn({
+      id: "tf_local",
+      previous_turn_id: "tf_wrong_prev",
+      input: buildNormalTurnInput({
+        applicationRunToken: "art_wrong",
+        content: "wrong",
+        previousTrueforgeTurnId: "tf_wrong_prev",
+      }).input,
+    });
+
+    expect(
+      decideCreateOrReconcile({
+        localTrueforgeTurnId: "tf_local",
+        history: [idOnly],
+        applicationRunToken: "art_expected",
+        inputHash: built.inputHash,
+        previousTurnId: built.previousTurnId,
+      }),
+    ).toEqual({ action: "fail_closed", reason: "ambiguous_history" });
   });
 });

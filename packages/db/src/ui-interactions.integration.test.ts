@@ -591,6 +591,7 @@ describe("UI interaction gateway", () => {
           state: "succeeded",
           result: {},
           resultRef: expect.any(String),
+          continuationQueueItemId: expect.any(String),
         },
       });
 
@@ -771,6 +772,9 @@ describe("UI interaction gateway", () => {
           'application_policy', ${NOW}, ${NOW}
         )
       `;
+      const queueBefore = await sql<{ count: number }[]>`
+        SELECT count(*)::int AS count FROM turn_queue_items
+      `;
       const issued = await issueUiInteractionToken(sql, {
         instanceId: "ui_1",
         workspaceId: "ws_1",
@@ -797,6 +801,10 @@ describe("UI interaction gateway", () => {
           message: "ActionGrant mode is unsupported in P0.",
         },
       });
+      const queueAfter = await sql<{ count: number }[]>`
+        SELECT count(*)::int AS count FROM turn_queue_items
+      `;
+      expect(queueAfter[0]?.count).toBe(queueBefore[0]?.count);
     });
   }, 60_000);
 });

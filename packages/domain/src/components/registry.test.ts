@@ -48,6 +48,34 @@ describe("P0 controlled component registry", () => {
     }
   });
 
+  it("publishes closed nested schemas for renderer-owned arrays", () => {
+    const propertiesFor = (name: string) =>
+      (
+        getRegistryDefinition(name)?.parameterSchema as {
+          properties?: Record<string, unknown>;
+        }
+      ).properties ?? {};
+    const dataTableColumns = propertiesFor("DataTable").columns as Record<string, unknown>;
+    const chartSeries = propertiesFor("BarOrLineChart").series as Record<string, unknown>;
+    const choiceFields = propertiesFor("ChoiceForm").fields as Record<string, unknown>;
+
+    expect(dataTableColumns).toMatchObject({
+      maxItems: 12,
+      items: { additionalProperties: false, required: ["key", "label"] },
+    });
+    expect(chartSeries).toMatchObject({
+      maxItems: 8,
+      items: { additionalProperties: false, required: ["key", "label"] },
+    });
+    expect(choiceFields).toMatchObject({
+      maxItems: 12,
+      items: {
+        additionalProperties: false,
+        required: ["id", "label", "kind", "required"],
+      },
+    });
+  });
+
   it("looks up definitions by stable name", () => {
     expect(getRegistryDefinition("DataTable")?.name).toBe("DataTable");
     expect(getRegistryDefinition("MissingComponent")).toBeUndefined();

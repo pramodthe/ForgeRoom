@@ -79,6 +79,7 @@ export type ComponentToolGenerationContext = {
   coworkerId: string;
   logicalThreadId: string;
   offeredComponentToolNames: string[];
+  offeredApplicationToolNames: string[];
 };
 
 export async function loadComponentToolGenerationContext(
@@ -130,6 +131,9 @@ export async function loadComponentToolGenerationContext(
     logicalThreadId: row.logical_thread_id,
     offeredComponentToolNames: parseStringArray(
       readEffectiveConfig(row.effective_config).component_tool_names,
+    ),
+    offeredApplicationToolNames: parseStringArray(
+      readEffectiveConfig(row.effective_config).application_tool_names,
     ),
   };
 }
@@ -743,10 +747,71 @@ function validateRegistryProps(
   if (!definition) {
     return { ok: false, message: "Unknown controlled component." };
   }
-  return validatePropsAgainstParameterSchema(
+  const validated = validatePropsAgainstParameterSchema(
     props,
     definition.parameterSchema as Record<string, unknown>,
   );
+  if (!validated.ok) return validated;
+  if (stableName === "ChoiceForm" && !buildBrokerActionInputSchema(stableName, props)) {
+    return { ok: false, message: "ChoiceForm fields cannot produce a closed input schema." };
+  }
+  return { ok: true };
+}
+
+const SAFE_INTERACTION_FIELD_ID = /^[A-Za-z][A-Za-z0-9_-]{0,63}$/;
+const CLOSED_EMPTY_INPUT_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  properties: {},
+} as const;
+
+/** Build the user-submitted value schema, which is distinct from the component props schema. */
+export function buildBrokerActionInputSchema(
+  stableName: string,
+  props: Record<string, unknown>,
+): Record<string, unknown> | null {
+  if (stableName !== "ChoiceForm") return CLOSED_EMPTY_INPUT_SCHEMA;
+  if (!Array.isArray(props.fields)) return null;
+
+  const properties: Record<string, unknown> = {};
+  const required: string[] = [];
+  const seen = new Set<string>();
+  for (const field of props.fields) {
+    if (!field || typeof field !== "object" || Array.isArray(field)) return null;
+    const row = field as Record<string, unknown>;
+    const id = row.id;
+    if (typeof id !== "string" || !SAFE_INTERACTION_FIELD_ID.test(id) || seen.has(id)) {
+      return null;
+    }
+    seen.add(id);
+    if (row.kind === "checkbox") {
+      properties[id] = { type: "boolean" };
+    } else if (row.kind === "single_choice") {
+      if (!Array.isArray(row.options) || row.options.length === 0) return null;
+      const optionIds = row.options.map((option) =>
+        option && typeof option === "object" && !Array.isArray(option)
+          ? (option as Record<string, unknown>).id
+          : null,
+      );
+      if (
+        optionIds.some((optionId) => typeof optionId !== "string" || optionId.length === 0) ||
+        new Set(optionIds).size !== optionIds.length
+      ) {
+        return null;
+      }
+      properties[id] = { type: "string", enum: optionIds };
+    } else {
+      return null;
+    }
+    if (row.required === true) required.push(id);
+  }
+
+  return {
+    type: "object",
+    additionalProperties: false,
+    properties,
+    required,
+  };
 }
 
 function isInteractiveComponent(stableName: string): boolean {
@@ -1019,6 +1084,7 @@ async function setupInteractiveBrokerArtifacts(
     generationId: string;
     toolCallId: string;
     stableName: string;
+    validatedProps: Record<string, unknown>;
     renderRevision: number;
     renderManifestHash: string;
     grantScopeHash: string;
@@ -1031,7 +1097,9 @@ async function setupInteractiveBrokerArtifacts(
 ): Promise<void> {
   const definition = getRegistryDefinition(input.stableName);
   const primaryIntent = definition?.declaredInteractionIntents[0] ?? "interact";
-  const inputSchema = definition?.parameterSchema ?? {};
+  const inputSchema =
+    buildBrokerActionInputSchema(input.stableName, input.validatedProps) ??
+    CLOSED_EMPTY_INPUT_SCHEMA;
   const inputSchemaHash = hashText(canonicalizeJson(inputSchema));
   const grantExpiresAtValue = grantExpiresAt(input.now);
   const renderNodeIds = allowedRenderNodeIds(input.stableName);
@@ -1353,6 +1421,7 @@ export async function brokerComponentToolMcpCall(
         generationId: input.generationId,
         toolCallId: input.toolCallId,
         stableName: input.stableName,
+        validatedProps: input.props,
         renderRevision: finalized.value.renderRevision,
         renderManifestHash,
         grantScopeHash: beforeCreate.value.grantScopeHash,

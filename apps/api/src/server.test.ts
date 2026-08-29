@@ -6,7 +6,7 @@ import { loadApiEnv } from "./env";
 import { createApiApp } from "./server";
 import { createAuthService } from "./auth/service";
 import { createMemoryAuthStore } from "./auth/store";
-import { hashPassword } from "./auth/passwords";
+import { hashPassword, isSupportedScryptPasswordHash } from "./auth/passwords";
 
 const PASSWORD = "correct-horse-battery";
 
@@ -306,5 +306,7 @@ describe("owner authentication", () => {
   it("hashes passwords with scrypt", async () => {
     const encoded = await hashPassword("secret");
     expect(encoded.startsWith("scrypt$")).toBe(true);
+    expect(isSupportedScryptPasswordHash(encoded)).toBe(true);
+    expect(isSupportedScryptPasswordHash("scrypt$32768$8$1$bad$bad")).toBe(false);
   });
 });

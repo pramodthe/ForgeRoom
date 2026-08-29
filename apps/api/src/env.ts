@@ -1,3 +1,5 @@
+import { isSupportedScryptPasswordHash } from "./auth/passwords";
+
 export type ApiEnv = {
   nodeEnv: string;
   host: string;
@@ -58,6 +60,9 @@ export function loadApiEnv(env: NodeJS.ProcessEnv = process.env): ApiEnv {
   const nodeEnv = env.NODE_ENV ?? "development";
   const ownerPasswordHash = env.OWNER_PASSWORD_HASH?.trim() || null;
   const ownerPassword = env.OWNER_PASSWORD?.trim() || null;
+  if (ownerPasswordHash && !isSupportedScryptPasswordHash(ownerPasswordHash)) {
+    throw new Error("OWNER_PASSWORD_HASH must use the supported scrypt format and parameters");
+  }
   if (nodeEnv === "production" && ownerPassword) {
     throw new Error("OWNER_PASSWORD is forbidden in production; supply OWNER_PASSWORD_HASH");
   }

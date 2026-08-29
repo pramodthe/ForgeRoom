@@ -106,6 +106,70 @@ describe("P0-105 demo fixtures", () => {
       `;
       expect(coworkers).toEqual([{ handle: "operator", status: "active" }]);
 
+      const [operatorConfig] = await sql<Array<{ editable_config_json: unknown }>>`
+        SELECT editable_config_json
+        FROM agent_profiles
+        WHERE id = ${DEMO_FIXTURE_IDS.coworkerId}
+      `;
+      const config = (
+        typeof operatorConfig?.editable_config_json === "string"
+          ? (JSON.parse(operatorConfig.editable_config_json) as Record<string, unknown>)
+          : operatorConfig?.editable_config_json
+      ) as Record<string, unknown> | undefined;
+      expect(config).toMatchObject({
+        channel_ids: [DEMO_FIXTURE_IDS.channelId],
+        task_record_grants: [
+          {
+            channel_id: DEMO_FIXTURE_IDS.channelId,
+            operations: ["create", "update_status"],
+          },
+        ],
+      });
+      expect(config?.tool_grants).toHaveLength(3);
+      expect(config?.component_version_ids).toHaveLength(5);
+
+      const taskGrants = await sql<
+        Array<{
+          id: string;
+          allowed_operations_json: unknown;
+          revoked_at: string | null;
+        }>
+      >`
+        SELECT id, allowed_operations_json, revoked_at
+        FROM task_grants
+        WHERE subject_id = ${DEMO_FIXTURE_IDS.coworkerId}
+          AND channel_id = ${DEMO_FIXTURE_IDS.channelId}
+      `;
+      expect(taskGrants).toHaveLength(1);
+      expect(taskGrants[0]).toMatchObject({
+        id: DEMO_FIXTURE_IDS.taskGrantId,
+        revoked_at: null,
+      });
+      const taskOperations =
+        typeof taskGrants[0]?.allowed_operations_json === "string"
+          ? JSON.parse(taskGrants[0].allowed_operations_json)
+          : taskGrants[0]?.allowed_operations_json;
+      expect(taskOperations).toEqual(["create", "update_status"]);
+
+      const grantedComponents = await sql<Array<{ stable_name: string }>>`
+        SELECT c.stable_name
+        FROM ui_component_grants AS g
+        JOIN ui_component_versions AS v ON v.id = g.component_version_id
+        JOIN ui_components AS c ON c.id = v.component_id
+        WHERE g.workspace_id = 'workspace_1'
+          AND g.channel_id = ${DEMO_FIXTURE_IDS.channelId}
+          AND g.agent_profile_id = ${DEMO_FIXTURE_IDS.coworkerId}
+          AND g.revoked_at IS NULL
+        ORDER BY c.stable_name
+      `;
+      expect(grantedComponents.map((row) => row.stable_name)).toEqual([
+        "ArtifactCard",
+        "BarOrLineChart",
+        "ChoiceForm",
+        "DataTable",
+        "TaskCard",
+      ]);
+
       const participants = await sql<{ participant_type: string; participant_id: string }[]>`
         SELECT participant_type, participant_id
         FROM channel_participants

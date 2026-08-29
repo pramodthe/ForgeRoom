@@ -1,14 +1,22 @@
 import { serve } from "@hono/node-server";
 import { assertAgUiStartupProfile } from "@forgeroom/ag-ui";
 import { startWorker } from "@forgeroom/orchestration";
-import { migrate } from "@forgeroom/db";
+import { ensureP0ConnectorBinding, migrate } from "@forgeroom/db";
 import { loadTrueForgeClientFromEnv } from "@forgeroom/trueforge";
+import {
+  buildP0ActingIdentity,
+  loadComposioSessionClientFromEnv,
+  P0_COMPOSIO_CONNECTION_ID,
+  P0_COMPOSIO_ENABLED_TOOLS,
+  P0_COMPOSIO_TRUEFORGE_CONNECTOR_NAME,
+} from "@forgeroom/composio";
 import { loadApiEnv } from "./env";
 import { createApiApp } from "./server";
 import { createAuthService } from "./auth/service";
 import { createDefaultAuthStore } from "./auth/postgres-store";
 import { createDefaultWorkspaceStore } from "./workspace/postgres-store";
 import { createWorkspaceService } from "./workspace/service";
+import { registerP0ComposioRuntimeConnector } from "./connections/runtime-registration";
 
 export async function startApiProcess(env: NodeJS.ProcessEnv = process.env) {
   const config = loadApiEnv(env);
@@ -48,6 +56,30 @@ export async function startApiProcess(env: NodeJS.ProcessEnv = process.env) {
       await migrate(sql);
     }
     await auth.seedOwner();
+    if (
+      trueforgeClient &&
+      config.composioApiKey &&
+      config.composioUserId &&
+      config.composioConnectedAccountId
+    ) {
+      const composio = loadComposioSessionClientFromEnv(env);
+      await registerP0ComposioRuntimeConnector({
+        composio,
+        trueforge: trueforgeClient,
+      });
+      if (sql) {
+        await ensureP0ConnectorBinding(sql, {
+          connectionId: P0_COMPOSIO_CONNECTION_ID,
+          workspaceId: config.workspaceId,
+          composioUserId: composio.composioUserId,
+          trueforgeConnectorName: P0_COMPOSIO_TRUEFORGE_CONNECTOR_NAME,
+          allowedTools: P0_COMPOSIO_ENABLED_TOOLS,
+          actingIdentity: buildP0ActingIdentity(composio.pinnedConnectedAccountId),
+          status: "active",
+          verifiedAt: new Date().toISOString(),
+        });
+      }
+    }
     assertAgUiStartupProfile();
 
     server = serve({

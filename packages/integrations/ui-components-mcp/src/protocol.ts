@@ -1,6 +1,7 @@
 import { z } from "zod";
 import {
   listControlledComponentMcpTools,
+  providerSafeMcpToolName,
   resolveStableNameForMcpTool,
   type UiComponentsMcpTool,
 } from "./tools";
@@ -43,6 +44,12 @@ export type ComponentToolCallResult = {
 
 export type UiComponentsMcpHandlers = {
   enabledToolNames: readonly string[];
+  additionalTools?: readonly UiComponentsMcpTool[];
+  callAdditionalTool?: (input: {
+    toolName: string;
+    arguments: Record<string, unknown>;
+    requestId: string | number;
+  }) => Promise<{ content: Array<{ type: "text"; text: string }>; isError: boolean }>;
   callTool: (input: {
     toolName: string;
     stableName: string;
@@ -92,11 +99,15 @@ export async function handleUiComponentsMcpRequest(
       };
     }
     if (request.method === "tools/list") {
-      const tools = listControlledComponentMcpTools(handlers.enabledToolNames);
+      const tools = [
+        ...listControlledComponentMcpTools(handlers.enabledToolNames),
+        ...(handlers.additionalTools ?? []),
+      ];
+      const providerTools = indexProviderTools(tools);
       return {
         jsonrpc: "2.0",
         id,
-        result: { tools: tools.map(toMcpToolShape) },
+        result: { tools: [...providerTools.values()].map(toMcpToolShape) },
       };
     }
     if (request.method === "tools/call") {
@@ -104,10 +115,33 @@ export async function handleUiComponentsMcpRequest(
         request.params && typeof request.params === "object"
           ? (request.params as Record<string, unknown>)
           : {};
-      const toolName = typeof params.name === "string" ? params.name : "";
+      const advertisedToolName = typeof params.name === "string" ? params.name : "";
+      const offeredTools = [
+        ...listControlledComponentMcpTools(handlers.enabledToolNames),
+        ...(handlers.additionalTools ?? []),
+      ];
+      const toolName = indexProviderTools(offeredTools).get(advertisedToolName)?.name;
+      if (!toolName) {
+        return rpcError(id, -32602, `Unknown application tool ${advertisedToolName}`);
+      }
       const stableName = resolveStableNameForMcpTool(toolName);
       if (!stableName) {
-        return rpcError(id, -32602, `Unknown component tool ${toolName}`);
+        const additional = handlers.additionalTools?.find((tool) => tool.name === toolName);
+        if (!additional || !handlers.callAdditionalTool) {
+          return rpcError(id, -32602, `Unknown application tool ${toolName}`);
+        }
+        const args =
+          params.arguments &&
+          typeof params.arguments === "object" &&
+          !Array.isArray(params.arguments)
+            ? (params.arguments as Record<string, unknown>)
+            : {};
+        const result = await handlers.callAdditionalTool({
+          toolName,
+          arguments: args,
+          requestId: id,
+        });
+        return { jsonrpc: "2.0", id, result };
       }
       if (!handlers.enabledToolNames.includes(toolName)) {
         return rpcError(id, -32602, `Component tool ${toolName} is not offered in this session`);
@@ -155,10 +189,25 @@ export async function handleUiComponentsMcpRequest(
 
 function toMcpToolShape(tool: UiComponentsMcpTool) {
   return {
-    name: tool.name,
+    name: providerSafeMcpToolName(tool.name),
     description: tool.description,
     inputSchema: tool.inputSchema,
   };
+}
+
+function indexProviderTools(tools: UiComponentsMcpTool[]): Map<string, UiComponentsMcpTool> {
+  const indexed = new Map<string, UiComponentsMcpTool>();
+  for (const tool of tools) {
+    const providerName = providerSafeMcpToolName(tool.name);
+    const existing = indexed.get(providerName);
+    if (existing && existing.name !== tool.name) {
+      throw new Error(
+        `Ambiguous provider-safe MCP tool name ${providerName}: ${existing.name}, ${tool.name}`,
+      );
+    }
+    indexed.set(providerName, tool);
+  }
+  return indexed;
 }
 
 function rpcError(

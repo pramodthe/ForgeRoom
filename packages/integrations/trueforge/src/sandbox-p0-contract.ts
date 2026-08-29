@@ -14,9 +14,6 @@ demo-rec-002 → ready` as const;
 /** TrueForge wire event for sandbox provisioning. */
 export const P0_TRUEFORGE_SANDBOX_CREATED_WIRE_TYPE = "sandbox.created" as const;
 
-/** TrueForge wire event announcing a sandbox-produced file ready for extraction (P0-312). */
-export const P0_TRUEFORGE_SANDBOX_FILE_WIRE_TYPE = "sandbox.file" as const;
-
 /**
  * Environment variable names that must never appear inside a Daytona sandbox (SEC-021 / ADR-005).
  */

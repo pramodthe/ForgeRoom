@@ -16,9 +16,10 @@ export async function registerUiComponentsMcpForGeneration(
     env: ApiEnv;
     generationId: string;
     componentToolNames: readonly string[];
+    applicationToolNames?: readonly string[];
   },
 ): Promise<void> {
-  if (input.componentToolNames.length === 0) {
+  if (input.componentToolNames.length + (input.applicationToolNames?.length ?? 0) === 0) {
     return;
   }
   await registerUiComponentsMcpServer(client, {

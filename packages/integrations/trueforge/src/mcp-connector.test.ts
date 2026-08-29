@@ -175,6 +175,49 @@ describe("verifyCompiledAgentSpecPolicy", () => {
     expect(findings.some((row) => row.kind === "lost_approval_rule")).toBe(true);
   });
 
+  it("keeps explicit Code Mode connector writes behind write approval", () => {
+    const spec = compileP0AgentSpec({
+      modelPreset: "openai/gpt-5-4-mini",
+      sandboxEnabled: true,
+      connectors: [
+        {
+          name: "composio_github",
+          enabledTools: enabled,
+          approvalRequiredTools: approval,
+        },
+      ],
+    });
+
+    expect(spec.config.sandbox).toMatchObject({ enabled: true });
+    expect(spec.mcp_servers?.[0]?.require_approval_for_tools).toEqual(
+      expect.arrayContaining(approval),
+    );
+    expect(
+      verifyCompiledAgentSpecPolicy(spec, {
+        connectorName: "composio_github",
+        enabledTools: enabled,
+        approvalRequiredTools: approval,
+      }),
+    ).toEqual([]);
+
+    const missingWriteApproval = {
+      ...spec,
+      mcp_servers: spec.mcp_servers?.map((server) => ({
+        ...server,
+        require_approval_for_tools: server.require_approval_for_tools.filter(
+          (toolName) => toolName !== "GITHUB_REMOVE_A_LABEL_FROM_AN_ISSUE",
+        ),
+      })),
+    };
+    expect(
+      verifyCompiledAgentSpecPolicy(missingWriteApproval, {
+        connectorName: "composio_github",
+        enabledTools: enabled,
+        approvalRequiredTools: approval,
+      }).some((finding) => finding.kind === "lost_approval_rule"),
+    ).toBe(true);
+  });
+
   it("fails closed when an unexpected tool enters the allowlist", () => {
     const spec = compileP0AgentSpec({
       modelPreset: "openai/gpt-5-4-mini",

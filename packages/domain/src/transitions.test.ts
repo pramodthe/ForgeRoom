@@ -10,6 +10,8 @@ import type {
 } from "@forgeroom/contracts";
 import {
   ACTION_PROPOSAL_TRANSITIONS,
+  AGENT_TURN_RECONCILIATION_TRANSITIONS,
+  canReconcileAgentTurn,
   AGENT_TURN_TRANSITIONS,
   canTransitionActionProposal,
   canTransitionAgentTurn,
@@ -18,11 +20,19 @@ import {
   canTransitionRunLifecycle,
   canTransitionRunStep,
   canTransitionTask,
+  canTransitionUiComponentInterrupt,
+  canTransitionUiInteraction,
   COWORKER_DRAFT_TRANSITIONS,
   PAUSE_GROUP_TRANSITIONS,
   RUN_LIFECYCLE_TRANSITIONS,
   RUN_STEP_TRANSITIONS,
   TASK_TRANSITIONS,
+  UI_COMPONENT_INTERRUPT_TRANSITIONS,
+  UI_INTERACTION_TRANSITIONS,
+  type UiComponentInterruptState,
+  type UiInteractionState,
+  transitionUiComponentInterrupt,
+  transitionUiInteraction,
 } from "./transitions";
 
 function assertClosedGraph<T extends string>(
@@ -91,6 +101,15 @@ describe("domain transition guards (P0-501)", () => {
     expect(canTransitionAgentTurn("resuming", "streaming")).toBe(true);
     expect(canTransitionAgentTurn("streaming", "required_actions")).toBe(true);
     expect(AGENT_TURN_TRANSITIONS.required_actions).toEqual([]);
+    expect(AGENT_TURN_TRANSITIONS.uncertain).toEqual([]);
+  });
+
+  it("allows uncertain recovery only through the history-reconciliation guard", () => {
+    expect(AGENT_TURN_RECONCILIATION_TRANSITIONS).toEqual({ uncertain: ["streaming"] });
+    expect(canReconcileAgentTurn("uncertain", "streaming")).toBe(true);
+    expect(canTransitionAgentTurn("uncertain", "streaming")).toBe(false);
+    expect(canReconcileAgentTurn("uncertain", "creating")).toBe(false);
+    expect(canReconcileAgentTurn("creating", "streaming")).toBe(false);
   });
 
   it("enumerates PauseGroup edges including CAS ready → resuming", () => {
@@ -118,5 +137,35 @@ describe("domain transition guards (P0-501)", () => {
     expect(canTransitionActionProposal("proposed", "allowed")).toBe(true);
     expect(canTransitionActionProposal("allowed", "executing")).toBe(true);
     expect(canTransitionActionProposal("unknown", "reconciled_succeeded")).toBe(true);
+  });
+
+  it("closes controlled UI interrupt terminal states", () => {
+    assertClosedGraph<UiComponentInterruptState>(
+      UI_COMPONENT_INTERRUPT_TRANSITIONS,
+      canTransitionUiComponentInterrupt,
+      [
+        ["resolved", "stale"],
+        ["continued", "waiting"],
+        ["stale", "resolved"],
+      ],
+    );
+    expect(canTransitionUiComponentInterrupt("waiting", "resolved")).toBe(true);
+    expect(canTransitionUiComponentInterrupt("waiting", "stale")).toBe(true);
+    expect(canTransitionUiComponentInterrupt("resolved", "continued")).toBe(true);
+    expect(transitionUiComponentInterrupt("waiting", "stale")).toBe("stale");
+    expect(() => transitionUiComponentInterrupt("stale", "waiting")).toThrow();
+  });
+
+  it("allows stale only from nonterminal controlled UI interactions", () => {
+    assertClosedGraph<UiInteractionState>(UI_INTERACTION_TRANSITIONS, canTransitionUiInteraction, [
+      ["succeeded", "stale"],
+      ["failed", "token_issued"],
+      ["stale", "prepared"],
+    ]);
+    expect(canTransitionUiInteraction("prepared", "stale")).toBe(true);
+    expect(canTransitionUiInteraction("token_issued", "stale")).toBe(true);
+    expect(canTransitionUiInteraction("dispatching", "stale")).toBe(true);
+    expect(transitionUiInteraction("token_issued", "stale")).toBe("stale");
+    expect(() => transitionUiInteraction("succeeded", "stale")).toThrow();
   });
 });

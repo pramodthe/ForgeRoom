@@ -65,6 +65,7 @@ export function createUiInstanceService(options: {
   auth: AuthService;
   interactionTokenSecret: string;
   sql?: SqlClient;
+  onContinuationQueued?: (queueItemId: string) => void | Promise<void>;
 }): UiInstanceService {
   const { workspace, auth, interactionTokenSecret, sql } = options;
 
@@ -336,6 +337,17 @@ export function createUiInstanceService(options: {
           renderRevision: result.value.renderRevision,
           stateRevision: result.value.stateRevision,
         });
+        if (result.value.continuationQueueItemId && options.onContinuationQueued) {
+          const queueItemId = result.value.continuationQueueItemId;
+          void Promise.resolve()
+            .then(() => options.onContinuationQueued?.(queueItemId))
+            .catch((error: unknown) => {
+              console.error("ui_component_continuation_dispatch_failed", {
+                queueItemId,
+                error: error instanceof Error ? error.message : "unknown continuation error",
+              });
+            });
+        }
         return { ok: true, value: response };
       } catch (error) {
         console.error("ui_interaction_commit_failed", {

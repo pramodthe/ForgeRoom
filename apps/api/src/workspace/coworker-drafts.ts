@@ -154,10 +154,9 @@ async function insertResolvedDraft(
     decidedAt: null,
   };
   if (input.supersedeOthers) {
-    await deps.store.supersedeCoworkerDrafts({
-      workspaceId: input.workspaceId,
+    return deps.store.insertCoworkerDraftWithSupersede({
+      draft,
       supersededBefore: createdAt,
-      exceptDraftId: draft.id,
     });
   }
   await deps.store.insertCoworkerDraft(draft);

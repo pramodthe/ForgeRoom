@@ -1,5 +1,6 @@
 import { createHash, randomBytes } from "node:crypto";
 import type postgres from "postgres";
+import { transitionUiComponentInterrupt } from "@forgeroom/domain";
 
 export type SqlClient = postgres.Sql;
 
@@ -256,6 +257,7 @@ async function staleUnresolvedForGeneration(
   stalePauseGroupIds: string[];
   staleInterruptIds: string[];
 }> {
+  const staleInterruptState = transitionUiComponentInterrupt("waiting", "stale");
   const proposals = await tx`
     UPDATE action_proposals
     SET state = 'stale'
@@ -293,7 +295,7 @@ async function staleUnresolvedForGeneration(
 
   const interrupts = await tx`
     UPDATE ui_component_interrupts
-    SET state = 'stale', stale_at = ${now}
+    SET state = ${staleInterruptState}, stale_at = ${now}
     WHERE session_generation_id = ${generationId}
       AND state = 'waiting'
     RETURNING id

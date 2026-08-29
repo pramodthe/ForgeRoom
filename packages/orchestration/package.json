@@ -8,6 +8,7 @@
     "./session": "./src/session.ts",
     "./turn-queue": "./src/turn-queue.ts",
     "./event-normalize": "./src/event-normalize.ts",
+    "./watchdog": "./src/watchdog.ts",
     "./turn-creation": "./src/turn-creation.ts",
     "./create-or-reconcile-turn": "./src/create-or-reconcile-turn.ts",
     "./create-or-reconcile-response-turn": "./src/create-or-reconcile-response-turn.ts",

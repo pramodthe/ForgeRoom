@@ -2,12 +2,12 @@
 
 | Field | Current value |
 | --- | --- |
-| Overall | M0 Demo contract done; M1 Foundation done; P0-315/P0-317/P0-407/P0-316/P0-410/P0-408 done; P0-301–P0-314, P0-404, P0-405 done |
+| Overall | 50 P0 tasks done; P0-502/P0-504 in progress; P0-505/P0-506 blocked on external release evidence |
 | Current phase | Phase 1 — Foundation / M5 Verification |
-| Active task | P0-501 (in_progress); P0-504 (in_progress; providers E2E blocked on secrets) |
-| Next task | P0-501 remaining unit gaps (interaction CAS extract next); finish P0-504 providers when secrets available; then P0-502 / P0-503 / P0-506 |
-| P0 blockers | Run-limit hard enforcement (P0-204/OD-008 evidence); P0-504 providers E2E needs secrets |
-| Last updated | 2026-08-29 (P0-501 slice 2 controlled limits; STATUS conflict resolved; P0-504 #75–#77 merged) |
+| Active task | P0-502 runtime/provider integration evidence; P0-504 full provider browser narrative |
+| Next task | Activate a working model account, run the provider narrative/rehearsals, inspect a deployment profile, close PD-002 and P0-506/P0-505 |
+| P0 blockers | Model provider `billing_not_active`; deployed route/retention evidence; PD-002 founder/legal approval; timed demo rehearsals |
+| Last updated | 2026-08-29 (release gates, provider bridge, independent security remediation and status synchronization) |
 
 ## Milestones
 
@@ -15,24 +15,22 @@
 | --- | --- | --- |
 | M0 Demo contract | done | P0-000 done |
 | M1 Foundation | done | P0-101 through P0-108 done |
-| M2 TrueForge + AG-UI runtime and Task integration | blocked | P0-109, P0-201–P0-206, P0-208, P0-210–P0-213 done |
-| M3 Tools, approvals and UI capabilities | blocked | P0-301–P0-318 done |
+| M2 TrueForge + AG-UI runtime and Task integration | done | P0-109, P0-201–P0-206, P0-208, P0-210–P0-213 done |
+| M3 Tools, approvals and UI capabilities | done | P0-301–P0-318 done |
 | M4 Product UI | done | P0-401–P0-408 and P0-410 done |
 | M5 Verification | blocked | P0-501 through P0-506 done |
 
 ## Current decisions needed
 
-- P0-210 status is inconsistent and needs an owner to reconcile: `tasks.md` marks it `[x] done`
-  and both dependents (P0-211, P0-314) are `done`, but the task file front matter still says
-  `in_review` with owner `cursor-agent`. The index is authoritative for the checkbox, so the task
-  file is the likely stale side — but moving a task to `done` requires a reviewer to confirm its
-  acceptance criteria and evidence, so this is not resolved here.
+- PD-002 founder/legal approval for Apache-2.0 and the documented optional managed-service boundary. The technical `LICENSE`, `NOTICE` and dependency review are present on the release branch.
+- A working model-provider project/key; the current configured project returns `billing_not_active` from TrueForge.
+- A target deployment for route/feature-profile and retention inspection, followed by three timed provider demo rehearsals.
 
 Still open for later owner tasks (see `decisions/OPEN.md` and `provider-fixtures/`):
 
 - Demo deployment diagram for persistent `ARTIFACT_STORAGE_DIR` mount (OD-006/OD-007) — adapter implemented; live host probe still candidate.
 - TrueForge sandbox-file → application artifact retain path implemented in P0-312; live TrueForge turn probe still blocked on OpenAI billing.
-- Run-limit hard enforcement evidence (P0-204 / OD-008).
+- Run-limit hard enforcement evidence is complete in P0-204; provider-backed browser proof remains in P0-504.
 - OD-009 synthetic fixture `#35` live write/reconcile/reset verified (`pthebesfsu-a11y` write collaborator).
 
 Verified 2026-08-26 / 2026-08-27 live probes:
@@ -61,6 +59,8 @@ Never put credentials in this file.
 
 ## Recently completed
 
+- Release verification/security closeout (2026-08-29): P0-503 done after an independent review found six authorization, encryption, redaction and lifecycle gaps; all were fixed and the post-fix focused review passed 41/41. Final-tree gates passed lint, typecheck, unit suites, 273 integration tests, 443 security tests, three prototype browser runs, isolated live-API browser coverage and production build.
+- Release-compliance remediation (2026-08-29): SC-001 guarded AgentTurn history recovery; explicit integration/security release runners; removal of the last conditional Postgres skip; database timeout stabilization; exact provider E2E state/hash/lineage assertions; conservative task-index synchronization.
 - P0-501 slice 2 (2026-08-29): controlled prop/presentation adversarial unit tests + OD-012 draft exactDiff lock; STATUS merge conflict resolved.
 - P0-407 → `done` (2026-08-29): axe + 1440px visual baselines; slices 1–3 merged (#68, #71).
 - P0-315 → `done` (2026-08-29): component/interaction gateway merged #70.

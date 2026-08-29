@@ -61,9 +61,17 @@ describe("audit receipt", () => {
   });
 
   it("never embeds raw provider bodies in lineage", () => {
-    const receipt = buildAuditReceipt(BASE);
+    const receipt = buildAuditReceipt({
+      ...BASE,
+      provider_payload: { access_token: "provider-secret-canary" },
+      private_reasoning: "reasoning-secret-canary",
+      mount_nonce: "nonce-secret-canary",
+      raw_interaction_input: "input-secret-canary",
+    } as RunReceiptSnapshot);
     const serialized = JSON.stringify(receipt);
     expect(serialized).not.toMatch(/password|api_key|access_token/i);
     expect(serialized).not.toContain("oauth");
+    expect(serialized).not.toMatch(/provider-secret-canary|reasoning-secret-canary/);
+    expect(serialized).not.toMatch(/nonce-secret-canary|input-secret-canary/);
   });
 });

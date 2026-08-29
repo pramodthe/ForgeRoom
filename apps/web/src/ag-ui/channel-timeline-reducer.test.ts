@@ -259,6 +259,104 @@ describe("channelTimelineReducer", () => {
     expect(compactedState.runs).toEqual(fullState.runs);
   });
 
+  it("reconnect from every cursor and compacted replay preserve rich projections", () => {
+    const rich: AgentChannelEnvelope[] = [
+      coworkerEnvelope(1, {
+        type: "RUN_STARTED",
+        threadId: "thread_coworker_research",
+        runId: "agui_rich_1",
+      }),
+      coworkerEnvelope(2, {
+        type: "TEXT_MESSAGE_START",
+        messageId: "assistant_rich",
+        role: "assistant",
+      }),
+      coworkerEnvelope(3, {
+        type: "TEXT_MESSAGE_CONTENT",
+        messageId: "assistant_rich",
+        delta: "Rich replay",
+      }),
+      coworkerEnvelope(4, {
+        type: "TEXT_MESSAGE_END",
+        messageId: "assistant_rich",
+      }),
+      coworkerEnvelope(5, {
+        type: "TOOL_CALL_START",
+        toolCallId: "tc_rich",
+        toolCallName: "DataTable",
+      }),
+      coworkerEnvelope(6, {
+        type: "TOOL_CALL_ARGS",
+        toolCallId: "tc_rich",
+        delta: '{"title":"Replay"}',
+      }),
+      coworkerEnvelope(7, {
+        type: "TOOL_CALL_END",
+        toolCallId: "tc_rich",
+      }),
+      coworkerEnvelope(8, {
+        type: "ACTIVITY_SNAPSHOT",
+        messageId: "act_rich",
+        activityType: "forgeroom.task_record.v1",
+        replace: true,
+        content: {
+          schemaVersion: 1,
+          activityRevision: 1,
+          activityType: "forgeroom.task_record.v1",
+          taskId: "task_rich",
+          revision: 1,
+          status: "in_progress",
+          title: "Replay task",
+        },
+      }),
+      coworkerEnvelope(9, {
+        type: "STATE_SNAPSHOT",
+        snapshot: {
+          schemaVersion: 1,
+          stateKind: "thread",
+          revision: 1,
+          coworkerId: "coworker_research",
+          logicalThreadId: "thread_coworker_research",
+          phase: "finished",
+          activeRunStepIds: [],
+          surfaceIds: ["ui_rich"],
+        },
+      }),
+      coworkerEnvelope(10, {
+        type: "RUN_FINISHED",
+        threadId: "thread_coworker_research",
+        runId: "agui_rich_1",
+        outcome: { type: "success" },
+      }),
+    ];
+
+    const reduce = (
+      events: AgentChannelEnvelope[],
+      initial = initialChannelTimelineState("channel_demo"),
+    ) =>
+      events.reduce(
+        (state, envelope) => channelTimelineReducer(state, { type: "event", envelope }),
+        initial,
+      );
+    const projection = (state: ReturnType<typeof initialChannelTimelineState>) => ({
+      messages: orderedTimelineMessages(state),
+      items: orderedTimelineItems(state),
+      runs: state.runs,
+      activities: state.threadActivityStates,
+      tools: state.threadToolCallStates,
+      uiState: state.uiState,
+    });
+    const expected = projection(reduce(rich));
+
+    for (let cursor = 0; cursor <= rich.length; cursor += 1) {
+      const beforeDisconnect = reduce(rich.slice(0, cursor));
+      const afterReconnect = reduce(rich.slice(cursor), beforeDisconnect);
+      expect(projection(afterReconnect)).toEqual(expected);
+    }
+
+    expect(projection(reduce(compactChannelEnvelopes(rich)))).toEqual(expected);
+  });
+
   it("records custom task events and forge room activities in timeline order", () => {
     let state = initialChannelTimelineState("channel_demo");
     state = channelTimelineReducer(state, {

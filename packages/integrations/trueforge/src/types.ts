@@ -7,6 +7,8 @@ export type TrueForgeMcpServerRef = {
   name: string;
   enable_tools: string[];
   disable_tools?: string[];
+  /** Selectively load critical tools eagerly while the remaining server stays deferred. */
+  preload_tools?: string[];
   require_approval_for_tools: string[];
   preload?: boolean;
 };

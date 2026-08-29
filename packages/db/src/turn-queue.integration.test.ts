@@ -6,6 +6,7 @@ import {
   listClaimableQueueItems,
   reclaimExpiredTurnQueueLease,
 } from "./turn-queue";
+import { ingestNormalizedTrueForgeEvent } from "./turn-lifecycle";
 import { HASH, NOW, seedRuntime, withMigratedDatabase } from "./test-harness";
 
 async function clearSeedTurn(sql: Parameters<typeof seedRuntime>[0]) {
@@ -101,6 +102,64 @@ describe("turn queue claim/lease", () => {
         now: NOW,
       });
       expect(stale).toEqual({ ok: false, reason: "stale_generation" });
+    });
+  }, 60_000);
+
+  it("blocks queued work after archival while recording the already-running MCP outcome", async () => {
+    await withMigratedDatabase(async (sql) => {
+      await seedRuntime(sql);
+      await enqueueTurnQueueItem(sql, {
+        id: "q_after_archive",
+        channelAgentSessionId: "cas_1",
+        runStepId: "step_1",
+        inputType: "normal",
+      });
+
+      await sql`UPDATE channels SET status = 'archived', updated_at = ${NOW} WHERE id = 'ch_1'`;
+
+      expect(
+        await claimTurnQueueItem(sql, {
+          queueItemId: "q_after_archive",
+          workerId: "worker_after_archive",
+          leaseExpiresAt: "2099-01-01T00:00:00.000Z",
+          now: NOW,
+        }),
+      ).toEqual({ ok: false, reason: "channel_archived" });
+
+      const ingested = await ingestNormalizedTrueForgeEvent(sql, {
+        agentTurnId: "turn_1",
+        expectedTurnStates: ["streaming"],
+        event: {
+          trueforgeEventId: "tf_evt_archive_terminal",
+          normalizedType: "turn.done",
+          threadId: "thread_1",
+          sequenceNumber: 1,
+          payloadRedacted: { outcome: "completed_after_archive" },
+        },
+        turnDoneOutcome: {
+          kind: "terminal_success",
+          agentTurnState: "completed",
+          runStepState: "completed",
+          requiredActionCount: 0,
+        },
+        now: NOW,
+      });
+      expect(ingested).toMatchObject({ ok: true, inserted: true });
+
+      const persisted = await sql<
+        { turn_state: string; queued_state: string; event_count: string }[]
+      >`
+        SELECT
+          (SELECT state FROM agent_turns WHERE id = 'turn_1') AS turn_state,
+          (SELECT state FROM turn_queue_items WHERE id = 'q_after_archive') AS queued_state,
+          (SELECT count(*)::text FROM run_events WHERE trueforge_event_id = 'tf_evt_archive_terminal')
+            AS event_count
+      `;
+      expect(persisted[0]).toEqual({
+        turn_state: "completed",
+        queued_state: "queued",
+        event_count: "1",
+      });
     });
   }, 60_000);
 

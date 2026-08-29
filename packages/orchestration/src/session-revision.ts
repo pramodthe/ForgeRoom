@@ -6,7 +6,10 @@ import {
   type TrueForgeAgentSpec,
   type TrueForgeMcpServerRef,
 } from "@forgeroom/trueforge";
-import { isUiComponentsMcpConnectorName } from "@forgeroom/ui-components-mcp";
+import {
+  isUiComponentsMcpConnectorName,
+  providerSafeMcpToolName,
+} from "@forgeroom/ui-components-mcp";
 
 export type SessionRevisionSnapshotInput = {
   coworker: {
@@ -28,7 +31,9 @@ export type SessionRevisionSnapshotInput = {
   }>;
   /** Controlled-component tool names offered after grant intersection. */
   componentToolNames?: string[];
-  /** Per-generation TrueForge MCP connector name for component tools. */
+  /** Application-owned tools offered by the same private, per-generation MCP gateway. */
+  applicationToolNames?: string[];
+  /** Per-generation TrueForge MCP connector name for private application tools. */
   uiComponentsMcpConnectorName?: string;
   /** Opaque generation identity embedded in the provider AgentSpec for safe reconciliation. */
   providerSessionCorrelationId?: string;
@@ -73,17 +78,25 @@ function withProviderSessionCorrelation(
   return instructions ? `${instructions}\n\n${runtimeContext}` : runtimeContext;
 }
 
-function withComponentToolsMcpServer(
+function withPrivateApplicationToolsMcpServer(
   spec: TrueForgeAgentSpec,
-  componentToolNames: readonly string[],
+  toolNames: readonly string[],
   connectorName: string,
 ): TrueForgeAgentSpec {
-  if (componentToolNames.length === 0) {
+  if (toolNames.length === 0) {
     return spec;
+  }
+  const providerToolNames = toolNames.map(providerSafeMcpToolName);
+  if (new Set(providerToolNames).size !== providerToolNames.length) {
+    throw new Error("Private MCP tool names collide after provider-safe normalization");
   }
   const componentServer: TrueForgeMcpServerRef = {
     name: connectorName,
-    enable_tools: [...componentToolNames],
+    enable_tools: providerToolNames,
+    // Private application/component gateways are intentionally small and their
+    // tools are required for the live workflow. Selective eager loading avoids
+    // routing these calls through TrueForge's deferred-tools indirection.
+    preload_tools: providerToolNames,
     require_approval_for_tools: ["@write", "@destructive"],
     preload: false,
   };
@@ -102,8 +115,10 @@ export function compileSessionRevision(
   now = new Date().toISOString(),
 ): CompiledSessionRevision {
   const componentToolNames = input.componentToolNames ?? [];
+  const applicationToolNames = input.applicationToolNames ?? [];
+  const privateToolNames = [...new Set([...componentToolNames, ...applicationToolNames])];
   const uiComponentsMcpConnectorName =
-    componentToolNames.length > 0
+    privateToolNames.length > 0
       ? (input.uiComponentsMcpConnectorName ?? P0_UI_COMPONENTS_MCP_CONNECTOR_NAME)
       : undefined;
   const baseSpec = compileP0AgentSpec({
@@ -116,9 +131,9 @@ export function compileSessionRevision(
     connectors: input.connectors,
     skillNames: input.skillNames,
   });
-  const agentSpec = withComponentToolsMcpServer(
+  const agentSpec = withPrivateApplicationToolsMcpServer(
     baseSpec,
-    componentToolNames,
+    privateToolNames,
     uiComponentsMcpConnectorName ?? P0_UI_COMPONENTS_MCP_CONNECTOR_NAME,
   );
 
@@ -141,6 +156,7 @@ export function compileSessionRevision(
       approval_required_tools: connector.approvalRequiredTools,
     })),
     component_tool_names: componentToolNames,
+    application_tool_names: applicationToolNames,
     provider_session_correlation_id: input.providerSessionCorrelationId ?? null,
     skill_names: input.skillNames ?? [],
     compiled_flags: {

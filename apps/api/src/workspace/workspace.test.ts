@@ -1846,7 +1846,8 @@ describe("channel and coworker postgres integration", () => {
         AUTH_STORE: "postgres",
       });
       const auth = createAuthService({ env, store: createPostgresAuthStore(sql) });
-      const workspace = createWorkspaceService({ store: createPostgresWorkspaceStore(sql) });
+      const workspaceStore = createPostgresWorkspaceStore(sql);
+      const workspace = createWorkspaceService({ store: workspaceStore });
       await auth.seedOwner();
       const app = createApiApp({ env, auth, workspace });
       const { session, cookie } = await login(app, env);
@@ -1870,6 +1871,7 @@ describe("channel and coworker postgres integration", () => {
         handle: "dbops",
         name: "DB Ops",
         title: "Operator",
+        toolGrants: ["PROVIDER_READ_TOOL"],
       });
 
       const added = await app.request(`/api/channels/${channel.id}/participants`, {
@@ -1884,6 +1886,8 @@ describe("channel and coworker postgres integration", () => {
         }),
       });
       expect(added.status).toBe(200);
+      const coworkerAfterAdd = await workspaceStore.getCoworker(coworker.id);
+      expect(coworkerAfterAdd?.editableConfigJson.tool_grants).toEqual(["PROVIDER_READ_TOOL"]);
 
       const rows = await sql<{ participant_id: string }[]>`
         SELECT participant_id FROM channel_participants

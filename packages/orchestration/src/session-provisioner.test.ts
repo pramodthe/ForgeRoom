@@ -68,6 +68,38 @@ describe("compileSessionRevision", () => {
     expect(first.agentSpec.instructions).toContain("session_generation=casg_1");
     expect(second.agentSpec.instructions).toContain("session_generation=casg_2");
   });
+
+  it("offers controlled UI and application tools through one private generation connector", () => {
+    const revision = compileSessionRevision({
+      coworker: {
+        id: "cw_1",
+        handle: "operator",
+        name: "Operator",
+        title: "Ops",
+        configRevision: 1,
+        modelPreset: "openai/gpt-5-4-mini",
+        sandboxEnabled: true,
+      },
+      channelId: "ch_1",
+      workspaceId: "ws_1",
+      componentToolNames: ["ui.dataTable"],
+      applicationToolNames: ["records.task.upsert.v1"],
+      uiComponentsMcpConnectorName: "ui_components_v1__casg_1",
+      createdBy: "user_1",
+    });
+
+    expect(revision.agentSpec.mcp_servers).toEqual([
+      expect.objectContaining({
+        name: "ui_components_v1__casg_1",
+        enable_tools: ["ui_dataTable", "records_task_upsert_v1"],
+        preload_tools: ["ui_dataTable", "records_task_upsert_v1"],
+        preload: false,
+      }),
+    ]);
+    expect(revision.effectiveConfigRedacted.application_tool_names).toEqual([
+      "records.task.upsert.v1",
+    ]);
+  });
 });
 
 describe("provisionChannelCoworkerSession", () => {

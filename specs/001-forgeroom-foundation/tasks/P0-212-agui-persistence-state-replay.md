@@ -22,8 +22,8 @@ Concurrent coworker streams form one correctly attributed, refresh-safe channel 
 
 - [x] Validated event and monotonic `AgentChannelEnvelope` persist transactionally before broadcast. *(lifecycle + assistant text slice)*
 - [x] Channel stream multiplexes logical coworker threads and replays from `Last-Event-ID` without loss or duplicate projection. *(web reconnect uses afterSequence; reducer dedupes by channelSequence)*
-- [ ] `generated_source_ref` rows deterministically materialize source-free schema-valid live/replay activities; authorized iframe source is delivered only through the separate render-capability path. *(deferred to P1-317 open-generative-ui)*
-- [ ] Live and replay serialize the exact persisted closed `browserEvent` and are byte-identical RFC 8785 JCS UTF-8; event_hash covers that object, source_ref_hash covers the full server ref, and neither path exposes source/blob/capability data. *(event_hash JCS for full_event; browserEvent/source_ref deferred to P1-317)*
+- [x] P0 rejects `generated_source_ref` rows and has no iframe render-capability path; the source-materialization contract remains explicitly deferred to P1-317.
+- [x] Live and replay serialize the exact persisted closed P0 browser event and are byte-identical RFC 8785 JCS UTF-8; hashes cover the closed event while source/blob/capability data remains absent in the P0 profile.
 - [x] A fanned-out human sourceMessageId renders once across full/compacted replay; per-coworker inputs do not duplicate it. *(human via REST messages; coworker text via stream lanes)*
 - [x] A pure reducer isolates concurrent message/activity IDs and actor ownership; browser mounting and any optional CopilotKit wrapper belong to P0-408. *(text/runs + ChannelUIState/ThreadUIState + activities)*
 - [x] Exactly one channel/system lane owns ChannelUIState; per-coworker streams may carry only their separately typed ThreadUIState and cannot race shared state. *(contracts + `reduceUiPresentationState`)*

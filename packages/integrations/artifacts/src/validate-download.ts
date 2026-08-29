@@ -1,3 +1,5 @@
+import { inflateRawSync } from "node:zlib";
+
 import {
   P0_ALLOWED_ARTIFACT_MIME_TYPES,
   P0_FORBIDDEN_ARTIFACT_MIME_TYPES,
@@ -14,7 +16,10 @@ export type ArtifactDownloadValidationFailure =
   | "mime_not_allowed"
   | "size_mismatch"
   | "size_exceeded"
-  | "empty_content";
+  | "empty_content"
+  | "sensitive_path"
+  | "sensitive_content"
+  | "archive_invalid";
 
 export type ValidatedArtifactDownload = {
   discovery: DiscoveredSandboxArtifact;
@@ -26,6 +31,238 @@ export type ValidatedArtifactDownload = {
 
 function normalizeMime(value: string): string {
   return value.split(";")[0]?.trim().toLowerCase() ?? "";
+}
+
+const SENSITIVE_PATH_PATTERNS = [
+  /(?:^|\/)\.env(?:\.[^/]*)?$/iu,
+  /(?:^|\/)id_(?:rsa|ed25519)(?:\.pub)?$/iu,
+  /(?:^|\/)\.aws\/(?:credentials|config)$/iu,
+  /(?:^|\/)\.config\/gcloud\/(?:application_default_credentials\.json|credentials\.db)$/iu,
+  /(?:^|\/)(?:credentials|secrets)\.(?:json|ya?ml|toml)$/iu,
+] as const;
+const SENSITIVE_CONTENT_PATTERNS = [
+  /\bsk-(?:proj-)?[A-Za-z0-9_-]{16,}\b/u,
+  /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/u,
+  /\bAKIA[0-9A-Z]{16}\b/u,
+  /\b(?:OPENAI|COMPOSIO|DAYTONA)_API_KEY\s*[:=]\s*["']?(?!\[REDACTED\])[^\s,"']+/iu,
+  /["']?(?:access_token|refresh_token|authorization|cookie|set-cookie|api_key|owner_password|private_key|client_secret|secret_access_key|aws_secret_access_key|aws_session_token|raw_body|tool_response|tool_output)["']?\s*[:=]\s*["']?(?!\[REDACTED\])[^\s,"'}]+/iu,
+] as const;
+
+function isSensitiveArtifactPath(path: string): boolean {
+  return SENSITIVE_PATH_PATTERNS.some((pattern) => pattern.test(path));
+}
+
+function containsSensitiveText(content: Buffer): boolean {
+  const text = content.toString("utf8");
+  return SENSITIVE_CONTENT_PATTERNS.some((pattern) => pattern.test(text));
+}
+
+function looksLikeZip(content: Buffer): boolean {
+  if (content.byteLength < 4) return false;
+  const signature = content.readUInt32LE(0);
+  return signature === 0x04034b50 || signature === 0x06054b50 || signature === 0x02014b50;
+}
+
+function crc32(content: Buffer): number {
+  let crc = 0xffffffff;
+  for (const byte of content) {
+    crc ^= byte;
+    for (let bit = 0; bit < 8; bit++) {
+      crc = (crc >>> 1) ^ (0xedb88320 & -(crc & 1));
+    }
+  }
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+function isSafeZipEntryPath(path: string): boolean {
+  return !path.startsWith("/") && !/^[A-Za-z]:/u.test(path) && validateSandboxArtifactPath(path).ok;
+}
+
+function inspectZipExtra(extra: Buffer, legacyName: Buffer): "safe" | "sensitive" | "invalid" {
+  if (containsSensitiveText(extra)) return "sensitive";
+  let offset = 0;
+  while (offset < extra.length) {
+    if (offset + 4 > extra.length) return "invalid";
+    const headerId = extra.readUInt16LE(offset);
+    const dataLength = extra.readUInt16LE(offset + 2);
+    const dataStart = offset + 4;
+    const dataEnd = dataStart + dataLength;
+    if (dataEnd > extra.length) return "invalid";
+    if (headerId === 0x7075) {
+      const data = extra.subarray(dataStart, dataEnd);
+      if (data.length < 5 || data[0] !== 1) return "invalid";
+      if (data.readUInt32LE(1) === crc32(legacyName)) {
+        const unicodePath = data.subarray(5).toString("utf8");
+        if (!isSafeZipEntryPath(unicodePath)) return "invalid";
+        if (isSensitiveArtifactPath(unicodePath)) return "sensitive";
+      }
+    }
+    offset = dataEnd;
+  }
+  return "safe";
+}
+
+function inspectZipContent(content: Buffer): "safe" | "sensitive" | "invalid" {
+  let endOffset = -1;
+  for (let offset = content.length - 22; offset >= Math.max(0, content.length - 65_557); offset--) {
+    if (
+      content.readUInt32LE(offset) === 0x06054b50 &&
+      offset + 22 + content.readUInt16LE(offset + 20) === content.length
+    ) {
+      endOffset = offset;
+      break;
+    }
+  }
+  if (endOffset < 0 || endOffset + 22 > content.length) return "invalid";
+  const archiveComment = content.subarray(endOffset + 22);
+  if (containsSensitiveText(archiveComment)) return "sensitive";
+  const diskNumber = content.readUInt16LE(endOffset + 4);
+  const centralDisk = content.readUInt16LE(endOffset + 6);
+  const entriesOnDisk = content.readUInt16LE(endOffset + 8);
+  const entryCount = content.readUInt16LE(endOffset + 10);
+  const centralSize = content.readUInt32LE(endOffset + 12);
+  const centralOffset = content.readUInt32LE(endOffset + 16);
+  if (
+    diskNumber !== 0 ||
+    centralDisk !== 0 ||
+    entriesOnDisk !== entryCount ||
+    entryCount === 0xffff ||
+    centralSize === 0xffffffff ||
+    centralOffset === 0xffffffff ||
+    centralOffset + centralSize !== endOffset
+  ) {
+    return "invalid";
+  }
+
+  let offset = centralOffset;
+  let inspectedBytes = 0;
+  const localRanges: Array<{ start: number; end: number }> = [];
+  try {
+    for (let index = 0; index < entryCount; index++) {
+      if (offset + 46 > content.length || content.readUInt32LE(offset) !== 0x02014b50) {
+        return "invalid";
+      }
+      const flags = content.readUInt16LE(offset + 8);
+      const method = content.readUInt16LE(offset + 10);
+      const expectedCrc = content.readUInt32LE(offset + 16);
+      const compressedSize = content.readUInt32LE(offset + 20);
+      const uncompressedSize = content.readUInt32LE(offset + 24);
+      const nameLength = content.readUInt16LE(offset + 28);
+      const extraLength = content.readUInt16LE(offset + 30);
+      const commentLength = content.readUInt16LE(offset + 32);
+      const versionMadeBy = content.readUInt16LE(offset + 4);
+      const externalAttributes = content.readUInt32LE(offset + 38);
+      const localOffset = content.readUInt32LE(offset + 42);
+      const hostSystem = versionMadeBy >>> 8;
+      const unixMode = externalAttributes >>> 16;
+      if (hostSystem === 3 && (unixMode & 0xf000) === 0xa000) return "invalid";
+      const nameEnd = offset + 46 + nameLength;
+      if (nameEnd > content.length || (flags & 0x1) !== 0) return "invalid";
+      const nameBytes = content.subarray(offset + 46, nameEnd);
+      const name = nameBytes.toString("utf8");
+      if (!isSafeZipEntryPath(name)) return "invalid";
+      if (isSensitiveArtifactPath(name)) return "sensitive";
+      const centralExtraEnd = nameEnd + extraLength;
+      if (centralExtraEnd > content.length) return "invalid";
+      const centralExtraInspection = inspectZipExtra(
+        content.subarray(nameEnd, centralExtraEnd),
+        nameBytes,
+      );
+      if (centralExtraInspection !== "safe") return centralExtraInspection;
+      const entryCommentStart = centralExtraEnd;
+      const entryCommentEnd = entryCommentStart + commentLength;
+      if (entryCommentEnd > content.length) return "invalid";
+      if (containsSensitiveText(content.subarray(entryCommentStart, entryCommentEnd))) {
+        return "sensitive";
+      }
+      if (localOffset + 30 > content.length || content.readUInt32LE(localOffset) !== 0x04034b50) {
+        return "invalid";
+      }
+      const localFlags = content.readUInt16LE(localOffset + 6);
+      const localMethod = content.readUInt16LE(localOffset + 8);
+      const localCrc = content.readUInt32LE(localOffset + 14);
+      const localCompressedSize = content.readUInt32LE(localOffset + 18);
+      const localUncompressedSize = content.readUInt32LE(localOffset + 22);
+      const localNameLength = content.readUInt16LE(localOffset + 26);
+      const localExtraLength = content.readUInt16LE(localOffset + 28);
+      const localNameStart = localOffset + 30;
+      const localNameEnd = localNameStart + localNameLength;
+      const localExtraEnd = localNameEnd + localExtraLength;
+      if (localExtraEnd > content.length) return "invalid";
+      const localNameBytes = content.subarray(localNameStart, localNameEnd);
+      const localName = localNameBytes.toString("utf8");
+      if (
+        localFlags !== flags ||
+        localMethod !== method ||
+        !localNameBytes.equals(nameBytes) ||
+        ((flags & 0x8) === 0 &&
+          (localCrc !== expectedCrc ||
+            localCompressedSize !== compressedSize ||
+            localUncompressedSize !== uncompressedSize)) ||
+        ((flags & 0x8) !== 0 &&
+          ((localCrc !== 0 && localCrc !== expectedCrc) ||
+            (localCompressedSize !== 0 && localCompressedSize !== compressedSize) ||
+            (localUncompressedSize !== 0 && localUncompressedSize !== uncompressedSize)))
+      ) {
+        return "invalid";
+      }
+      if (!isSafeZipEntryPath(localName)) return "invalid";
+      if (isSensitiveArtifactPath(localName)) return "sensitive";
+      const localExtraInspection = inspectZipExtra(
+        content.subarray(localNameEnd, localExtraEnd),
+        localNameBytes,
+      );
+      if (localExtraInspection !== "safe") return localExtraInspection;
+      const dataStart = localExtraEnd;
+      const dataEnd = dataStart + compressedSize;
+      if (dataEnd > centralOffset) return "invalid";
+      let localEnd = dataEnd;
+      if ((flags & 0x8) !== 0) {
+        const matchesDescriptor = (descriptorStart: number): boolean =>
+          descriptorStart + 12 <= centralOffset &&
+          content.readUInt32LE(descriptorStart) === expectedCrc &&
+          content.readUInt32LE(descriptorStart + 4) === compressedSize &&
+          content.readUInt32LE(descriptorStart + 8) === uncompressedSize;
+        if (matchesDescriptor(dataEnd)) {
+          localEnd = dataEnd + 12;
+        } else if (
+          dataEnd + 4 <= centralOffset &&
+          content.readUInt32LE(dataEnd) === 0x08074b50 &&
+          matchesDescriptor(dataEnd + 4)
+        ) {
+          localEnd = dataEnd + 16;
+        } else {
+          return "invalid";
+        }
+      }
+      localRanges.push({ start: localOffset, end: localEnd });
+      inspectedBytes += uncompressedSize;
+      if (inspectedBytes > P0_MAX_ARTIFACT_BYTES) return "invalid";
+      const compressed = content.subarray(dataStart, dataEnd);
+      const entry =
+        method === 0
+          ? compressed
+          : method === 8
+            ? inflateRawSync(compressed, { maxOutputLength: P0_MAX_ARTIFACT_BYTES })
+            : null;
+      if (!entry || entry.byteLength !== uncompressedSize) return "invalid";
+      if (crc32(entry) !== expectedCrc) return "invalid";
+      if (/\.zip$/iu.test(name) || looksLikeZip(entry)) return "invalid";
+      if (containsSensitiveText(entry)) return "sensitive";
+      offset = nameEnd + extraLength + commentLength;
+    }
+    if (offset !== centralOffset + centralSize) return "invalid";
+    localRanges.sort((left, right) => left.start - right.start);
+    let expectedOffset = 0;
+    for (const range of localRanges) {
+      if (range.start !== expectedOffset || range.end < range.start) return "invalid";
+      expectedOffset = range.end;
+    }
+    if (expectedOffset !== centralOffset) return "invalid";
+  } catch {
+    return "invalid";
+  }
+  return "safe";
 }
 
 export function isAllowedArtifactMimeType(mimeType: string): mimeType is P0AllowedArtifactMimeType {
@@ -49,6 +286,9 @@ export function validateDiscoveredArtifactDownload(input: {
   if (!validatedPath.ok) {
     return { ok: false, reason: "path_invalid" };
   }
+  if (isSensitiveArtifactPath(validatedPath.relativePath)) {
+    return { ok: false, reason: "sensitive_path" };
+  }
   if (isForbiddenArtifactMimeType(discovery.mimeType)) {
     return { ok: false, reason: "mime_forbidden" };
   }
@@ -61,8 +301,20 @@ export function validateDiscoveredArtifactDownload(input: {
   if (content.byteLength > P0_MAX_ARTIFACT_BYTES) {
     return { ok: false, reason: "size_exceeded" };
   }
-  if (content.byteLength !== discovery.declaredByteSize) {
+  if (discovery.declaredByteSize !== null && content.byteLength !== discovery.declaredByteSize) {
     return { ok: false, reason: "size_mismatch" };
+  }
+  const contentInspection =
+    normalizeMime(discovery.mimeType) === "application/zip" || looksLikeZip(content)
+      ? inspectZipContent(content)
+      : containsSensitiveText(content)
+        ? "sensitive"
+        : "safe";
+  if (contentInspection === "sensitive") {
+    return { ok: false, reason: "sensitive_content" };
+  }
+  if (contentInspection === "invalid") {
+    return { ok: false, reason: "archive_invalid" };
   }
 
   return {
@@ -85,16 +337,19 @@ export function validateDiscoveredArtifactMetadata(
   if (!validatedPath.ok) {
     return { ok: false, reason: "path_invalid" };
   }
+  if (isSensitiveArtifactPath(validatedPath.relativePath)) {
+    return { ok: false, reason: "sensitive_path" };
+  }
   if (isForbiddenArtifactMimeType(discovery.mimeType)) {
     return { ok: false, reason: "mime_forbidden" };
   }
   if (!isAllowedArtifactMimeType(discovery.mimeType)) {
     return { ok: false, reason: "mime_not_allowed" };
   }
-  if (discovery.declaredByteSize <= 0) {
+  if (discovery.declaredByteSize !== null && discovery.declaredByteSize <= 0) {
     return { ok: false, reason: "empty_content" };
   }
-  if (discovery.declaredByteSize > P0_MAX_ARTIFACT_BYTES) {
+  if (discovery.declaredByteSize !== null && discovery.declaredByteSize > P0_MAX_ARTIFACT_BYTES) {
     return { ok: false, reason: "size_exceeded" };
   }
   return { ok: true };

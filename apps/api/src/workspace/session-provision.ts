@@ -10,6 +10,12 @@ import {
   type createSql,
 } from "@forgeroom/db";
 import { loadTrueForgeClientFromEnv, type TrueForgeClient } from "@forgeroom/trueforge";
+import {
+  P0_COMPOSIO_APPROVAL_REQUIRED_TOOLS,
+  P0_COMPOSIO_ENABLED_TOOLS,
+  P0_COMPOSIO_TRUEFORGE_CONNECTOR_NAME,
+} from "@forgeroom/composio";
+import { TASK_RECORD_UPSERT_TOOL_NAME } from "../tasks";
 import type { ChannelAgentSessionRecord, CoworkerRecord, WorkspaceCatalogStore } from "./store";
 import type { ApiEnv } from "../env";
 import {
@@ -67,7 +73,24 @@ export function connectorsFromCoworker(coworker: CoworkerRecord): Array<{
   const config = coworker.editableConfigJson as Record<string, unknown>;
   const raw = config.connectors;
   if (!Array.isArray(raw)) {
-    return [];
+    const configuredToolGrants = Array.isArray(config.tool_grants)
+      ? config.tool_grants.filter((value): value is string => typeof value === "string")
+      : [];
+    if (configuredToolGrants.length === 0) return [];
+    const allowed = new Set<string>(P0_COMPOSIO_ENABLED_TOOLS);
+    const unknown = configuredToolGrants.find((tool) => !allowed.has(tool));
+    if (unknown) {
+      throw new Error(`Coworker tool grant is not in the P0 Composio allowlist: ${unknown}`);
+    }
+    const enabledTools = [...new Set(configuredToolGrants)];
+    const approvalRequired = new Set<string>(P0_COMPOSIO_APPROVAL_REQUIRED_TOOLS);
+    return [
+      {
+        name: P0_COMPOSIO_TRUEFORGE_CONNECTOR_NAME,
+        enabledTools,
+        approvalRequiredTools: enabledTools.filter((tool) => approvalRequired.has(tool)),
+      },
+    ];
   }
   const connectors: Array<{
     name: string;
@@ -96,6 +119,28 @@ export function connectorsFromCoworker(coworker: CoworkerRecord): Array<{
     connectors.push({ name, enabledTools, approvalRequiredTools });
   }
   return connectors;
+}
+
+export function applicationToolNamesFromCoworker(
+  coworker: CoworkerRecord,
+  channelId: string,
+): string[] {
+  const config = coworker.editableConfigJson as Record<string, unknown>;
+  const grants = config.task_record_grants;
+  if (!Array.isArray(grants)) return [];
+  const authorized = grants.some((grant) => {
+    if (!grant || typeof grant !== "object" || Array.isArray(grant)) return false;
+    const row = grant as Record<string, unknown>;
+    const operations = Array.isArray(row.operations)
+      ? row.operations.filter((value): value is string => typeof value === "string")
+      : [];
+    return (
+      row.channel_id === channelId &&
+      operations.includes("create") &&
+      operations.includes("update_status")
+    );
+  });
+  return authorized ? [TASK_RECORD_UPSERT_TOOL_NAME] : [];
 }
 
 export function skillNamesFromCoworker(coworker: CoworkerRecord): string[] {
@@ -370,6 +415,7 @@ async function ensureCoworkerChannelSessionUnlocked(
         }),
       ).map((row) => row.toolName)
     : [];
+  const applicationToolNames = applicationToolNamesFromCoworker(input.coworker, input.channelId);
   // A stable initial generation makes a connector registered before a crash
   // discoverable and safely replaceable by the next attempt.
   const generationId = initialSessionGenerationId(logicalSessionId);
@@ -378,7 +424,7 @@ async function ensureCoworkerChannelSessionUnlocked(
     : input.coworker.configRevision;
   let componentConnectorRegistrationAttempted = false;
   try {
-    if (componentToolNames.length > 0) {
+    if (componentToolNames.length + applicationToolNames.length > 0) {
       if (!input.apiEnv) {
         throw new Error("UI components MCP registration requires the API environment");
       }
@@ -387,6 +433,7 @@ async function ensureCoworkerChannelSessionUnlocked(
         env: input.apiEnv,
         generationId,
         componentToolNames,
+        applicationToolNames,
       });
     }
 
@@ -410,6 +457,7 @@ async function ensureCoworkerChannelSessionUnlocked(
       connectors: connectorsFromCoworker(input.coworker),
       skillNames: skillNamesFromCoworker(input.coworker),
       componentToolNames,
+      applicationToolNames,
       sourceConfigRevision,
       ...(recoveryStartedAt
         ? {

@@ -8,7 +8,6 @@ requirements: [GUI-010]
 specs: [../generative-ui.md#interaction-gateway, ../security.md]
 adrs: [ADR-007]
 touches: [packages/contracts, packages/db]
-release_gate: required
 ---
 
 # P0-317 — Bound controlled data-function reads with a time limit

@@ -70,12 +70,29 @@ export {
 } from "./event-normalize";
 export type { NormalizedRunEvent, TurnDoneOutcome } from "./event-normalize";
 export {
+  ApplicationWatchdog,
+  P0_APPLICATION_WATCHDOG_LIMITS,
+  P0_MAX_OBSERVED_TOOL_CALLS,
+  P0_MAX_OBSERVED_TURN_TOKENS,
+  P0_RUN_WATCHDOG_MS,
+  P0_SANDBOX_COMMAND_WATCHDOG_MS,
+  readObservedTurnTokens,
+} from "./watchdog";
+export type {
+  ApplicationWatchdogClock,
+  ApplicationWatchdogLimits,
+  ApplicationWatchdogOptions,
+  ApplicationWatchdogReason,
+  ApplicationWatchdogViolation,
+} from "./watchdog";
+export {
   hashCanonical,
   mapToolRiskToProposalRisk,
   extractRawRequiredActions,
   classifyRequiredActionType,
   buildPauseGroupCapturePlan,
   buildApprovalRedactionResult,
+  redactProviderRequiredActionText,
   sessionAcceptsInputWhilePaused,
 } from "./pause-group";
 export type {

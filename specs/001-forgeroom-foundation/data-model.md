@@ -597,9 +597,13 @@ blocked_connection → queued | cancelling | failed | cancelled
 intended → acquiring → creating → streaming
 streaming → required_actions | completed | failed | cancelled | uncertain
 required-action resume: intended → resuming → streaming
+history-reconciliation only: uncertain → streaming
 ~~~
 
-`required_actions` is terminal for that AgentTurn but nonterminal for its RunStep.
+`required_actions` is terminal for that AgentTurn but nonterminal for its RunStep. `uncertain` is
+terminal in the ordinary graph. Its reconciliation-only edge is legal solely after one remote
+turn matches the application run token, intended predecessor and input hash; a create response or
+ambiguous history cannot use the edge (SC-001).
 
 ### PauseGroup
 

@@ -6,9 +6,116 @@ import {
   settleCancelledStep,
 } from "./run-control";
 import { claimTurnQueueItem, enqueueTurnQueueItem } from "./turn-queue";
-import { NOW, seedRuntime, withMigratedDatabase } from "./test-harness";
+import { HASH, NOW, seedRuntime, withMigratedDatabase } from "./test-harness";
+
+async function seedWaitingInterrupt(sql: Parameters<typeof seedRuntime>[0]) {
+  await sql.begin(async (tx) => {
+    await tx`
+      INSERT INTO ui_surface_grants (
+        id, ui_instance_id, grant_kind, policy_revision, bound_render_revision,
+        bound_manifest_hash, action_ref, handler_key, action_mode, input_schema_json,
+        input_schema_hash, allowed_render_node_ids_json, component_interrupt_id,
+        grant_scope_hash, max_uses, use_count, issued_by, expires_at, created_at
+      ) VALUES (
+        'ag_stop_interrupt', 'ui_1', 'action', 1, 0, ${HASH}, 'submit',
+        'controlled_ui.complete_component_interrupt.v1', 'complete_component_interrupt',
+        '{}'::jsonb, ${HASH}, '["node_1"]'::jsonb, 'intr_stop',
+        ${HASH}, 1, 0, 'application_policy', '2099-01-01T00:00:00.000Z', ${NOW}
+      )
+    `;
+    await tx`
+      INSERT INTO ui_component_interrupts (
+        id, ui_instance_id, run_id, run_step_id, agent_turn_id, logical_thread_id,
+        tool_call_id, session_generation_id, action_grant_id, input_schema_hash, state, created_at
+      ) VALUES (
+        'intr_stop', 'ui_1', 'run_1', 'step_1', 'turn_1', 'thread_1',
+        'tc_stop_interrupt', 'gen_1', 'ag_stop_interrupt', ${HASH}, 'waiting', ${NOW}
+      )
+    `;
+  });
+  await sql`
+    INSERT INTO ui_interactions (
+      id, ui_instance_id, render_revision, action_grant_id, render_node_id,
+      handler_key, intent_name, payload_redacted_json, payload_hash,
+      interaction_token_hash, idempotency_key_hash, token_expires_at,
+      actor_user_id, client_kind, state, created_at
+    ) VALUES (
+      'int_stop', 'ui_1', 0, 'ag_stop_interrupt', 'node_1',
+      'controlled_ui.complete_component_interrupt.v1', 'submit', '{}'::jsonb, ${HASH},
+      ${HASH}, 'idempotency-stop', '2099-01-01T00:00:00.000Z',
+      'user_1', 'registry', 'token_issued', ${NOW}
+    )
+  `;
+  await sql`
+    INSERT INTO ui_interactions (
+      id, ui_instance_id, render_revision, action_grant_id, render_node_id,
+      handler_key, intent_name, payload_redacted_json, payload_hash,
+      interaction_token_hash, idempotency_key_hash, token_expires_at,
+      actor_user_id, client_kind, state, result_redacted_json, consumed_at, created_at
+    ) VALUES (
+      'int_stop_terminal', 'ui_1', 0, 'ag_stop_interrupt', 'node_1',
+      'controlled_ui.complete_component_interrupt.v1', 'submit', '{}'::jsonb, ${HASH},
+      'sha256:terminal-token', 'idempotency-stop-terminal', '2099-01-01T00:00:00.000Z',
+      'user_1', 'registry', 'succeeded', '{"kept":true}'::jsonb, ${NOW}, ${NOW}
+    )
+  `;
+}
 
 describe("run stop and correction", () => {
+  it("stales UI interrupts and issued interactions on cancel/watchdog timeout", async () => {
+    await withMigratedDatabase(async (sql) => {
+      await seedRuntime(sql);
+      await seedWaitingInterrupt(sql);
+
+      const stopped = await requestRunStepStop(sql, { runStepId: "step_1", now: NOW });
+      expect(stopped).toMatchObject({
+        ok: true,
+        decision: { action: "enter_cancelling", callCancel: true },
+      });
+
+      const interrupts = await sql<
+        { state: string; stale_at: Date | null; stale_reason: string | null }[]
+      >`
+        SELECT state, stale_at, result_redacted_json->>'reason' AS stale_reason
+        FROM ui_component_interrupts WHERE id = 'intr_stop'
+      `;
+      expect(interrupts[0]).toMatchObject({
+        state: "stale",
+        stale_at: expect.any(Date),
+        stale_reason: "run_cancelling",
+      });
+      const grants = await sql<{ revoked_at: Date | null }[]>`
+        SELECT revoked_at FROM ui_surface_grants WHERE id = 'ag_stop_interrupt'
+      `;
+      expect(grants[0]?.revoked_at).toBeInstanceOf(Date);
+      const interactions = await sql<
+        { state: string; consumed_at: Date | null; stale_reason: string | null }[]
+      >`
+        SELECT state, consumed_at, result_redacted_json->>'reason' AS stale_reason
+        FROM ui_interactions WHERE id = 'int_stop'
+      `;
+      expect(interactions[0]).toMatchObject({
+        state: "stale",
+        consumed_at: expect.any(Date),
+        stale_reason: "run_cancelling",
+      });
+      expect(
+        await sql<{ state: string; result: unknown }[]>`
+          SELECT state, result_redacted_json AS result
+          FROM ui_interactions WHERE id = 'int_stop_terminal'
+        `,
+      ).toEqual([{ state: "succeeded", result: { kept: true } }]);
+
+      // The terminal settle path is an idempotent cleanup backstop.
+      await settleCancelledStep(sql, { runStepId: "step_1", now: NOW });
+      expect(
+        await sql<{ state: string }[]>`
+          SELECT state FROM ui_component_interrupts WHERE id = 'intr_stop'
+        `,
+      ).toEqual([{ state: "stale" }]);
+    });
+  }, 60_000);
+
   it("stops once, blocks new claims while cancelling, and queues a linked correction", async () => {
     await withMigratedDatabase(async (sql) => {
       await seedRuntime(sql);

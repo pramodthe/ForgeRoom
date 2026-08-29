@@ -1,0 +1,112 @@
+{
+  "schemaVersion": 1,
+  "status": "frozen",
+  "ownerTask": "P0-506",
+  "description": "Supplemental official-client and ordering conformance cases for the complete P0 AG-UI event profile.",
+  "successEvents": [
+    {
+      "type": "RUN_STARTED",
+      "threadId": "thread_conformance",
+      "runId": "run_conformance"
+    },
+    {
+      "type": "STEP_STARTED",
+      "stepName": "model"
+    },
+    {
+      "type": "MESSAGES_SNAPSHOT",
+      "messages": [
+        {
+          "id": "msg_user",
+          "role": "user",
+          "content": "Inspect the fixture"
+        }
+      ]
+    },
+    {
+      "type": "CUSTOM",
+      "name": "forgeroom.conformance.v1",
+      "value": {
+        "schemaVersion": 1,
+        "status": "safe"
+      }
+    },
+    {
+      "type": "STEP_FINISHED",
+      "stepName": "model"
+    },
+    {
+      "type": "RUN_FINISHED",
+      "threadId": "thread_conformance",
+      "runId": "run_conformance",
+      "outcome": {
+        "type": "success"
+      }
+    }
+  ],
+  "errorEvents": [
+    {
+      "type": "RUN_STARTED",
+      "threadId": "thread_conformance",
+      "runId": "run_error"
+    },
+    {
+      "type": "RUN_ERROR",
+      "threadId": "thread_conformance",
+      "runId": "run_error",
+      "message": "The provider run failed safely.",
+      "code": "provider_failed"
+    }
+  ],
+  "illegalOrdering": {
+    "stateDeltaBeforeSnapshot": {
+      "type": "STATE_DELTA",
+      "stateKind": "thread",
+      "revision": 1,
+      "patch": [
+        {
+          "op": "test",
+          "path": "/revision",
+          "value": 1
+        },
+        {
+          "op": "replace",
+          "path": "/phase",
+          "value": "running"
+        },
+        {
+          "op": "replace",
+          "path": "/revision",
+          "value": 2
+        }
+      ]
+    },
+    "activityDeltaBeforeSnapshot": {
+      "type": "ACTIVITY_DELTA",
+      "messageId": "act_missing",
+      "activityType": "forgeroom.coworker_work.v1",
+      "patch": [
+        {
+          "op": "test",
+          "path": "/activityRevision",
+          "value": 1
+        },
+        {
+          "op": "replace",
+          "path": "/phase",
+          "value": "running"
+        },
+        {
+          "op": "replace",
+          "path": "/activityRevision",
+          "value": 2
+        }
+      ]
+    },
+    "toolArgsBeforeStart": {
+      "type": "TOOL_CALL_ARGS",
+      "toolCallId": "tool_missing",
+      "delta": "{\"title\":\"Rejected\"}"
+    }
+  }
+}

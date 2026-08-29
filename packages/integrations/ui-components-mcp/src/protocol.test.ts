@@ -23,7 +23,7 @@ describe("handleUiComponentsMcpRequest", () => {
       { enabledToolNames: ["ui.dataTable"], callTool: vi.fn() },
     );
     const tools = (response.result as { tools: Array<{ name: string }> }).tools;
-    expect(tools.map((tool) => tool.name)).toEqual(["ui.dataTable"]);
+    expect(tools.map((tool) => tool.name)).toEqual(["ui_dataTable"]);
   });
 
   it("calls the broker for tools/call", async () => {
@@ -39,7 +39,7 @@ describe("handleUiComponentsMcpRequest", () => {
         jsonrpc: "2.0",
         id: 3,
         method: "tools/call",
-        params: { name: "ui.dataTable", arguments: { caption: "Results" } },
+        params: { name: "ui_dataTable", arguments: { caption: "Results" } },
       },
       { enabledToolNames: ["ui.dataTable"], callTool },
     );
@@ -50,6 +50,67 @@ describe("handleUiComponentsMcpRequest", () => {
       requestId: 3,
     });
     expect(response.result).toMatchObject({ isError: false });
+  });
+
+  it("lists and dispatches explicitly offered application tools", async () => {
+    const callAdditionalTool = vi.fn(async () => ({
+      content: [{ type: "text" as const, text: JSON.stringify({ ok: true }) }],
+      isError: false,
+    }));
+    const handlers = {
+      enabledToolNames: ["ui.dataTable"],
+      additionalTools: [
+        {
+          name: "records.task.upsert.v1",
+          description: "Create or update a TaskRecord",
+          inputSchema: { type: "object" },
+        },
+      ],
+      callAdditionalTool,
+      callTool: vi.fn(),
+    };
+    const listed = await handleUiComponentsMcpRequest(
+      { jsonrpc: "2.0", id: 4, method: "tools/list" },
+      handlers,
+    );
+    expect(
+      (listed.result as { tools: Array<{ name: string }> }).tools.map((tool) => tool.name),
+    ).toEqual(["ui_dataTable", "records_task_upsert_v1"]);
+    const called = await handleUiComponentsMcpRequest(
+      {
+        jsonrpc: "2.0",
+        id: 5,
+        method: "tools/call",
+        params: { name: "records_task_upsert_v1", arguments: { channel_id: "ch_1" } },
+      },
+      handlers,
+    );
+    expect(callAdditionalTool).toHaveBeenCalledWith({
+      toolName: "records.task.upsert.v1",
+      arguments: { channel_id: "ch_1" },
+      requestId: 5,
+    });
+    expect(called.result).toMatchObject({ isError: false });
+  });
+
+  it("fails closed when canonical tools collide after provider-safe normalization", async () => {
+    const response = await handleUiComponentsMcpRequest(
+      { jsonrpc: "2.0", id: 6, method: "tools/list" },
+      {
+        enabledToolNames: ["ui.dataTable"],
+        additionalTools: [
+          {
+            name: "ui_dataTable",
+            description: "Ambiguous alias",
+            inputSchema: { type: "object", additionalProperties: false, properties: {} },
+          },
+        ],
+        callTool: vi.fn(),
+      },
+    );
+    expect(response).toMatchObject({
+      error: { code: -32000, message: "Component tool call failed" },
+    });
   });
 
   it("parses notifications without an id", () => {

@@ -7,7 +7,11 @@ export {
   isUiComponentsMcpConnectorName,
 } from "./constants";
 export { deriveUiComponentsMcpSecret, verifyUiComponentsMcpSecret } from "./credentials";
-export { listControlledComponentMcpTools, resolveStableNameForMcpTool } from "./tools";
+export {
+  listControlledComponentMcpTools,
+  providerSafeMcpToolName,
+  resolveStableNameForMcpTool,
+} from "./tools";
 export type { UiComponentsMcpTool } from "./tools";
 export {
   handleUiComponentsMcpRequest,

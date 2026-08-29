@@ -59,7 +59,7 @@ describe("authorizeAgUiPauseGroupResume", () => {
     expect(
       authorizeAgUiPauseGroupResume({
         resume: [{ interruptId: "forged" }],
-        interruptIds: ["ra_1"],
+        actionAliases: [{ requiredActionId: "ra_1", providerActionId: "prov_1" }],
         requiredActionCount: 1,
         pauseGroupReady: true,
       }).ok,
@@ -68,7 +68,7 @@ describe("authorizeAgUiPauseGroupResume", () => {
     expect(
       authorizeAgUiPauseGroupResume({
         resume: [{ interruptId: "ra_1", payload: { decision: "allow" } }],
-        interruptIds: ["ra_1"],
+        actionAliases: [{ requiredActionId: "ra_1", providerActionId: "prov_1" }],
         requiredActionCount: 1,
         pauseGroupReady: true,
       }),
@@ -77,18 +77,44 @@ describe("authorizeAgUiPauseGroupResume", () => {
     expect(
       authorizeAgUiPauseGroupResume({
         resume: [{ interruptId: "ra_1" }, { interruptId: "ra_2" }],
-        interruptIds: ["ra_1", "ra_2", "prov_1", "prov_2"],
+        actionAliases: [
+          { requiredActionId: "ra_1", providerActionId: "prov_1" },
+          { requiredActionId: "ra_2", providerActionId: "prov_2" },
+        ],
         requiredActionCount: 2,
         pauseGroupReady: true,
       }),
     ).toEqual({ ok: true });
   });
 
+  it("counts durable and provider aliases as one canonical action", () => {
+    expect(
+      authorizeAgUiPauseGroupResume({
+        resume: [{ interruptId: "ra_1" }, { interruptId: "prov_1" }],
+        actionAliases: [{ requiredActionId: "ra_1", providerActionId: "prov_1" }],
+        requiredActionCount: 1,
+        pauseGroupReady: true,
+      }),
+    ).toEqual({ ok: false, reason: "forged_interrupt" });
+
+    expect(
+      authorizeAgUiPauseGroupResume({
+        resume: [{ interruptId: "shared" }],
+        actionAliases: [
+          { requiredActionId: "ra_1", providerActionId: "shared" },
+          { requiredActionId: "shared", providerActionId: "prov_2" },
+        ],
+        requiredActionCount: 2,
+        pauseGroupReady: true,
+      }),
+    ).toEqual({ ok: false, reason: "forged_interrupt" });
+  });
+
   it("blocks resume until the group is ready", () => {
     expect(
       authorizeAgUiPauseGroupResume({
         resume: [{ interruptId: "ra_1" }],
-        interruptIds: ["ra_1"],
+        actionAliases: [{ requiredActionId: "ra_1", providerActionId: "prov_1" }],
         requiredActionCount: 1,
         pauseGroupReady: false,
       }),

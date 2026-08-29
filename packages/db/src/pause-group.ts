@@ -279,7 +279,7 @@ export async function persistPauseGroupCapture(
           payload_redacted_json, payload_hash, created_at
         ) VALUES (
           ${requiredActionId}, ${pauseGroupId}, ${action.providerActionId}, ${action.actionType},
-          'pending', ${JSON.stringify(action.payloadRedacted)}::jsonb, ${action.payloadHash}, ${now}
+          'pending', ${JSON.stringify(action.payloadRedacted)}::text::jsonb, ${action.payloadHash}, ${now}
         )
       `;
 
@@ -299,10 +299,10 @@ export async function persistPauseGroupCapture(
             NULL, ${action.proposal.toolCallId}, ${turn.session_generation_id},
             ${input.approvalPolicyHash}, ${input.connectorBindingId},
             ${action.proposal.toolName}, ${action.proposal.observedDescriptorHash},
-            ${JSON.stringify(input.actingIdentityJson)}::jsonb,
-            ${JSON.stringify(action.proposal.normalizedArgumentsRedacted)}::jsonb,
+            ${JSON.stringify(input.actingIdentityJson)}::text::jsonb,
+            ${JSON.stringify(action.proposal.normalizedArgumentsRedacted)}::text::jsonb,
             ${action.proposal.argumentsHash},
-            ${JSON.stringify(action.proposal.targetRedacted)}::jsonb,
+            ${JSON.stringify(action.proposal.targetRedacted)}::text::jsonb,
             ${action.proposal.targetHash},
             ${action.proposal.artifactRevisionHash},
             ${action.proposal.riskClass}, ${action.proposal.expectedEffect}, 'proposed', ${expiresAt},
@@ -318,7 +318,7 @@ export async function persistPauseGroupCapture(
             state, expires_at
           ) VALUES (
             ${questionId}, ${requiredActionId}, ${run.channel_id}, ${run.run_id},
-            ${JSON.stringify(action.promptRedacted)}::jsonb, ${action.promptHash},
+            ${JSON.stringify(action.promptRedacted)}::text::jsonb, ${action.promptHash},
             'requested', ${expiresAt}
           )
         `;

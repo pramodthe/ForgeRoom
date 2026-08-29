@@ -8,6 +8,10 @@ import type {
   TaskStatus,
 } from "@forgeroom/contracts";
 
+export type UiComponentInterruptState = "waiting" | "resolved" | "continued" | "stale";
+export type UiInteractionState =
+  "prepared" | "token_issued" | "dispatching" | "succeeded" | "failed" | "denied" | "stale";
+
 export const TASK_TRANSITIONS: Record<TaskStatus, readonly TaskStatus[]> = {
   todo: ["in_progress", "blocked", "cancelled"],
   in_progress: ["blocked", "in_review", "done", "cancelled"],
@@ -103,6 +107,21 @@ export function canTransitionAgentTurn(from: AgentTurnState, to: AgentTurnState)
   return AGENT_TURN_TRANSITIONS[from]?.includes(to) ?? false;
 }
 
+/**
+ * Recovery-only AgentTurn edges. These are deliberately excluded from
+ * `AGENT_TURN_TRANSITIONS`: callers must have matched a remote turn from
+ * provider history before using this guard.
+ */
+export const AGENT_TURN_RECONCILIATION_TRANSITIONS: Partial<
+  Record<AgentTurnState, readonly AgentTurnState[]>
+> = {
+  uncertain: ["streaming"],
+};
+
+export function canReconcileAgentTurn(from: AgentTurnState, to: AgentTurnState): boolean {
+  return AGENT_TURN_RECONCILIATION_TRANSITIONS[from]?.includes(to) ?? false;
+}
+
 /** PauseGroup legal edges from `data-model.md` (CAS collecting/ready → resuming). */
 export const PAUSE_GROUP_TRANSITIONS: Record<PauseGroupState, readonly PauseGroupState[]> = {
   collecting: ["ready", "stale", "expired", "cancelled"],
@@ -142,4 +161,61 @@ export function canTransitionActionProposal(
   to: ActionProposalState,
 ): boolean {
   return ACTION_PROPOSAL_TRANSITIONS[from]?.includes(to) ?? false;
+}
+
+/** Controlled-component interrupt edges enforced by the persistence gateway. */
+export const UI_COMPONENT_INTERRUPT_TRANSITIONS: Record<
+  UiComponentInterruptState,
+  readonly UiComponentInterruptState[]
+> = {
+  waiting: ["resolved", "stale"],
+  resolved: ["continued"],
+  continued: [],
+  stale: [],
+};
+
+export function canTransitionUiComponentInterrupt(
+  from: UiComponentInterruptState,
+  to: UiComponentInterruptState,
+): boolean {
+  return UI_COMPONENT_INTERRUPT_TRANSITIONS[from]?.includes(to) ?? false;
+}
+
+export function transitionUiComponentInterrupt(
+  from: UiComponentInterruptState,
+  to: UiComponentInterruptState,
+): UiComponentInterruptState {
+  if (!canTransitionUiComponentInterrupt(from, to)) {
+    throw new Error(`Invalid UI component interrupt transition: ${from} -> ${to}`);
+  }
+  return to;
+}
+
+/** Controlled UI interaction edges; every terminal state is closed. */
+export const UI_INTERACTION_TRANSITIONS: Record<UiInteractionState, readonly UiInteractionState[]> =
+  {
+    prepared: ["token_issued", "stale"],
+    token_issued: ["dispatching", "succeeded", "failed", "denied", "stale"],
+    dispatching: ["succeeded", "failed", "denied", "stale"],
+    succeeded: [],
+    failed: [],
+    denied: [],
+    stale: [],
+  };
+
+export function canTransitionUiInteraction(
+  from: UiInteractionState,
+  to: UiInteractionState,
+): boolean {
+  return UI_INTERACTION_TRANSITIONS[from]?.includes(to) ?? false;
+}
+
+export function transitionUiInteraction(
+  from: UiInteractionState,
+  to: UiInteractionState,
+): UiInteractionState {
+  if (!canTransitionUiInteraction(from, to)) {
+    throw new Error(`Invalid UI interaction transition: ${from} -> ${to}`);
+  }
+  return to;
 }

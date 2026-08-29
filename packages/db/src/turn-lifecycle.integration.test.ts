@@ -1,6 +1,37 @@
 import { describe, expect, it } from "vitest";
-import { bindTrueForgeTurnId, ingestNormalizedTrueForgeEvent } from "./turn-lifecycle";
-import { NOW, seedRuntime, withMigratedDatabase } from "./test-harness";
+import {
+  bindTrueForgeTurnId,
+  ingestNormalizedTrueForgeEvent,
+  lockAgentTurnForCreate,
+} from "./turn-lifecycle";
+import { HASH, NOW, seedRuntime, withMigratedDatabase } from "./test-harness";
+
+async function seedWaitingInterrupt(sql: Parameters<typeof seedRuntime>[0]) {
+  await sql.begin(async (tx) => {
+    await tx`
+      INSERT INTO ui_surface_grants (
+        id, ui_instance_id, grant_kind, policy_revision, bound_render_revision,
+        bound_manifest_hash, action_ref, handler_key, action_mode, input_schema_json,
+        input_schema_hash, allowed_render_node_ids_json, component_interrupt_id,
+        grant_scope_hash, max_uses, use_count, issued_by, expires_at, created_at
+      ) VALUES (
+        'ag_failure_interrupt', 'ui_1', 'action', 1, 0, ${HASH}, 'submit',
+        'controlled_ui.complete_component_interrupt.v1', 'complete_component_interrupt',
+        '{}'::jsonb, ${HASH}, '["node_1"]'::jsonb, 'intr_failure',
+        ${HASH}, 1, 0, 'application_policy', '2099-01-01T00:00:00.000Z', ${NOW}
+      )
+    `;
+    await tx`
+      INSERT INTO ui_component_interrupts (
+        id, ui_instance_id, run_id, run_step_id, agent_turn_id, logical_thread_id,
+        tool_call_id, session_generation_id, action_grant_id, input_schema_hash, state, created_at
+      ) VALUES (
+        'intr_failure', 'ui_1', 'run_1', 'step_1', 'turn_1', 'thread_1',
+        'tc_failure_interrupt', 'gen_1', 'ag_failure_interrupt', ${HASH}, 'waiting', ${NOW}
+      )
+    `;
+  });
+}
 
 async function clearSeedTurn(sql: Parameters<typeof seedRuntime>[0]) {
   await sql`UPDATE agent_turns SET state = 'completed', completed_at = ${NOW} WHERE id = 'turn_1'`;
@@ -34,12 +65,16 @@ describe("turn lifecycle persistence", () => {
         )
       `;
 
+      expect(await lockAgentTurnForCreate(sql, { agentTurnId: "turn_life" })).toMatchObject({
+        ok: true,
+        state: "creating",
+      });
       expect(
         await bindTrueForgeTurnId(sql, {
           agentTurnId: "turn_life",
           trueforgeTurnId: "tf_life",
           previousTrueforgeTurnId: null,
-          expectedStates: ["acquiring", "creating", "uncertain"],
+          bindingSource: "create_response",
           now: NOW,
         }),
       ).toEqual({ ok: true });
@@ -105,9 +140,42 @@ describe("turn lifecycle persistence", () => {
     });
   }, 60_000);
 
+  it("requires a verified history-reconciliation source to recover an uncertain turn", async () => {
+    await withMigratedDatabase(async (sql) => {
+      await seedRuntime(sql);
+      await sql`UPDATE agent_turns SET state = 'uncertain' WHERE id = 'turn_1'`;
+
+      expect(
+        await bindTrueForgeTurnId(sql, {
+          agentTurnId: "turn_1",
+          trueforgeTurnId: "tf_recovered",
+          previousTrueforgeTurnId: null,
+          bindingSource: "create_response",
+          now: NOW,
+        }),
+      ).toEqual({ ok: false, reason: "state_mismatch" });
+
+      expect(
+        await bindTrueForgeTurnId(sql, {
+          agentTurnId: "turn_1",
+          trueforgeTurnId: "tf_recovered",
+          previousTrueforgeTurnId: null,
+          bindingSource: "history_reconciliation",
+          now: NOW,
+        }),
+      ).toEqual({ ok: true });
+
+      const turns = await sql<{ state: string; trueforge_turn_id: string | null }[]>`
+        SELECT state, trueforge_turn_id FROM agent_turns WHERE id = 'turn_1'
+      `;
+      expect(turns[0]).toEqual({ state: "streaming", trueforge_turn_id: "tf_recovered" });
+    });
+  }, 60_000);
+
   it("settles the durable turn, queue item, step and run on a terminal provider error", async () => {
     await withMigratedDatabase(async (sql) => {
       await seedRuntime(sql);
+      await seedWaitingInterrupt(sql);
 
       const result = await ingestNormalizedTrueForgeEvent(sql, {
         agentTurnId: "turn_1",
@@ -145,6 +213,21 @@ describe("turn lifecycle persistence", () => {
         SELECT lifecycle FROM runs WHERE id = 'run_1'
       `;
       expect(runs[0]?.lifecycle).toBe("failed");
+      const interrupts = await sql<
+        { state: string; stale_at: Date | null; stale_reason: string | null }[]
+      >`
+        SELECT state, stale_at, result_redacted_json->>'reason' AS stale_reason
+        FROM ui_component_interrupts WHERE id = 'intr_failure'
+      `;
+      expect(interrupts[0]).toMatchObject({
+        state: "stale",
+        stale_at: expect.any(Date),
+        stale_reason: "run_failed",
+      });
+      const grants = await sql<{ revoked_at: Date | null }[]>`
+        SELECT revoked_at FROM ui_surface_grants WHERE id = 'ag_failure_interrupt'
+      `;
+      expect(grants[0]?.revoked_at).toBeInstanceOf(Date);
     });
   }, 60_000);
 });

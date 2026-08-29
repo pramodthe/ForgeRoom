@@ -75,7 +75,19 @@ const BAR_OR_LINE_CHART = defineComponent({
       chart_type: { type: "string", enum: ["bar", "line"] },
       x_axis_label: { type: "string" },
       y_axis_label: { type: "string" },
-      series: { type: "array" },
+      series: {
+        type: "array",
+        maxItems: 8,
+        items: {
+          type: "object",
+          additionalProperties: false,
+          properties: {
+            key: { type: "string" },
+            label: { type: "string" },
+          },
+          required: ["key", "label"],
+        },
+      },
       accessible_table_caption: { type: "string" },
     },
     required: [
@@ -116,7 +128,36 @@ const CHOICE_FORM = defineComponent({
       description: { type: ["string", "null"] },
       submit_label: { type: "string" },
       cancel_label: { type: "string" },
-      fields: { type: "array" },
+      fields: {
+        type: "array",
+        maxItems: 12,
+        items: {
+          type: "object",
+          additionalProperties: false,
+          properties: {
+            id: { type: "string" },
+            label: { type: "string" },
+            description: { type: ["string", "null"] },
+            kind: { type: "string", enum: ["single_choice", "checkbox"] },
+            required: { type: "boolean" },
+            options: {
+              type: "array",
+              maxItems: 20,
+              items: {
+                type: "object",
+                additionalProperties: false,
+                properties: {
+                  id: { type: "string" },
+                  label: { type: "string" },
+                  description: { type: ["string", "null"] },
+                },
+                required: ["id", "label"],
+              },
+            },
+          },
+          required: ["id", "label", "kind", "required"],
+        },
+      },
     },
     required: ["title", "submit_label", "cancel_label", "fields"],
   },
@@ -180,7 +221,20 @@ const DATA_TABLE = defineComponent({
       caption: { type: "string" },
       description: { type: ["string", "null"] },
       empty_text: { type: "string" },
-      columns: { type: "array" },
+      columns: {
+        type: "array",
+        maxItems: 12,
+        items: {
+          type: "object",
+          additionalProperties: false,
+          properties: {
+            key: { type: "string" },
+            label: { type: "string" },
+            align: { type: "string", enum: ["start", "center", "end"] },
+          },
+          required: ["key", "label"],
+        },
+      },
     },
     required: ["caption", "empty_text", "columns"],
   },

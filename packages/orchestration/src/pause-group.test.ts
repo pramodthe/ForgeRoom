@@ -5,6 +5,7 @@ import {
   classifyRequiredActionType,
   extractRawRequiredActions,
   hashCanonical,
+  redactProviderRequiredActionText,
   sessionAcceptsInputWhilePaused,
   type ApprovalRedactionAdapter,
 } from "./pause-group";
@@ -111,6 +112,37 @@ describe("buildPauseGroupCapturePlan", () => {
     expect(plan.actions[0]?.actionType).toBe("connection");
   });
 
+  it("redacts credentials embedded in provider question and connection text", () => {
+    const plan = buildPauseGroupCapturePlan({
+      trueforgeTurnId: "tf_turn_sensitive",
+      generation: 2,
+      approvalRedaction: stubAdapter,
+      requiredActions: [
+        {
+          type: "tool.response_required",
+          id: "ra_sensitive_question",
+          prompt: {
+            message: "Confirm api_key=provider-secret-value-now",
+            access_token: "nested-provider-token",
+          },
+        },
+        {
+          type: "mcp.auth_required",
+          id: "ra_sensitive_connection",
+          connector: "github",
+          reason: "Reconnect with Bearer provider-secret-bearer-token",
+        },
+      ],
+    });
+    if ("ok" in plan) throw new Error("expected plan");
+
+    const persistedProjection = JSON.stringify(plan.actions);
+    expect(persistedProjection).not.toContain("provider-secret-value-now");
+    expect(persistedProjection).not.toContain("nested-provider-token");
+    expect(persistedProjection).not.toContain("provider-secret-bearer-token");
+    expect(persistedProjection).toContain("[REDACTED]");
+  });
+
   it("rejects unexpected child-thread actions without persisting them", () => {
     const onlyChild = buildPauseGroupCapturePlan({
       trueforgeTurnId: "tf_turn_1",
@@ -209,6 +241,13 @@ describe("sessionAcceptsInputWhilePaused", () => {
     expect(
       sessionAcceptsInputWhilePaused({
         hasUnresolvedPauseGroup: true,
+        inputType: "correction",
+        isLinkedPauseCorrection: true,
+      }),
+    ).toEqual({ ok: true });
+    expect(
+      sessionAcceptsInputWhilePaused({
+        hasUnresolvedPauseGroup: true,
         inputType: "component_interaction_response",
       }),
     ).toEqual({ ok: false, reason: "pause_group_unresolved" });
@@ -240,5 +279,33 @@ describe("extractRawRequiredActions / hashCanonical", () => {
       }),
     ).toHaveLength(1);
     expect(hashCanonical({ b: 1, a: 2 })).toBe(hashCanonical({ a: 2, b: 1 }));
+  });
+
+  it("redacts nested sensitive keys and inline credentials", () => {
+    const redacted = redactProviderRequiredActionText({
+      prompt: "Use sk-provider-secret-value to continue",
+      nested: { password: "provider-password-value" },
+      commonFormats: [
+        "github_pat_11FAKECANARYTOKEN_abcdefghijklmnop",
+        "AKIAFAKECANARY123456",
+        "xoxb-fake-canary-token-123456",
+        "glpat-fake-canary-token-1234567890",
+        "npm_abcdefghijklmnopqrstuvwxyz123456",
+        "sk_live_abcdefghijklmnop123456",
+      ],
+    });
+    const serialized = JSON.stringify(redacted);
+    for (const canary of [
+      "provider-secret-value",
+      "provider-password-value",
+      "github_pat_",
+      "AKIAFAKE",
+      "xoxb-",
+      "glpat-",
+      "npm_",
+      "sk_live_",
+    ]) {
+      expect(serialized).not.toContain(canary);
+    }
   });
 });
