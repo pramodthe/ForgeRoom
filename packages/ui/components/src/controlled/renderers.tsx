@@ -280,13 +280,13 @@ export function ControlledArtifactCard(props: {
   show_preview: boolean;
   show_source: boolean;
   download_label: string;
+  downloadHref?: string;
   artifact?: {
     name?: string;
     mime_type?: string;
     revision?: number;
     preview_label?: string;
     creator_name?: string;
-    download_href?: string;
   };
 }) {
   const artifact = props.artifact ?? {};
@@ -312,9 +312,9 @@ export function ControlledArtifactCard(props: {
             {artifact.revision ? ` · rev ${artifact.revision}` : ""}
           </p>
         ) : null}
-        {artifact.download_href ? (
+        {props.downloadHref ? (
           <a
-            href={artifact.download_href}
+            href={props.downloadHref}
             className="mt-3 inline-flex text-xs font-medium text-violet-700 hover:text-violet-900"
           >
             {props.download_label}
@@ -355,6 +355,8 @@ export function ControlledChoiceForm(props: {
   onSubmit?: (values: Record<string, unknown>) => void;
   onCancel?: () => void;
   errors?: Record<string, string>;
+  formError?: string | null;
+  submitting?: boolean;
 }) {
   const [values, setValues] = useState<Record<string, unknown>>({});
   const fields = clampRows(props.fields, 12);
@@ -426,20 +428,28 @@ export function ControlledChoiceForm(props: {
           </fieldset>
         ))}
       </div>
-      <div className="flex gap-2 border-t border-zinc-100 p-4">
-        <button
-          type="submit"
-          className="rounded-lg bg-zinc-900 px-3 py-2 text-xs font-semibold text-white"
-        >
-          {props.submit_label}
-        </button>
-        <button
-          type="button"
-          className="rounded-lg border border-zinc-200 px-3 py-2 text-xs font-medium text-zinc-700"
-          onClick={props.onCancel}
-        >
-          {props.cancel_label}
-        </button>
+      <div className="border-t border-zinc-100 p-4">
+        {props.formError ? (
+          <p className="mb-3 text-xs text-red-700" role="alert">
+            {props.formError}
+          </p>
+        ) : null}
+        <div className="flex gap-2">
+          <button
+            type="submit"
+            disabled={props.submitting}
+            className="rounded-lg bg-zinc-900 px-3 py-2 text-xs font-semibold text-white disabled:opacity-60"
+          >
+            {props.submit_label}
+          </button>
+          <button
+            type="button"
+            className="rounded-lg border border-zinc-200 px-3 py-2 text-xs font-medium text-zinc-700"
+            onClick={props.onCancel}
+          >
+            {props.cancel_label}
+          </button>
+        </div>
       </div>
     </form>
   );

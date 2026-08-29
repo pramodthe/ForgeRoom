@@ -109,8 +109,23 @@ export const PARAMETER_SCHEMAS: Record<
           properties: {
             id: { type: "string" },
             label: { type: "string" },
+            description: { type: ["string", "null"] },
             kind: { type: "string" },
             required: { type: "boolean" },
+            options: {
+              type: "array",
+              maxItems: 20,
+              items: {
+                type: "object",
+                additionalProperties: false,
+                properties: {
+                  id: { type: "string" },
+                  label: { type: "string" },
+                  description: { type: ["string", "null"] },
+                },
+                required: ["id", "label"],
+              },
+            },
           },
           required: ["id", "label", "kind", "required"],
         },
