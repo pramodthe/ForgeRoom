@@ -204,6 +204,7 @@ export type {
   RunActivityCounters,
   RunStep,
   RunStepState,
+  AgentTurnState,
   RunCancelCommand,
   RunSteerCommand,
   RunEventSummary,

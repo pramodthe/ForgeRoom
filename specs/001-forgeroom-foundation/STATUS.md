@@ -4,10 +4,17 @@
 | --- | --- |
 | Overall | M0 Demo contract done; M1 Foundation done; P0-315/P0-317/P0-407/P0-316/P0-410/P0-408 done; P0-301–P0-314, P0-404, P0-405 done |
 | Current phase | Phase 1 — Foundation / M5 Verification |
+<<<<<<< HEAD
 | Active task | P0-504 (in_progress) |
 | Next task | Merge P0-504 #76 then run slice 3 providers E2E with secrets; then P0-501–P0-503 / P0-506 |
 | P0 blockers | Run-limit hard enforcement (P0-204/OD-008 evidence) |
 | Last updated | 2026-08-29 (P0-504 slice 3 providers harness; live run blocked on secrets) |
+=======
+| Active task | P0-501 (in_progress); P0-504 slice 3 (#77) awaiting CI after #76 merge |
+| Next task | P0-501 remaining unit gaps; finish P0-504 providers when secrets available; then P0-502 / P0-503 / P0-506 |
+| P0 blockers | Run-limit hard enforcement (P0-204/OD-008 evidence); P0-504 providers E2E needs secrets |
+| Last updated | 2026-08-29 (P0-501 slice 1; P0-504 #76 merged) |
+>>>>>>> d9bb0c4 (P0-501 slice 1: AgentTurn/PauseGroup/ActionProposal transition guards)
 
 ## Milestones
 

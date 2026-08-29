@@ -62,7 +62,7 @@ Each task file is authoritative for its status and evidence. Keep this index and
 | [x] | [P0-407](./tasks/P0-407-ux-accessibility.md) | Required states and accessibility | done | P0-402–P0-406, P0-316, P0-410 |
 | [x] | [P0-408](./tasks/P0-408-agui-rich-timeline.md) | AG-UI reducers and controlled rich timeline | done | P0-212, P0-315, P0-316, P0-403 |
 | [x] | [P0-410](./tasks/P0-410-coworker-task-skill-ui.md) | Coworker/Task/skill review flows | done | P0-109, P0-213, P0-318, P0-402, P0-406 |
-| [ ] | [P0-501](./tasks/P0-501-unit-suite.md) | Unit suite completion | blocked | P0-108, P0-109, P0-212, P0-213, P0-303, P0-306, P0-312, P0-314–P0-316, P0-318 |
+| [ ] | [P0-501](./tasks/P0-501-unit-suite.md) | Unit suite completion | in_progress | P0-108, P0-109, P0-212, P0-213, P0-303, P0-306, P0-312, P0-314–P0-316, P0-318 |
 | [ ] | [P0-502](./tasks/P0-502-integration-suite.md) | Runtime/integration suite | blocked | P0-109, P0-204, P0-208, P0-212, P0-213, P0-305, P0-309, P0-312, P0-313, P0-315, P0-318 |
 | [ ] | [P0-503](./tasks/P0-503-security-suite.md) | Core security acceptance | blocked | P0-104, P0-109, P0-208, P0-213, P0-303, P0-306–P0-309, P0-311–P0-314, P0-318 |
 | [ ] | [P0-504](./tasks/P0-504-browser-e2e.md) | Complete browser E2E | in_progress | P0-109, P0-213, P0-305, P0-309, P0-312, P0-313, P0-318, P0-407, P0-408, P0-410 |
