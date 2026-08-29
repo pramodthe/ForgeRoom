@@ -26,31 +26,43 @@ async function seedCompletedRun(sql: postgres.Sql) {
   `;
   await sql`
     INSERT INTO run_events (
-      id, agent_turn_id, normalized_type, normalized_payload_redacted_json, dedupe_key,
-      first_seen_at, last_seen_at
+      id, agent_turn_id, trueforge_event_id, thread_id,
+      normalized_payload_redacted_json, normalized_type, first_seen_at, updated_at
     ) VALUES (
-      're_1', 'turn_1', 'tool.succeeded',
+      're_1', 'turn_1', 'tf_evt_1', 'thread_1',
       ${JSON.stringify({
         type: "tool.succeeded",
         tool_name: "GITHUB_GET_AN_ISSUE",
         target: "pramodthe/ForgeRoom#35",
         result_summary: "Issue loaded",
       })}::jsonb,
-      'dedupe_tool_1', ${NOW}, ${NOW}
+      'tool.succeeded', ${NOW}, ${NOW}
     )
   `;
   await sql`
+    INSERT INTO pause_groups (
+      id, agent_turn_id, trueforge_turn_id, generation, state, required_action_count
+    )
+    VALUES ('pg_skill_1', 'turn_1', 'tf_turn_1', 1, 'collecting', 1)
+  `;
+  await sql`
+    INSERT INTO required_actions (
+      id, pause_group_id, provider_action_id, action_type, state, payload_redacted_json, payload_hash, created_at
+    )
+    VALUES ('ra_skill_1', 'pg_skill_1', 'prov_skill_1', 'approval', 'pending', '{}'::jsonb, ${HASH}, ${NOW})
+  `;
+  await sql`
     INSERT INTO action_proposals (
-      id, workspace_id, channel_id, run_id, run_step_id, agent_turn_id, coworker_id,
-      tool_name, state, redacted_arguments_json, arguments_hash, redacted_target_json,
-      target_hash, observed_descriptor_hash, approval_policy_hash, connector_binding_id,
-      account_id, acting_identity_json, expected_effect, risk_class, payload_hash,
-      session_generation, session_generation_id, expires_at, created_at
-    ) VALUES (
-      'ap_1', 'ws_1', 'ch_1', 'run_1', 'step_1', 'turn_1', 'cw_1',
-      'GITHUB_ADD_LABELS_TO_AN_ISSUE', 'allowed', '{}'::jsonb, ${HASH}, '{}'::jsonb,
-      ${HASH}, ${HASH}, ${HASH}, 'cb_1', 'acct_1', '{}'::jsonb, 'write', 'medium',
-      ${HASH}, 1, 'gen_1', ${NOW}, ${NOW}
+      id, required_action_id, run_id, run_step_id, agent_turn_id, tool_call_id, session_generation_id,
+      approval_policy_hash, connector_binding_id, tool_name, observed_descriptor_hash, acting_identity_json,
+      normalized_arguments_redacted_json, arguments_hash, target_redacted_json, target_hash,
+      risk_class, expected_effect, state, expires_at
+    )
+    VALUES (
+      'ap_1', 'ra_skill_1', 'run_1', 'step_1', 'turn_1', 'tc_write', 'gen_1',
+      ${HASH}, 'cb_1', 'GITHUB_ADD_LABELS_TO_AN_ISSUE', ${HASH}, '{}'::jsonb,
+      '{}'::jsonb, ${HASH}, '{}'::jsonb, ${HASH},
+      'medium', 'write', 'allowed', ${NOW}
     )
   `;
 }
