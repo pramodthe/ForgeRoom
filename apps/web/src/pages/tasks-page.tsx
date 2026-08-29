@@ -9,6 +9,7 @@ import {
   getTask,
   listChannels,
   listCoworkers,
+  listTaskHistory,
   listTasks,
   updateFixtureTaskStatus,
 } from "../api/workspace-api";
@@ -17,7 +18,11 @@ import { workspaceTaskDetailPath, workspaceTasksPath } from "../routes/paths";
 import { Avatar } from "../ui/avatar";
 import { useSession } from "../auth/session-context";
 import { useDialogFocus } from "../ui/use-dialog-focus";
-import { friendlyApiError, isStaleTaskRevision } from "./review-flow-helpers";
+import {
+  friendlyApiError,
+  formatTaskRevisionSummary,
+  isStaleTaskRevision,
+} from "./review-flow-helpers";
 
 const STATUS_STYLE: Record<TaskRecordV1["status"], string> = {
   todo: "bg-zinc-100 text-zinc-700",
@@ -186,9 +191,28 @@ export function TasksPage() {
               />
             ))}
             {visibleTasks.length === 0 ? (
-              <p className="px-4 py-8 text-center text-sm text-zinc-500">
-                No tasks match this filter.
-              </p>
+              <div className="px-4 py-10 text-center">
+                <p className="text-sm font-medium text-zinc-700">
+                  {tasks.length === 0 ? "No tasks yet" : "No tasks match this filter"}
+                </p>
+                <p className="mt-1 text-sm text-zinc-500">
+                  {tasks.length === 0
+                    ? "Create a task to track work shared across the workspace."
+                    : "Try a different filter or create a new task."}
+                </p>
+                {tasks.length === 0 ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCreateError(null);
+                      setCreateOpen(true);
+                    }}
+                    className="mt-4 rounded-xl bg-zinc-950 px-4 py-2.5 text-sm font-semibold text-white"
+                  >
+                    + New task
+                  </button>
+                ) : null}
+              </div>
             ) : null}
           </div>
         </section>
@@ -384,9 +408,18 @@ export function TaskDetailPage() {
     queryKey: ["coworkers", workspaceId],
     queryFn: () => listCoworkers(workspaceId),
   });
-  if (taskQuery.isLoading || channelsQuery.isLoading || coworkersQuery.isLoading)
+  const historyQuery = useQuery({
+    queryKey: ["task-history", workspaceId, taskId],
+    queryFn: () => listTaskHistory(workspaceId, taskId),
+  });
+  if (
+    taskQuery.isLoading ||
+    channelsQuery.isLoading ||
+    coworkersQuery.isLoading ||
+    historyQuery.isLoading
+  )
     return <LoadingState title="Loading task…" />;
-  if (taskQuery.error || channelsQuery.error || coworkersQuery.error)
+  if (taskQuery.error || channelsQuery.error || coworkersQuery.error || historyQuery.error)
     return <RouteErrorState title="Unable to load task" />;
   const task = taskQuery.data;
   if (!task) {
@@ -402,6 +435,7 @@ export function TaskDetailPage() {
     task.assignee_type === "coworker" && task.assignee_id
       ? (coworkersQuery.data ?? []).find((candidate) => candidate.id === task.assignee_id)
       : null;
+  const revisions = historyQuery.data ?? [];
 
   return (
     <main className="min-h-0 flex-1 overflow-y-auto bg-zinc-50/60">
@@ -438,20 +472,34 @@ export function TaskDetailPage() {
               </button>
             </div>
             <div className="mt-7 border-t border-zinc-100 pt-5">
-              <h2 className="text-sm font-semibold text-zinc-900">Activity</h2>
+              <h2 className="text-sm font-semibold text-zinc-900">Revision history</h2>
               <div className="mt-4 space-y-5">
-                <History
-                  title="Task created"
-                  detail={`Created by ${task.created_by_type} ${task.created_by_id}`}
-                  time={formatDateTime(task.created_at)}
-                  tone="blue"
-                />
-                <History
-                  title={`Status: ${task.status.replace("_", " ")}`}
-                  detail={`Current revision ${task.current_revision}`}
-                  time={formatDateTime(task.updated_at)}
-                  tone="violet"
-                />
+                {revisions.length > 0 ? (
+                  revisions.map((revision) => {
+                    const summary = formatTaskRevisionSummary(revision);
+                    const tone = revision.changed_fields.includes("created")
+                      ? "blue"
+                      : revision.changed_fields.includes("status")
+                        ? "violet"
+                        : "amber";
+                    return (
+                      <History
+                        key={revision.id}
+                        title={summary.title}
+                        detail={summary.detail}
+                        time={formatDateTime(revision.created_at)}
+                        tone={tone}
+                      />
+                    );
+                  })
+                ) : (
+                  <History
+                    title="Task created"
+                    detail={`Created by ${task.created_by_type} ${task.created_by_id}`}
+                    time={formatDateTime(task.created_at)}
+                    tone="blue"
+                  />
+                )}
                 {task.source_run_id ? (
                   <History
                     title="Linked to source run"
@@ -541,6 +589,7 @@ function TaskTransitionPanel({ workspaceId, task }: { workspaceId: string; task:
       setPendingStatus(null);
       queryClient.setQueryData(["task", workspaceId, task.id], updated);
       await queryClient.invalidateQueries({ queryKey: ["tasks", workspaceId] });
+      await queryClient.invalidateQueries({ queryKey: ["task-history", workspaceId, task.id] });
     },
     onError: async (error, status) => {
       if (isStaleTaskRevision(error)) {

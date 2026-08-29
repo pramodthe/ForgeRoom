@@ -1,4 +1,10 @@
-import { coworkerDraftSchema, type CoworkerDraft } from "@forgeroom/contracts";
+import {
+  coworkerDraftSchema,
+  type CoworkerDraft,
+  type CoworkerDraftState,
+  type TaskRevision,
+} from "@forgeroom/contracts";
+import { getCoworkerDraft } from "../api/workspace-api";
 import { ApiError } from "../api/http-client";
 
 const COWORKER_DRAFT_STORAGE_PREFIX = "forgeroom:review:coworker-draft:";
@@ -122,4 +128,88 @@ export function buildFixtureCoworkerDraft(workspaceId: string, _request: string)
 
 export function formatTaskRecordGrant(grant: { channel_id: string; operations: string[] }): string {
   return `${grant.channel_id}: ${grant.operations.join(", ")}`;
+}
+
+export type ToolRiskClass = "read" | "write" | "destructive";
+
+export function classifyToolRisk(toolName: string): ToolRiskClass {
+  const normalized = toolName.toUpperCase();
+  if (
+    normalized.includes("DELETE") ||
+    normalized.includes("REMOVE") ||
+    normalized.includes("DESTROY")
+  ) {
+    return "destructive";
+  }
+  if (
+    normalized.includes("ADD") ||
+    normalized.includes("CREATE") ||
+    normalized.includes("UPDATE") ||
+    normalized.includes("WRITE") ||
+    normalized.includes("POST") ||
+    normalized.includes("PUT") ||
+    normalized.includes("PATCH")
+  ) {
+    return "write";
+  }
+  return "read";
+}
+
+export function summarizeToolEffects(tools: string[]): Record<ToolRiskClass, string[]> {
+  const grouped: Record<ToolRiskClass, string[]> = { read: [], write: [], destructive: [] };
+  for (const tool of tools) {
+    grouped[classifyToolRisk(tool)].push(tool.replaceAll("_", " "));
+  }
+  return grouped;
+}
+
+const TERMINAL_COWORKER_DRAFT_STATES = new Set<CoworkerDraftState>([
+  "ready",
+  "failed_provisioning",
+  "expired",
+  "rejected",
+  "superseded",
+]);
+
+export function isTerminalCoworkerDraftState(state: CoworkerDraftState): boolean {
+  return TERMINAL_COWORKER_DRAFT_STATES.has(state);
+}
+
+export async function pollCoworkerDraftUntilTerminal(
+  draftId: string,
+  options?: { intervalMs?: number; maxAttempts?: number },
+): Promise<CoworkerDraft> {
+  const intervalMs = options?.intervalMs ?? 750;
+  const maxAttempts = options?.maxAttempts ?? 40;
+  let latest = await getCoworkerDraft({ draftId });
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    if (isTerminalCoworkerDraftState(latest.state)) return latest;
+    await new Promise((resolve) => window.setTimeout(resolve, intervalMs));
+    latest = await getCoworkerDraft({ draftId });
+  }
+  return latest;
+}
+
+export function formatTaskRevisionSummary(revision: TaskRevision): {
+  title: string;
+  detail: string;
+} {
+  if (revision.changed_fields.includes("created")) {
+    const status = revision.data.status;
+    return {
+      title: "Task created",
+      detail: `Initial status ${typeof status === "string" ? status.replace("_", " ") : "todo"}`,
+    };
+  }
+  if (revision.changed_fields.includes("status")) {
+    const status = revision.data.status;
+    return {
+      title: `Status → ${typeof status === "string" ? status.replace("_", " ") : "updated"}`,
+      detail: `Revision ${revision.revision} by ${revision.actor_type}`,
+    };
+  }
+  return {
+    title: `Updated ${revision.changed_fields.join(", ")}`,
+    detail: `Revision ${revision.revision} by ${revision.actor_type}`,
+  };
 }

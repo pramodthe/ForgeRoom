@@ -15,6 +15,7 @@ import {
   listChannelRoster,
   listCoworkers,
   listSkillVersions,
+  listTaskHistory,
   listTasks,
   postChannelMessage,
   publishFixtureRunSkill,
@@ -218,6 +219,15 @@ describe("mock fixtures", () => {
     });
     expect(task.title).toBe("Follow up on support review");
     expect((await getTask(MOCK_WORKSPACE_ID, task.id))?.current_revision).toBe(1);
+    const history = await listTaskHistory(MOCK_WORKSPACE_ID, task.id);
+    expect(history).toHaveLength(1);
+    expect(history[0]?.changed_fields).toEqual(["created"]);
+  });
+
+  it("returns seeded fixture task revision history", async () => {
+    const history = await listTaskHistory(MOCK_WORKSPACE_ID, "task_review_002");
+    expect(history.map((revision) => revision.revision)).toEqual([1]);
+    expect(history[0]?.changed_fields).toEqual(["created"]);
   });
 
   it("persists fixture approval decisions through the API adapter", async () => {
