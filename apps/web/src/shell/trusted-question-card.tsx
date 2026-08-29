@@ -1,7 +1,7 @@
 import { useId } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { QuestionCard } from "@forgeroom/contracts";
-import { formatQuestionPromptLabel } from "@forgeroom/domain";
+import { formatQuestionPromptLabel } from "@forgeroom/domain/runs/drawer";
 import { getQuestionCard, postQuestionAnswer } from "../api/channel-resources-api";
 import { ApiError } from "../api/http-client";
 import { useSession } from "../auth/session-context";
