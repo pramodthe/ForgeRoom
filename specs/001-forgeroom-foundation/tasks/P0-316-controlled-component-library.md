@@ -20,7 +20,7 @@ Coworkers can answer inline with a small, polished, accessible table/chart/task/
 
 - [x] Implement exactly the P0 agent-tool set: DataTable, BarOrLineChart, TaskCard, ArtifactCard and bounded ChoiceForm; privileged HITL renderers are server-only and never offered.
 - [x] Use the pinned official AG-UI client with the application-owned registry/default fallback; optional CopilotKit render hooks are used only if P0-210 enables a coherent graph, without conditional hook ordering or approval bypass.
-- [ ] Render preparing, streaming, ready, waiting, refused, stale, incompatible and failed states without raw JSON. *(slice 1: degraded/stale/refused labels; waiting/streaming chrome deferred)*
+- [x] Render preparing, streaming, ready, waiting, refused, stale, incompatible and failed states without raw JSON.
 - [x] Charts have data-table summaries, artifacts retain authenticated revisions/labels and forms have labels/errors.
 - [x] Enforce row/series/point/byte limits and deterministic theme tokens.
 - [x] Arbitrary URLs, HTML, scripts, prototype keys and unsafe SVG never reach a renderer. *(slice 1: ArtifactCard download hardening)*
@@ -31,7 +31,12 @@ Coworkers can answer inline with a small, polished, accessible table/chart/task/
 ## Work log
 
 - 2026-08-29: Slice 1 — ChoiceForm submit wired through interaction token + commit (`complete_component_interrupt`); ArtifactCard downloads use server artifact IDs only; degraded/stale lifecycle chrome; artifact URL safety tests.
+- 2026-08-29: Slice 2 — streaming/waiting/incompatible presentation phases; fixture gallery + limit/XSS prop tests; expanded ChoiceForm field schema for client validation.
 
 ## Verification
 
 Run schema/limit/XSS/image tests, Storybook or fixture gallery review, axe checks and 1440 px visual snapshots.
+
+- [x] Fixture gallery validates all `provider-fixtures/controlled-ui/*` props client-side.
+- [x] Limit and prototype-key/XSS-string prop tests in `@forgeroom/ui-components`.
+- [ ] axe and 1440 px visual snapshots (deferred; no Storybook harness in P0 slice).

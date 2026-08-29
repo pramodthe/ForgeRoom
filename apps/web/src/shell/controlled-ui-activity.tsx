@@ -115,6 +115,7 @@ export function ControlledUiActivity({ content }: ControlledUiActivityProps) {
           status={content.status}
           textAlternative={content.textAlternative}
           validatedProps={null}
+          streaming
         />
       </ControlledComponentSlot>
     );
@@ -129,6 +130,7 @@ export function ControlledUiActivity({ content }: ControlledUiActivityProps) {
           status="building"
           textAlternative={content.textAlternative}
           validatedProps={null}
+          streaming
         />
       </ControlledComponentSlot>
     );
@@ -201,6 +203,7 @@ export function ControlledUiActivity({ content }: ControlledUiActivityProps) {
         }
         choiceFormError={choiceSubmit.error ? choiceSubmitErrorMessage(choiceSubmit.error) : null}
         choiceFormSubmitting={choiceSubmit.isPending}
+        waitingForInput={replay.componentName === "ChoiceForm" && interactionEnabled}
       />
     </ControlledComponentSlot>
   );

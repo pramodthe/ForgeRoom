@@ -48,4 +48,28 @@ describe("validateControlledProps", () => {
     });
     expect(result.ok).toBe(false);
   });
+
+  it("rejects tables that exceed the column limit", () => {
+    const result = validateControlledProps("DataTable", {
+      caption: "Records",
+      empty_text: "None",
+      columns: Array.from({ length: 26 }, (_, index) => ({
+        key: `col_${index}`,
+        label: `Column ${index}`,
+      })),
+    });
+    expect(result.ok).toBe(false);
+  });
+
+  it("accepts text props containing angle brackets without treating them as HTML", () => {
+    const result = validateControlledProps("DataTable", {
+      caption: "<script>alert(1)</script>",
+      empty_text: "None",
+      columns: [{ key: "id", label: "ID" }],
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.caption).toBe("<script>alert(1)</script>");
+    }
+  });
 });

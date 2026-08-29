@@ -42,7 +42,36 @@ export function InertControlledState({
   textAlternative: string;
 }) {
   return (
-    <StateCard title="Component unavailable" detail={reason} textAlternative={textAlternative} />
+    <StateCard title="Incompatible component" detail={reason} textAlternative={textAlternative} />
+  );
+}
+
+export function StreamingControlledState({ textAlternative }: { textAlternative?: string }) {
+  return (
+    <StateCard
+      title="Streaming component"
+      detail="Validated props are arriving. The transcript remains available below."
+      textAlternative={textAlternative}
+    />
+  );
+}
+
+export function WaitingControlledState({
+  textAlternative,
+  children,
+}: {
+  textAlternative: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className="space-y-2">
+      <StateCard
+        title="Waiting for input"
+        detail="Complete the bounded choices below. Your answer stays in this channel."
+        textAlternative={textAlternative}
+      />
+      {children}
+    </div>
   );
 }
 

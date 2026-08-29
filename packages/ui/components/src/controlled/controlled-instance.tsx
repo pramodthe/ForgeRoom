@@ -15,7 +15,10 @@ import {
   DegradedControlledState,
   InertControlledState,
   PreparingControlledState,
+  StreamingControlledState,
+  WaitingControlledState,
 } from "./instance-states";
+import { resolveControlledPresentationPhase } from "./presentation-phase";
 import { validateControlledProps } from "./validate-props";
 import { safeArtifactDownloadPath } from "./artifact-download";
 
@@ -38,6 +41,8 @@ export type ControlledInstanceProps = {
   onSubmitChoice?: (values: Record<string, unknown>) => void;
   choiceFormError?: string | null;
   choiceFormSubmitting?: boolean;
+  streaming?: boolean;
+  waitingForInput?: boolean;
 };
 
 function readRows(data?: ControlledInstanceData): Array<Record<string, string | number>> {
@@ -173,17 +178,35 @@ export function ControlledInstance({
   onSubmitChoice,
   choiceFormError,
   choiceFormSubmitting,
+  streaming = false,
+  waitingForInput = false,
 }: ControlledInstanceProps) {
-  if (status === "building" || validatedProps === null) {
+  const validation =
+    validatedProps === null ? null : validateControlledProps(componentName, validatedProps);
+  const phase = resolveControlledPresentationPhase({
+    status,
+    validatedProps,
+    streaming,
+    waitingForInput,
+    incompatibleReason: validation && !validation.ok ? validation.reason : null,
+  });
+
+  if (phase === "preparing") {
     return <PreparingControlledState textAlternative={textAlternative} />;
   }
-  if (status === "revoked" || status === "failed" || status === "closed") {
+  if (phase === "streaming") {
+    return <StreamingControlledState textAlternative={textAlternative} />;
+  }
+  if (phase === "refused" || phase === "failed" || phase === "closed") {
     return <ControlledStatusFallback status={status} textAlternative={textAlternative} />;
   }
-
-  const validation = validateControlledProps(componentName, validatedProps);
-  if (!validation.ok) {
-    return <InertControlledState reason={validation.reason} textAlternative={textAlternative} />;
+  if (phase === "incompatible" || !validation || !validation.ok) {
+    return (
+      <InertControlledState
+        reason={validation && !validation.ok ? validation.reason : "Props are invalid."}
+        textAlternative={textAlternative}
+      />
+    );
   }
 
   const rendered = renderValidatedComponent(
@@ -209,9 +232,15 @@ export function ControlledInstance({
     </ComponentHostBoundary>
   );
 
-  if (status === "degraded") {
+  if (phase === "stale") {
     return (
       <DegradedControlledState textAlternative={textAlternative}>{content}</DegradedControlledState>
+    );
+  }
+
+  if (phase === "waiting") {
+    return (
+      <WaitingControlledState textAlternative={textAlternative}>{content}</WaitingControlledState>
     );
   }
 

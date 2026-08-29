@@ -19,6 +19,7 @@
     "react": "^19.0.0"
   },
   "devDependencies": {
+    "@forgeroom/test-fixtures": "workspace:*",
     "@types/node": "catalog:",
     "@types/react": "catalog:",
     "react": "catalog:",
