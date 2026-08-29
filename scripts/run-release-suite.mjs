@@ -1,6 +1,8 @@
 import { spawnSync } from "node:child_process";
-import { fileURLToPath } from "node:url";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const [nodeMajor, nodeMinor] = process.versions.node.split(".").map(Number);
 if (nodeMajor < 22 || (nodeMajor === 22 && nodeMinor < 12)) {
@@ -202,27 +204,58 @@ if (!selected) {
   process.exit(2);
 }
 
-for (const group of selected) {
+function runGroup(group) {
   console.log(`\n[${suiteName}] ${group.package}`);
   const workspaceDirectory = workspaceDirectories[group.package];
   if (!workspaceDirectory) {
-    console.error(`Release suite has no workspace directory for ${group.package}.`);
-    process.exit(2);
+    throw new Error(`Release suite has no workspace directory for ${group.package}.`);
   }
-  const args = [vitestCli, "run", ...group.files];
+  const reportDirectory = mkdtempSync(join(tmpdir(), "forgeroom-release-suite-"));
+  const reportPath = join(reportDirectory, "vitest.json");
+  const args = [
+    vitestCli,
+    "run",
+    ...group.files,
+    "--reporter=default",
+    "--reporter=json",
+    `--outputFile.json=${reportPath}`,
+  ];
   if (group.workers) {
     args.push(`--maxWorkers=${group.workers}`);
   }
-  const result = spawnSync(process.execPath, args, {
-    cwd: join(repositoryRoot, workspaceDirectory),
-    stdio: "inherit",
-    env: process.env,
-  });
-  if (result.error) {
-    console.error(result.error.message);
-    process.exit(1);
+
+  try {
+    const result = spawnSync(process.execPath, args, {
+      cwd: join(repositoryRoot, workspaceDirectory),
+      stdio: "inherit",
+      env: process.env,
+    });
+    if (result.error) {
+      throw result.error;
+    }
+    if (result.status !== 0) {
+      throw new Error(`${group.package} failed with exit code ${String(result.status ?? 1)}.`);
+    }
+
+    const report = JSON.parse(readFileSync(reportPath, "utf8"));
+    const total = Number(report.numTotalTests);
+    const skipped = Number(report.numPendingTests) + Number(report.numTodoTests);
+    if (!Number.isInteger(total) || total < 1) {
+      throw new Error(`${group.package} did not execute any tests.`);
+    }
+    if (!Number.isInteger(skipped) || skipped !== 0) {
+      throw new Error(`${group.package} reported ${String(skipped)} skipped or todo tests.`);
+    }
+  } finally {
+    rmSync(reportDirectory, { recursive: true, force: true });
   }
-  if (result.status !== 0) {
-    process.exit(result.status ?? 1);
+}
+
+try {
+  for (const group of selected) {
+    runGroup(group);
   }
+} catch (error) {
+  console.error(error instanceof Error ? error.message : error);
+  process.exit(1);
 }

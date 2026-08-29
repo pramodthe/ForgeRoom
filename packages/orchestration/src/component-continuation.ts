@@ -32,7 +32,9 @@ export function buildComponentContinuationTurnInput(
   responsePayloadHash: string;
   redactedSummary: Record<string, unknown>;
 } {
-  const content = canonicalizeJson(args.response.resultRedacted);
+  // Response-only turns cannot mix in a user.message marker. Put the non-secret application
+  // token in the tool-response content so provider history retains the full create intent.
+  const content = `[[forgeroom:application_run_token=${args.applicationRunToken}]]\n${canonicalizeJson(args.response.resultRedacted)}`;
   const input: TurnInputItem[] = [
     {
       type: "user.tool_response",

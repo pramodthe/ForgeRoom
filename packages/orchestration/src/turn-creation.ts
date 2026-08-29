@@ -52,10 +52,10 @@ export function extractApplicationRunTokenFromInput(input: TurnInputItem[]): str
 
 export type HistoryMatch = {
   turn: TrueForgeTurn;
-  matchedBy: "application_run_token" | "input_hash";
+  matchedBy: "application_run_token_and_input_hash";
 };
 
-/** Prefer application token match; fall back to predecessor + input hash. */
+/** Require one exact application token + predecessor + input hash match. */
 export function matchTurnFromHistory(args: {
   turns: TrueForgeTurn[];
   applicationRunToken: string;
@@ -70,15 +70,15 @@ export function matchTurnFromHistory(args: {
       continue;
     }
     const token = extractApplicationRunTokenFromInput(turn.input ?? []);
-    if (token === args.applicationRunToken) {
-      return { turn, matchedBy: "application_run_token" };
+    if (token !== args.applicationRunToken) {
+      continue;
     }
     const hash = hashTurnCreateIntent({
       input: turn.input ?? [],
       previousTurnId: previous === null ? "none" : previous,
     });
     if (hash === args.inputHash) {
-      return { turn, matchedBy: "input_hash" };
+      return { turn, matchedBy: "application_run_token_and_input_hash" };
     }
   }
   return null;
@@ -107,8 +107,8 @@ export function decideCreateOrReconcile(args: {
       return false;
     }
     const token = extractApplicationRunTokenFromInput(turn.input ?? []);
-    if (token === args.applicationRunToken) {
-      return true;
+    if (token !== args.applicationRunToken) {
+      return false;
     }
     const hash = hashTurnCreateIntent({
       input: turn.input ?? [],
