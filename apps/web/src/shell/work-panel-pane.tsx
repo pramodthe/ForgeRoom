@@ -56,6 +56,7 @@ export function WorkPanelPane(props: { workspaceId: string; channelId: string; c
             channelId={props.channelId}
             roster={rosterQuery.data?.coworkers ?? []}
             runs={workroomUi.runs}
+            archived={props.channel.status === "archived"}
             onOpenRun={workroomUi.openRunDrawer}
           />
         ) : activeTab === "Artifacts" ? (

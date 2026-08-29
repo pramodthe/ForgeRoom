@@ -12,6 +12,7 @@ import { useDialogFocus } from "../ui/use-dialog-focus";
 import { PoliteStatus } from "./polite-status";
 import { PinSourceButton } from "./pin-source-button";
 import { pinLabelFromArtifactName } from "./pin-source-label";
+import { OpenHitlCardButton } from "./open-hitl-card-button";
 
 type RunDetailDrawerProps = {
   workspaceId: string;
@@ -382,15 +383,18 @@ function LiveRunDetailDrawer({
                           </div>
                           <div className="mt-1 text-zinc-600">{decision.label}</div>
                         </div>
-                        <span
-                          className={`shrink-0 rounded-full px-2 py-0.5 font-medium capitalize ${
-                            decision.waiting
-                              ? "bg-amber-50 text-amber-700"
-                              : "bg-emerald-50 text-emerald-700"
-                          }`}
-                        >
-                          {decision.state.replaceAll("_", " ")}
-                        </span>
+                        <div className="flex shrink-0 flex-col items-end gap-2">
+                          <OpenHitlCardButton decision={decision} />
+                          <span
+                            className={`rounded-full px-2 py-0.5 font-medium capitalize ${
+                              decision.waiting
+                                ? "bg-amber-50 text-amber-700"
+                                : "bg-emerald-50 text-emerald-700"
+                            }`}
+                          >
+                            {decision.state.replaceAll("_", " ")}
+                          </span>
+                        </div>
                       </li>
                     ))}
                   </ul>

@@ -41,6 +41,7 @@ export type ControlledInstanceProps = {
   onSubmitChoice?: (values: Record<string, unknown>) => void;
   choiceFormError?: string | null;
   choiceFormSubmitting?: boolean;
+  onRequestOpenHitlCard?: (input: { kind: "approval" | "question"; id: string }) => void;
   streaming?: boolean;
   waitingForInput?: boolean;
 };
@@ -178,6 +179,7 @@ export function ControlledInstance({
   onSubmitChoice,
   choiceFormError,
   choiceFormSubmitting,
+  onRequestOpenHitlCard: _onRequestOpenHitlCard,
   streaming = false,
   waitingForInput = false,
 }: ControlledInstanceProps) {

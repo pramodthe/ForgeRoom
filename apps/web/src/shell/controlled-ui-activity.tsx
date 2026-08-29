@@ -12,6 +12,7 @@ import {
   choiceSubmitErrorMessage,
   useControlledChoiceSubmit,
 } from "./use-controlled-choice-submit";
+import { useTrustedHitlHost } from "./trusted-hitl-host-context";
 
 type ControlledUiActivityProps = {
   content: Extract<ForgeRoomActivityContent, { activityType: "forgeroom.controlled_ui.v1" }>;
@@ -63,6 +64,7 @@ function resolveArtifactId(
 export function ControlledUiActivity({ content }: ControlledUiActivityProps) {
   const { session } = useSession();
   const choiceSubmit = useControlledChoiceSubmit(content.surfaceId);
+  const { openExistingCard } = useTrustedHitlHost();
   const replayQuery = useQuery({
     queryKey: ["ui-instance-replay", content.surfaceId],
     queryFn: () => getUiInstanceReplay(content.surfaceId),
@@ -204,6 +206,7 @@ export function ControlledUiActivity({ content }: ControlledUiActivityProps) {
         choiceFormError={choiceSubmit.error ? choiceSubmitErrorMessage(choiceSubmit.error) : null}
         choiceFormSubmitting={choiceSubmit.isPending}
         waitingForInput={replay.componentName === "ChoiceForm" && interactionEnabled}
+        onRequestOpenHitlCard={openExistingCard}
       />
     </ControlledComponentSlot>
   );
