@@ -5,11 +5,14 @@ import {
   buildFixtureCoworkerDraft,
   clearCoworkerDraftReview,
   formatTaskRecordGrant,
+  formatTaskRevisionSummary,
   friendlyApiError,
   isStaleTaskRevision,
+  isTerminalCoworkerDraftState,
   parseCoworkerDraftFromError,
   persistCoworkerDraftReview,
   readCoworkerDraftReview,
+  summarizeToolEffects,
 } from "./review-flow-helpers";
 
 describe("review flow helpers", () => {
@@ -76,5 +79,39 @@ describe("review flow helpers", () => {
     const draft = coworkerDraftSchema.parse(buildFixtureCoworkerDraft("workspace_1", "x"));
     const error = new ApiError("stale_coworker_draft", "Stale", 409, { draft });
     expect(parseCoworkerDraftFromError(error)?.id).toBe(draft.id);
+  });
+
+  it("classifies tool effects into read, write, and destructive buckets", () => {
+    const effects = summarizeToolEffects([
+      "GITHUB_GET_ISSUES",
+      "GITHUB_ADD_LABELS_TO_AN_ISSUE",
+      "GITHUB_REMOVE_LABEL_FROM_AN_ISSUE",
+    ]);
+    expect(effects.read).toContain("GITHUB GET ISSUES");
+    expect(effects.write).toContain("GITHUB ADD LABELS TO AN ISSUE");
+    expect(effects.destructive).toContain("GITHUB REMOVE LABEL FROM AN ISSUE");
+  });
+
+  it("formats task revision summaries for history rendering", () => {
+    const summary = formatTaskRevisionSummary({
+      schemaVersion: 1,
+      id: "trev_1",
+      task_id: "task_1",
+      revision: 2,
+      data: { schemaVersion: 1, status: "in_progress" },
+      data_hash: "sha256:abc",
+      changed_fields: ["status"],
+      actor_type: "human",
+      actor_id: "user_1",
+      command_id: "cmd_1",
+      created_at: "2026-08-20T12:00:00.000Z",
+    });
+    expect(summary.title).toContain("in progress");
+    expect(summary.detail).toContain("Revision 2");
+  });
+
+  it("recognizes terminal coworker draft states", () => {
+    expect(isTerminalCoworkerDraftState("ready")).toBe(true);
+    expect(isTerminalCoworkerDraftState("provisioning")).toBe(false);
   });
 });

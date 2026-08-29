@@ -22,6 +22,7 @@ import type {
   SkillBindingCreateCommand,
   SkillVersion,
   TaskRecordV1,
+  TaskRevision,
   TaskStatus,
   TaskCreateCommand,
   ConnectionListItem,
@@ -49,6 +50,7 @@ import {
   skillDraftSchema,
   skillVersionSchema,
   taskRecordV1Schema,
+  taskRevisionSchema,
 } from "@forgeroom/contracts";
 import { canTransitionTask } from "@forgeroom/domain/transitions";
 import type { ConnectionFixture } from "./mock-fixtures";
@@ -79,6 +81,7 @@ export type CoworkerDetail = CoworkerProfile & { config: CoworkerEditableConfig 
 const fixtureCoworkers = new Map<string, CoworkerDetail>();
 const fixtureTimelines = new Map<string, ChannelTimelineMessagesResponse>();
 const fixtureTasks = new Map<string, TaskRecordV1>();
+const fixtureTaskRevisions = new Map<string, TaskRevision[]>();
 let fixtureRunSkill: SkillVersion | null = null;
 export type FixtureApprovalDecision = "pending" | "approved" | "denied" | "changes_requested";
 const fixtureApprovalDecisions = new Map<string, FixtureApprovalDecision>();
@@ -289,6 +292,108 @@ function getFixtureTaskById(taskId: string): TaskRecordV1 | null {
     storage.removeItem(storageKey);
     return null;
   }
+}
+
+function fixtureTaskRevisionData(task: TaskRecordV1): TaskRevision["data"] {
+  return {
+    schemaVersion: task.schemaVersion,
+    id: task.id,
+    workspace_id: task.workspace_id,
+    channel_id: task.channel_id,
+    title: task.title,
+    description: task.description,
+    status: task.status,
+    assignee_type: task.assignee_type,
+    assignee_id: task.assignee_id,
+    source_message_id: task.source_message_id,
+    source_run_id: task.source_run_id,
+    due_at: task.due_at,
+    current_revision: task.current_revision,
+    created_by_type: task.created_by_type,
+    created_by_id: task.created_by_id,
+    created_at: task.created_at,
+    updated_at: task.updated_at,
+  };
+}
+
+function buildFixtureTaskRevision(input: {
+  task: TaskRecordV1;
+  changedFields: string[];
+  actorType?: "human" | "coworker";
+  actorId?: string;
+}): TaskRevision {
+  const data = fixtureTaskRevisionData(input.task);
+  return taskRevisionSchema.parse({
+    schemaVersion: 1,
+    id: `trev_${crypto.randomUUID().replace(/-/g, "").slice(0, 12)}`,
+    task_id: input.task.id,
+    revision: input.task.current_revision,
+    data,
+    data_hash: `sha256:${crypto.randomUUID().replace(/-/g, "")}${crypto.randomUUID().replace(/-/g, "")}`,
+    changed_fields: input.changedFields,
+    actor_type: input.actorType ?? "human",
+    actor_id: input.actorId ?? MOCK_SESSION.user.id,
+    command_id: `cmd_${crypto.randomUUID().replace(/-/g, "").slice(0, 12)}`,
+    created_at: input.task.updated_at,
+  });
+}
+
+function appendFixtureTaskRevision(
+  task: TaskRecordV1,
+  changedFields: string[],
+  options?: { baseline?: TaskRecordV1 },
+): void {
+  let history = fixtureTaskRevisions.get(task.id) ?? [];
+  if (history.length === 0) {
+    const seeded = seedFixtureTaskHistory(task.id);
+    if (seeded.length > 0) {
+      history = seeded;
+      fixtureTaskRevisions.set(task.id, history);
+    }
+  }
+  if (history.length === 0 && task.current_revision > 1) {
+    const baseline =
+      options?.baseline ??
+      taskRecordV1Schema.parse({
+        ...task,
+        current_revision: 1,
+        updated_at: task.created_at,
+      });
+    history.push(
+      buildFixtureTaskRevision({
+        task: taskRecordV1Schema.parse({ ...baseline, current_revision: 1 }),
+        changedFields: ["created"],
+      }),
+    );
+  }
+  const latest = history[history.length - 1];
+  if (latest?.revision === task.current_revision) return;
+  history.push(buildFixtureTaskRevision({ task, changedFields }));
+  fixtureTaskRevisions.set(task.id, history);
+}
+
+function seedFixtureTaskHistory(taskId: string): TaskRevision[] {
+  const existing = fixtureTaskRevisions.get(taskId);
+  if (existing) return existing;
+  const task = getFixtureTaskById(taskId);
+  if (!task) return [];
+  if (taskId === "task_reconcile_001") {
+    const created = taskRecordV1Schema.parse({
+      ...task,
+      status: "todo",
+      current_revision: 1,
+      updated_at: task.created_at,
+    });
+    const history = [
+      buildFixtureTaskRevision({ task: created, changedFields: ["created"] }),
+      buildFixtureTaskRevision({ task, changedFields: ["status"] }),
+    ];
+    fixtureTaskRevisions.set(taskId, history);
+    return history;
+  }
+  const history = [buildFixtureTaskRevision({ task, changedFields: ["created"] })];
+  fixtureTaskRevisions.set(taskId, history);
+  return history;
 }
 
 function storedFixtureRunSkill(): SkillVersion | null {
@@ -523,6 +628,7 @@ export async function createTask(input: {
       updated_at: now,
     });
     persistFixtureTask(task);
+    appendFixtureTaskRevision(task, ["created"]);
     return task;
   }
   const body = await apiFetch<{ task: unknown; request_id: string }>(
@@ -551,6 +657,24 @@ export async function getTask(workspaceId: string, taskId: string): Promise<Task
     if (error instanceof ApiError && error.status === 404) return null;
     throw error;
   }
+}
+
+export async function listTaskHistory(
+  workspaceId: string,
+  taskId: string,
+): Promise<TaskRevision[]> {
+  if (useMockApi) {
+    assertWorkspace(workspaceId);
+    const task = getFixtureTaskById(taskId);
+    if (!task) return [];
+    const history = fixtureTaskRevisions.get(taskId);
+    if (history && history.length > 0) return history;
+    return seedFixtureTaskHistory(taskId);
+  }
+  const body = await apiFetch<{ revisions: unknown[]; request_id: string }>(
+    `/api/tasks/${encodeURIComponent(taskId)}/history`,
+  );
+  return taskRevisionSchema.array().parse(stripRequestId(body).revisions);
 }
 
 export async function updateFixtureTaskStatus(input: {
@@ -591,6 +715,7 @@ export async function updateFixtureTaskStatus(input: {
       updated_at: new Date().toISOString(),
     });
     persistFixtureTask(updated);
+    appendFixtureTaskRevision(updated, ["status"], { baseline: current });
     return updated;
   };
 

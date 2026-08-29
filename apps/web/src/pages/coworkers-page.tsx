@@ -28,7 +28,9 @@ import {
   friendlyApiError,
   parseCoworkerDraftFromError,
   persistCoworkerDraftReview,
+  pollCoworkerDraftUntilTerminal,
   readCoworkerDraftReview,
+  summarizeToolEffects,
 } from "./review-flow-helpers";
 import { approvalPolicyLines, summarizeCoworkerGrants } from "./settings-helpers";
 
@@ -189,7 +191,41 @@ function CoworkerBuilder({
     const draftId = readCoworkerDraftReview(workspaceId);
     if (!draftId) return;
     void getCoworkerDraft({ draftId })
-      .then((restored) => {
+      .then(async (restored) => {
+        if (restored.state === "provisioning") {
+          setStage("creating");
+          const terminal = await pollCoworkerDraftUntilTerminal(draftId);
+          setDraft(terminal);
+          if (terminal.state === "failed_provisioning") {
+            setCreationError("Session provisioning did not complete.");
+            setStage("failed");
+            return;
+          }
+          if (terminal.state === "ready") {
+            setStage("ready");
+            return;
+          }
+        }
+        if (restored.state === "failed_provisioning") {
+          setDraft(restored);
+          setCreationError("Session provisioning did not complete.");
+          setStage("failed");
+          return;
+        }
+        if (
+          restored.state === "expired" ||
+          restored.state === "superseded" ||
+          restored.state === "rejected"
+        ) {
+          clearCoworkerDraftReview(workspaceId);
+          setCreationError(
+            restored.state === "expired"
+              ? "This draft expired. Start a new coworker request."
+              : "This draft is no longer available. Start a new coworker request.",
+          );
+          setStage("prompt");
+          return;
+        }
         setDraft(restored);
         setStage("review");
       })
@@ -261,7 +297,18 @@ function CoworkerBuilder({
           idempotency_key: newIdempotencyKey("coworker_confirm"),
         },
       });
-      setDraft(result.draft);
+      let confirmedDraft = result.draft;
+      if (confirmedDraft.state === "provisioning") {
+        setDraft(confirmedDraft);
+        setStage("creating");
+        confirmedDraft = await pollCoworkerDraftUntilTerminal(confirmedDraft.id);
+      }
+      setDraft(confirmedDraft);
+      if (confirmedDraft.state === "failed_provisioning") {
+        setCreationError("Session provisioning did not complete.");
+        setStage("failed");
+        return;
+      }
       setStage("creating");
       await onCreated();
       clearCoworkerDraftReview(workspaceId);
@@ -524,6 +571,7 @@ function PermissionReview({
     "Analyze support and GitHub evidence, identify customer patterns, and prepare sourced briefings.";
   const tools = draft?.effective_preview.tools ?? [];
   const denials = draft?.effective_preview.denials ?? [];
+  const toolEffects = summarizeToolEffects(tools);
   const channels = draft?.proposal.channel_ids ?? [];
   const skills = draft?.proposal.skill_version_ids ?? [];
   const components = draft?.proposal.component_version_ids ?? [];
@@ -565,6 +613,20 @@ function PermissionReview({
             `${draft.proposal.budget.max_tool_calls} calls · ${draft.proposal.budget.max_turn_tokens.toLocaleString()} tokens`,
             `${skills.length} private skill${skills.length === 1 ? "" : "s"}`,
             `${components.length} controlled component${components.length === 1 ? "" : "s"}`,
+          ]}
+        />
+        <ReviewGroup
+          title="Tool effects"
+          items={[
+            ...(toolEffects.read.length > 0
+              ? [`Read: ${toolEffects.read.join(", ")}`]
+              : ["Read: none"]),
+            ...(toolEffects.write.length > 0
+              ? [`Write: ${toolEffects.write.join(", ")}`]
+              : ["Write: none (P0 default)"]),
+            ...(toolEffects.destructive.length > 0
+              ? [`Destructive: ${toolEffects.destructive.join(", ")}`]
+              : ["Destructive: blocked in P0"]),
           ]}
         />
         <ReviewGroup
