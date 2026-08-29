@@ -2,12 +2,12 @@
 
 | Field | Current value |
 | --- | --- |
-| Overall | M0 Demo contract done; M1 Foundation done; P0-109/P0-213/P0-313/P0-403 done; P0-315 in_review; P0-301–P0-314 done |
-| Current phase | Phase 1 — Foundation / M3 tools |
-| Active task | P0-315 (in_review — awaiting reviewer sign-off) |
-| Next task | Critical path: P0-316; also ready: P0-317, P0-318, UI wave (P0-404, P0-405) |
+| Overall | M0 Demo contract done; M1 Foundation done; P0-404/P0-405 in_review; P0-315 in_review; P0-301–P0-314 done |
+| Current phase | Phase 1 — Foundation / M4 Product UI |
+| Active task | P0-315 (in_review), P0-404 (in_review), P0-405 (in_review) |
+| Next task | Critical path: P0-316; also ready: P0-317, P0-318 |
 | P0 blockers | Run-limit hard enforcement (P0-204/OD-008 evidence) |
-| Last updated | 2026-08-28 (P0-315 acceptance audit → in_review; P0-317 split out) |
+| Last updated | 2026-08-29 (P0-404/P0-405 UI stack merged #50–#53; closeout in review) |
 
 ## Milestones
 
@@ -61,6 +61,7 @@ Never put credentials in this file.
 
 ## Recently completed
 
+- P0-404 / P0-405 UI wave (2026-08-29): merged PR #50–#52 (question card, run drawer enrichment, keyboard operability) and PR #53 (pin from message/artifact). Closeout PR adds trusted HITL host-open hook, Work tab stop, task evidence.
 - P0-315 → `in_review` (2026-08-28). Nine of eleven open acceptance criteria verified with
   file/line evidence: grant-intersection offers, server broker render results over MCP, one-use
   interaction tokens, manifest render-node binding, bounded interaction scope, absent P1 endpoints,

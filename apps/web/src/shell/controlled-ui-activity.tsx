@@ -8,6 +8,7 @@ import {
 import { getUiInstanceReplay, postUiInstanceDataFunction } from "../api/channel-resources-api";
 import { ApiError } from "../api/http-client";
 import { useSession } from "../auth/session-context";
+import { useTrustedHitlHost } from "./trusted-hitl-host-context";
 
 type ControlledUiActivityProps = {
   content: Extract<ForgeRoomActivityContent, { activityType: "forgeroom.controlled_ui.v1" }>;
@@ -42,6 +43,7 @@ function mapDataFunctionResult(dataRef: string, data: unknown): ControlledInstan
 
 export function ControlledUiActivity({ content }: ControlledUiActivityProps) {
   const { session } = useSession();
+  const { openExistingCard } = useTrustedHitlHost();
   const replayQuery = useQuery({
     queryKey: ["ui-instance-replay", content.surfaceId],
     queryFn: () => getUiInstanceReplay(content.surfaceId),
@@ -163,6 +165,7 @@ export function ControlledUiActivity({ content }: ControlledUiActivityProps) {
         validatedProps={replay.validatedProps}
         data={instanceData}
         interactionEnabled={interactionEnabled}
+        onRequestOpenHitlCard={openExistingCard}
       />
     </ControlledComponentSlot>
   );

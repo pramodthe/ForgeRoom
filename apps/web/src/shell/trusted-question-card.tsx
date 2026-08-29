@@ -6,6 +6,7 @@ import { ApiError } from "../api/http-client";
 import { useSession } from "../auth/session-context";
 import { formatPauseGroupLifecycleMessage } from "./pause-group-lifecycle";
 import { PoliteStatus } from "./polite-status";
+import { trustedHitlCardElementId } from "./trusted-hitl-host";
 
 type TrustedQuestionCardProps = {
   questionId: string;
@@ -127,6 +128,7 @@ export function TrustedQuestionCard({ questionId, onAnswered }: TrustedQuestionC
 
   return (
     <section
+      id={trustedHitlCardElementId({ kind: "question", id: questionId })}
       className="rounded-2xl border border-sky-300 bg-sky-50/80 p-4 shadow-sm"
       aria-label="Trusted question card"
       aria-busy={busy}
