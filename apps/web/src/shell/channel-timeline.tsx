@@ -417,6 +417,7 @@ export function ChannelTimeline(props: {
                   {canOpenReceipt ? (
                     <button
                       type="button"
+                      data-run-id={run.applicationRunId}
                       onClick={() => props.onOpenRun?.(run.applicationRunId!)}
                       className="rounded-full bg-white/80 px-2 py-0.5 text-[10px] font-medium text-violet-800 ring-1 ring-violet-200 hover:bg-white"
                     >

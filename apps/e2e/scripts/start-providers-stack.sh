@@ -26,6 +26,8 @@ require_env COMPOSIO_CONNECTED_ACCOUNT_ID
 require_env COMPOSIO_USER_ID
 require_env DAYTONA_API_KEY
 require_env TRUEFORGE_BASE_URL
+require_env FORGEROOM_E2E_GITHUB_OWNER
+require_env FORGEROOM_E2E_GITHUB_REPOSITORY
 
 # Force loopback origin so Vite (127.0.0.1:5173) matches API Origin/CSRF checks.
 export HOST="127.0.0.1"

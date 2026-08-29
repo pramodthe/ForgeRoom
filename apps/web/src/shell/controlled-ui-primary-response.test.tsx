@@ -39,6 +39,7 @@ describe("ControlledUiPrimaryChrome", () => {
     );
 
     expect(html).toContain('data-primary-response="controlled-ui"');
+    expect(html).toContain('data-ui-instance-id="surface_1"');
     expect(html).toContain("Reviewed component");
     expect(html).toContain("Analyst");
     expect(html).toContain("Open issues table");

@@ -1,13 +1,35 @@
+import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { loadEnvFile } from "node:process";
 import { fileURLToPath } from "node:url";
 import { defineConfig, devices } from "@playwright/test";
+
+const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "../..");
+const envFile = join(repoRoot, ".env");
+if (existsSync(envFile)) {
+  const controlKeys = [
+    "FORGEROOM_E2E_LIVE",
+    "FORGEROOM_E2E_BASE_URL",
+    "FORGEROOM_E2E_EXTERNAL_STACK",
+  ] as const;
+  const controls = new Map(controlKeys.map((key) => [key, process.env[key]]));
+  loadEnvFile(envFile);
+  for (const key of controlKeys) {
+    const value = controls.get(key);
+    if (value === undefined) {
+      delete process.env[key];
+    } else {
+      process.env[key] = value;
+    }
+  }
+  process.env.FORGEROOM_E2E_OWNER_PASSWORD ??= process.env.OWNER_PASSWORD;
+}
 
 const baseURL = process.env.FORGEROOM_E2E_BASE_URL ?? "http://127.0.0.1:5173";
 const liveRaw = process.env.FORGEROOM_E2E_LIVE?.trim();
 const liveProviders = liveRaw === "1" || liveRaw === "providers";
 const liveApi = liveRaw === "api" || liveProviders;
 const externalStack = process.env.FORGEROOM_E2E_EXTERNAL_STACK === "1";
-const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "../..");
 
 export default defineConfig({
   testDir: "./tests",

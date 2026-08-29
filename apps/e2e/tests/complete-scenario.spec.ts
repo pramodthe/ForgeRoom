@@ -8,6 +8,7 @@ import {
   gotoDemoChannel,
   gotoDemoTasks,
   loginAsOwner,
+  resetProviderFixture,
   runProviderBackedNarrative,
   sendTeamTask,
 } from "../helpers/live-flows";
@@ -21,6 +22,20 @@ import {
  */
 test.describe("P0-504 complete browser scenario (live)", () => {
   test.skip(liveMode() === "off", "Set FORGEROOM_E2E_LIVE=api or FORGEROOM_E2E_LIVE=1");
+
+  test.beforeEach(() => {
+    if (liveMode() === "providers") {
+      assertProvidersConfigured();
+      resetProviderFixture();
+    }
+  });
+
+  test.afterEach(() => {
+    if (liveMode() === "providers") {
+      assertProvidersConfigured();
+      resetProviderFixture();
+    }
+  });
 
   test("api structure: auth, channel, soft-skip providers", async ({ page }) => {
     test.skip(liveMode() !== "api", "api-mode structure coverage only");
@@ -52,12 +67,12 @@ test.describe("P0-504 complete browser scenario (live)", () => {
     await createResearchCoworker(page);
 
     // 4 task fan-out
-    await sendTeamTask(page);
+    const runId = await sendTeamTask(page);
     await gotoDemoTasks(page);
     await expect(page.getByText(DEMO.taskTitle).first()).toBeVisible({ timeout: 60_000 });
 
     // 5–15 GenUI → deny → refresh → approve → skill → receipt
-    await runProviderBackedNarrative(page);
+    await runProviderBackedNarrative(page, runId);
 
     await testInfo.attach("providers-final", {
       body: await page.screenshot({ fullPage: true }),

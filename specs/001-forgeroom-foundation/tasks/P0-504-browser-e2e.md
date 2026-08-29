@@ -40,7 +40,7 @@ pnpm test:e2e:providers
 # or: FORGEROOM_E2E_LIVE=1 pnpm test:e2e
 ~~~
 
-Required provider env (never commit): `OPENAI_API_KEY`, `COMPOSIO_API_KEY`, `COMPOSIO_CONNECTED_ACCOUNT_ID`, `COMPOSIO_USER_ID`, `DAYTONA_API_KEY`, `TRUEFORGE_BASE_URL`. Stack script: `apps/e2e/scripts/start-providers-stack.sh`.
+Required provider env (never commit): `OPENAI_API_KEY`, `COMPOSIO_API_KEY`, `COMPOSIO_CONNECTED_ACCOUNT_ID`, `COMPOSIO_USER_ID`, `DAYTONA_API_KEY`, `TRUEFORGE_BASE_URL`, `FORGEROOM_E2E_GITHUB_OWNER`, `FORGEROOM_E2E_GITHUB_REPOSITORY`. The GitHub values are verified against the non-reversible hash of the approved synthetic target before reset or test mutation. Stack script: `apps/e2e/scripts/start-providers-stack.sh`.
 
 Run three consecutive times after fixture reset to detect flakiness.
 
@@ -56,3 +56,4 @@ Run three consecutive times after fixture reset to detect flakiness.
 - 2026-08-29 — Slice 1: scaffold `@forgeroom/e2e` Playwright package, prototype smoke covering channel/GenUI/approval/Research coworker/tasks/choice/receipt/skill, trace redaction scan, CI `pnpm test:e2e`, fixture work-panel demo receipt entry. Live 15-step scenario gated behind `FORGEROOM_E2E_LIVE`.
 - 2026-08-29 — Slice 2: live-api Playwright project (`FORGEROOM_E2E_LIVE=api`) boots migrate/seed/API/Vite via `apps/e2e/scripts/start-live-stack.sh`; demo-seed login/channel/coworkers/tasks smoke; complete-scenario soft-skips without providers; CI live-api job; channel workroom tolerates missing Composio; coworker detail strips `config` before strict profile parse; trace scan scrub of fixture password + ignores model_provider openai.
 - 2026-08-29 — Slice 3: one serial providers test (steps 1–15), `start-providers-stack.sh` (TrueForge health + full fixtures:reset + ARTIFACT_STORAGE_DIR), credential preflight (`PROVIDER_ENV_KEYS`), deny→retry→refresh→approve flow helpers, `pnpm test:e2e:providers`. Execution blocked without secrets in this environment.
+- 2026-08-29 — Slice 4: strengthen the provider narrative with exact two-lane routing response checks; independent public fixture reads before/after denial and after approval; exact proposal, Task and controlled UI hash snapshots across refresh; and receipt lineage checks before/after immutable skill publication. Added a stable UIInstance identity attribute for replay assertions. Live execution remains blocked without provider secrets.
