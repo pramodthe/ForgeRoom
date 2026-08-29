@@ -159,9 +159,10 @@ export function createApiApp(options?: {
       workspace,
       ...(options?.trueforgeClient ? { trueforgeClient: options.trueforgeClient } : {}),
       ...(options?.sql ? { sql: options.sql } : {}),
+      ...(artifacts ? { artifacts } : {}),
     });
-    if (options?.sql) {
-      mountUiComponentsMcpRoutes(app, { env, sql: options.sql });
+    if (options?.sql && workspace) {
+      mountUiComponentsMcpRoutes(app, { env, sql: options.sql, workspace });
     }
   }
 

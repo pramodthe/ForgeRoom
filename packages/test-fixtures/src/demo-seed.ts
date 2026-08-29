@@ -1,6 +1,14 @@
 import { createHash, randomBytes, scrypt, timingSafeEqual } from "node:crypto";
 import { promisify } from "node:util";
-import { createSql, databaseUrl, migrate } from "@forgeroom/db";
+import {
+  createSql,
+  databaseUrl,
+  migrate,
+  publishWorkspaceRegistry,
+  setComponentGrant,
+} from "@forgeroom/db";
+import { P0_CONTROLLED_REGISTRY } from "@forgeroom/domain";
+import { P0_COMPOSIO_ENABLED_TOOLS } from "@forgeroom/composio";
 import type postgres from "postgres";
 import { assertP0FeatureProfileFrozen, readProviderFixtureJson } from "./index";
 
@@ -317,6 +325,7 @@ async function upsertOperatorCoworker(
   sql: SqlClient,
   env: DemoSeedEnv,
   operator: SeededOperatorFixture,
+  componentVersionIds: string[],
   now: string,
 ): Promise<void> {
   const config = {
@@ -325,9 +334,16 @@ async function upsertOperatorCoworker(
     model_preset: operator.coworker.model_preset,
     sandbox: operator.coworker.sandbox,
     budget: operator.coworker.budget,
-    tool_grants: [] as string[],
+    channel_ids: [DEMO_FIXTURE_IDS.channelId],
+    task_record_grants: [
+      {
+        channel_id: DEMO_FIXTURE_IDS.channelId,
+        operations: ["create", "update_status"],
+      },
+    ],
+    tool_grants: [...P0_COMPOSIO_ENABLED_TOOLS],
     skill_version_ids: [] as string[],
-    component_version_ids: [] as string[],
+    component_version_ids: componentVersionIds,
     name: operator.coworker.name,
     handle: operator.coworker.handle,
     title: operator.coworker.title,
@@ -441,7 +457,45 @@ export async function seedDemoFixtures(
     const passwordHash = await resolveOwnerPasswordHash(sql, env);
     await upsertOwnerWorkspace(sql, env, passwordHash, now);
     await upsertDemoChannel(sql, env, now);
-    await upsertOperatorCoworker(sql, env, bundle.operator, now);
+    const publishedComponents = await publishWorkspaceRegistry(sql, {
+      workspaceId: env.workspaceId,
+      publishedByUserId: env.ownerUserId,
+      definitions: P0_CONTROLLED_REGISTRY.map((definition) => ({
+        stableName: definition.name,
+        kind: definition.kind,
+        semanticVersion: definition.version,
+        exposure: definition.exposure,
+        confirmationPolicy: definition.confirmation,
+        modelDescription: definition.modelDescription,
+        argumentSchema: definition.parameterSchema,
+        rendererKey: definition.rendererKey,
+        previewProps: definition.previewProps,
+        declaredDataFunctions: [...definition.declaredDataFunctions],
+        declaredInteractionIntents: [...definition.declaredInteractionIntents],
+        descriptorHash: definition.descriptorHash,
+      })),
+      now,
+    });
+    const agentToolComponents = publishedComponents.filter(
+      (component) => component.exposure === "agent_tool",
+    );
+    await upsertOperatorCoworker(
+      sql,
+      env,
+      bundle.operator,
+      agentToolComponents.map((component) => component.id),
+      now,
+    );
+    for (const component of agentToolComponents) {
+      await setComponentGrant(sql, {
+        id: `ucg_demo_operator_${component.stableName.toLowerCase()}`,
+        componentVersionId: component.id,
+        workspaceId: env.workspaceId,
+        channelId: DEMO_FIXTURE_IDS.channelId,
+        agentProfileId: DEMO_FIXTURE_IDS.coworkerId,
+        grantedBy: env.ownerUserId,
+      });
+    }
 
     return {
       ownerUserId: env.ownerUserId,

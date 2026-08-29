@@ -12,21 +12,61 @@ import {
   providerFixtureTargetMatches,
 } from "./live";
 
-export async function loginAsOwner(page: Page): Promise<void> {
-  // API login via request context sets the session cookie without typing the fixture
-  // password into the DOM (keeps Playwright traces cleaner for redaction scans).
+export async function loginAsOwner(page: Page): Promise<string> {
+  // Authenticate outside Playwright's traced browser/request contexts, then install
+  // only the opaque session cookie. This keeps even the disposable E2E credential
+  // out of trace archives while preserving full tracing for the product scenario.
   const origin = process.env.FORGEROOM_E2E_BASE_URL ?? "http://127.0.0.1:5173";
-  const response = await page.request.post("/api/auth/login", {
-    data: { email: DEMO.ownerEmail, password: DEMO.ownerPassword },
+  const response = await fetch(`${origin}/api/auth/login`, {
+    method: "POST",
+    body: JSON.stringify({ email: DEMO.ownerEmail, password: DEMO.ownerPassword }),
     headers: { Origin: origin, "content-type": "application/json" },
   });
-  if (!response.ok()) {
-    throw new Error(`login failed: ${response.status()} ${await response.text()}`);
+  if (!response.ok) {
+    throw new Error(`login failed: ${response.status} ${await response.text()}`);
+  }
+  const setCookie = response.headers.get("set-cookie");
+  const cookiePair = setCookie?.split(";", 1)[0];
+  const separator = cookiePair?.indexOf("=") ?? -1;
+  if (!cookiePair || separator <= 0) {
+    throw new Error("login response did not include a session cookie");
+  }
+  await page.context().addCookies([
+    {
+      name: cookiePair.slice(0, separator),
+      value: cookiePair.slice(separator + 1),
+      url: origin,
+    },
+  ]);
+  const session = (await response.json()) as { csrf_token?: unknown };
+  if (typeof session.csrf_token !== "string" || session.csrf_token.length === 0) {
+    throw new Error("login response did not include a CSRF token");
   }
   await page.goto(demoChannelPath());
   await expect(page.getByRole("navigation", { name: "Primary" })).toBeVisible({
     timeout: 30_000,
   });
+  return session.csrf_token;
+}
+
+export async function ensureSeededOperatorSession(page: Page, csrfToken: string): Promise<void> {
+  const response = await page.request.post(`/api/channels/${DEMO.channelId}/participants`, {
+    headers: {
+      Origin: process.env.FORGEROOM_E2E_BASE_URL ?? "http://127.0.0.1:5173",
+      "content-type": "application/json",
+      "x-csrf-token": csrfToken,
+    },
+    data: {
+      schemaVersion: 1,
+      participant_type: "coworker",
+      participant_id: DEMO.coworkerId,
+      role: "member",
+      idempotency_key: "e2e-provision-seeded-operator",
+    },
+  });
+  if (!response.ok()) {
+    throw new Error(`operator provisioning failed: ${response.status()} ${await response.text()}`);
+  }
 }
 
 export async function gotoDemoChannel(page: Page): Promise<void> {
@@ -64,8 +104,13 @@ export async function createResearchCoworker(page: Page): Promise<void> {
   const prompt = dialog.getByLabel(/What should this coworker own/i);
   await prompt.fill(DEMO.researchPrompt);
   await dialog.getByRole("button", { name: /generate review draft/i }).click();
-  await expect(dialog.getByText(/Write tools \(blocked/i)).toBeVisible({ timeout: 120_000 });
-  await expect(dialog.getByText(/Native child agents/i)).toBeVisible();
+  await expect(dialog.getByRole("heading", { name: "Unavailable / denied in P0" })).toBeVisible({
+    timeout: 120_000,
+  });
+  await expect(
+    dialog.getByText(/write tools: GITHUB ADD LABELS TO AN ISSUE denied/i),
+  ).toBeVisible();
+  await expect(dialog.getByText(/native subagents: disabled in P0 feature profile/i)).toBeVisible();
   await dialog.getByRole("button", { name: /Create Research/i }).click();
   await expect(page.getByText(/is ready/i)).toBeVisible({ timeout: 180_000 });
   await page.getByRole("button", { name: "Done" }).click();

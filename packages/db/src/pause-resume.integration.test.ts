@@ -169,6 +169,13 @@ describe("atomic PauseResume", () => {
 
       const pauseGroupId = await resolveMixedGroup(sql, capture);
 
+      const responseProjections = await sql<Array<{ response_redacted_json: unknown }>>`
+        SELECT response_redacted_json
+        FROM required_actions
+        WHERE pause_group_id = ${pauseGroupId}
+      `;
+      expect(JSON.stringify(responseProjections)).not.toContain("Confirmed");
+
       const first = await claimPauseGroupResume(sql, {
         pauseGroupId,
         workspaceId: "ws_1",
@@ -181,6 +188,12 @@ describe("atomic PauseResume", () => {
         throw new Error(`claim failed: ${JSON.stringify(first)}`);
       }
       expect(first.inserted).toBe(true);
+      expect(first).toMatchObject({
+        channelId: "ch_1",
+        channelAgentSessionId: "cas_1",
+        coworkerId: "cw_1",
+        logicalThreadId: "thread_1",
+      });
 
       const loaded = await loadPauseResumeForCreate(sql, {
         pauseResumeId: first.pauseResumeId,
@@ -189,6 +202,7 @@ describe("atomic PauseResume", () => {
       expect(loaded.ok).toBe(true);
       if (!loaded.ok) throw new Error("load");
       expect(loaded.plaintext.responses).toHaveLength(2);
+      expect(JSON.stringify(loaded.plaintext.responses)).toContain("Confirmed");
       expect(
         loaded.plaintext.responses.every((r) => r.kind === "approval" || r.kind === "question"),
       ).toBe(true);
@@ -244,7 +258,23 @@ describe("atomic PauseResume", () => {
       expect(gate.ok).toBe(true);
       if (!gate.ok) throw new Error("gate");
       expect(gate.state).toBe("ready");
+      expect(gate).toMatchObject({
+        channelId: "ch_1",
+        channelAgentSessionId: "cas_1",
+        coworkerId: "cw_1",
+        logicalThreadId: "thread_1",
+      });
       expect(gate.requiredActionIds).toHaveLength(2);
+      expect(gate.actions).toEqual([
+        {
+          requiredActionId: gate.requiredActionIds[0],
+          providerActionId: "prov_approval",
+        },
+        {
+          requiredActionId: gate.requiredActionIds[1],
+          providerActionId: "prov_question",
+        },
+      ]);
       expect(gate.providerActionIds).toEqual(
         expect.arrayContaining(["prov_approval", "prov_question"]),
       );

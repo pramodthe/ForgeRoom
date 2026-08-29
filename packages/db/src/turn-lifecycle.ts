@@ -3,6 +3,7 @@ import type postgres from "postgres";
 import type { AgentTurnState } from "@forgeroom/contracts";
 import { canReconcileAgentTurn, canTransitionAgentTurn } from "@forgeroom/domain";
 import { applyRunLifecycleProjection } from "./multi-agent-run";
+import { staleWaitingUiComponentInterruptsForRunStep } from "./ui-component-interrupts";
 
 export type SqlClient = postgres.Sql;
 
@@ -282,6 +283,11 @@ export async function ingestNormalizedTrueForgeEvent(
         )
       `;
     } else if (terminalError && inserted) {
+      await staleWaitingUiComponentInterruptsForRunStep(tx as unknown as SqlClient, {
+        runStepId: turn.run_step_id,
+        now,
+        reason: "run_failed",
+      });
       await tx`
         UPDATE agent_turns
         SET

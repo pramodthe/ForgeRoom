@@ -25,9 +25,11 @@ import {
   type RequestStopResult,
 } from "@forgeroom/db";
 import {
+  ApplicationWatchdog,
   evaluateTurnDoneOutcome,
   normalizeTrueForgeEvent,
   startWorker,
+  type ApplicationWatchdogViolation,
 } from "@forgeroom/orchestration";
 import {
   createOrReconcileTurn,
@@ -105,6 +107,8 @@ export type WorkerProcessOptions = {
   /** When true (default with sql), mark active turns needs_attention on start. */
   markNeedsAttentionOnStart?: boolean;
   workspaceId?: string;
+  /** Injectable for deterministic application-watchdog tests. */
+  watchdog?: ApplicationWatchdog;
 };
 
 export async function executeClaimQueueItem(
@@ -434,12 +438,28 @@ export function startWorkerProcess(options: WorkerProcessOptions | WorkerCommand
   const worker = startWorker({ embedded: false });
   let sql = resolved.sql;
   const canUseDb = Boolean(resolved.sql || resolved.databaseUrl);
+  const getPausePayloadEncryptionKey = () =>
+    derivePausePayloadKey(
+      (() => {
+        const secret =
+          resolved.pausePayloadEncryptionSecret ??
+          process.env.PAUSE_PAYLOAD_ENCRYPTION_SECRET?.trim() ??
+          null;
+        if (!secret) {
+          if ((process.env.NODE_ENV ?? "development") === "production") {
+            throw new Error("PAUSE_PAYLOAD_ENCRYPTION_SECRET is required in production");
+          }
+          return process.env.OWNER_PASSWORD_HASH?.trim() || "forgeroom-dev-pause-payload-secret";
+        }
+        return secret;
+      })(),
+    );
   const loadTurnCreateContext =
     resolved.loadTurnCreateContext ??
     (canUseDb
       ? async (agentTurnId: string) => {
           sql ??= createSql(resolved.databaseUrl);
-          return loadAgentTurnCreateContext(sql, agentTurnId);
+          return loadAgentTurnCreateContext(sql, agentTurnId, getPausePayloadEncryptionKey());
         }
       : undefined);
   const trueforge =
@@ -459,9 +479,44 @@ export function startWorkerProcess(options: WorkerProcessOptions | WorkerCommand
         })()
       : Promise.resolve({ marked: 0 });
 
+  const watchdog =
+    resolved.watchdog ??
+    (canUseDb && trueforge
+      ? new ApplicationWatchdog({
+          onLimitExceeded: async (violation: ApplicationWatchdogViolation) => {
+            sql ??= createSql(resolved.databaseUrl);
+            console.warn("application watchdog threshold reached", {
+              agentTurnId: violation.agentTurnId,
+              runId: violation.runId,
+              runStepId: violation.runStepId,
+              reason: violation.reason,
+              observed: violation.observed,
+              limit: violation.limit,
+              providerHardLimit: violation.providerHardLimit,
+            });
+            await executeStopCancelOnce(
+              { sql, client: trueforge },
+              { runStepId: violation.runStepId },
+            );
+          },
+          onCallbackError: (error, violation) => {
+            console.error("application watchdog cancellation failed", {
+              agentTurnId: violation.agentTurnId,
+              runStepId: violation.runStepId,
+              reason: violation.reason,
+              error: error instanceof Error ? error.message : String(error),
+            });
+          },
+        })
+      : undefined);
+
   return {
     ...worker,
     startup,
+    async stop() {
+      watchdog?.stop();
+      await worker.stop();
+    },
     async dispatchCommand(input: unknown): Promise<WorkerDispatchResult> {
       const command = parseWorkerCommand(input);
 
@@ -487,6 +542,11 @@ export function startWorkerProcess(options: WorkerProcessOptions | WorkerCommand
           command,
         );
         if (createOrReconcile.ok) {
+          watchdog?.startRun({
+            agentTurnId: command.payload.agent_turn_id,
+            runId: command.payload.run_id,
+            runStepId: command.payload.run_step_id,
+          });
           await resolved.executeCommand?.(command);
         }
         return { command, createOrReconcile };
@@ -501,23 +561,7 @@ export function startWorkerProcess(options: WorkerProcessOptions | WorkerCommand
           };
         }
         sql ??= createSql(resolved.databaseUrl);
-        const encryptionKey = derivePausePayloadKey(
-          (() => {
-            const secret =
-              resolved.pausePayloadEncryptionSecret ??
-              process.env.PAUSE_PAYLOAD_ENCRYPTION_SECRET?.trim() ??
-              null;
-            if (!secret) {
-              if ((process.env.NODE_ENV ?? "development") === "production") {
-                throw new Error("PAUSE_PAYLOAD_ENCRYPTION_SECRET is required in production");
-              }
-              return (
-                process.env.OWNER_PASSWORD_HASH?.trim() || "forgeroom-dev-pause-payload-secret"
-              );
-            }
-            return secret;
-          })(),
-        );
+        const encryptionKey = getPausePayloadEncryptionKey();
         const workspaceId = command.payload.workspace_id;
         if (!workspaceId) {
           return {
@@ -547,6 +591,11 @@ export function startWorkerProcess(options: WorkerProcessOptions | WorkerCommand
         sql ??= createSql(resolved.databaseUrl);
         const ingest = await executeIngestTrueForgeEvent(sql, command, { trueforge });
         if (ingest.ok) {
+          watchdog?.observeTrueForgeEvent(command.payload.agent_turn_id, {
+            ...command.payload.event_payload,
+            type: command.payload.upstream_event_type,
+            id: command.payload.upstream_event_id,
+          });
           await resolved.executeCommand?.(command);
         }
         return { command, ingest };

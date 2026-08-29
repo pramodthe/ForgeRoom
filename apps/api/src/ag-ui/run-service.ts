@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import {
   buildAgUiCoworkerCapabilities,
   extractExistingRunBinding,
@@ -8,8 +9,13 @@ import {
   TrueForgeAGUIAdapter,
   toPersistedAgUiEvent,
 } from "@forgeroom/ag-ui";
-import type { SessionResponse } from "@forgeroom/contracts";
-import { type ComposioSessionClient, verifyP0ManifestForDispatch } from "@forgeroom/composio";
+import { actingIdentitySchema, type SessionResponse } from "@forgeroom/contracts";
+import {
+  requireToolPolicy,
+  type ComposioSessionClient,
+  verifyP0ManifestForDispatch,
+} from "@forgeroom/composio";
+import { extractDiscoveredSandboxArtifacts } from "@forgeroom/artifacts";
 import {
   claimPauseGroupResume,
   completePauseResume,
@@ -20,17 +26,368 @@ import {
   loadPauseResumeForCreate,
   markPauseResumeCreating,
   markPauseResumeUncertain,
+  persistPauseGroupCapture,
   type createSql,
 } from "@forgeroom/db";
 import {
   authorizeAgUiPauseGroupResume,
+  buildApprovalRedactionResult,
+  buildPauseGroupCapturePlan,
   evaluateTurnDoneOutcome,
+  extractRawRequiredActions,
   normalizeTrueForgeEvent,
+  publishSandboxArtifactFromDiscovery,
 } from "@forgeroom/orchestration";
 import { createOrReconcileResponseTurn } from "@forgeroom/orchestration/create-or-reconcile-response-turn";
 import type { TrueForgeClient } from "@forgeroom/trueforge";
+import { mapTrueForgeWireEventsToSandboxLifecycle } from "@forgeroom/trueforge";
+import type { ArtifactService } from "../artifacts/service";
 import type { WorkspaceService } from "../workspace/service";
 import { bindDurableTrueForgeTurn } from "./bind-durable-turn";
+
+type PauseCaptureBindingRow = {
+  generation: number;
+  approval_policy_hash: string;
+  trueforge_session_id: string;
+  generation_state: string;
+  current_generation_id: string | null;
+  session_generation_id: string;
+  workspace_id: string;
+  channel_id: string;
+  agent_profile_id: string;
+  effective_config_redacted_json: Record<string, unknown>;
+  connector_binding_id: string;
+  trueforge_connector_name: string;
+  allowed_tools_json: unknown;
+  acting_identity_json: unknown;
+  connector_status: string;
+  tool_name: string;
+  classification: string;
+  approval_policy: string;
+  observed_descriptor_hash: string;
+};
+
+function configuredConnectorAllowsTool(
+  config: Record<string, unknown>,
+  connectorName: string,
+  toolName: string,
+): boolean {
+  const connectors = Array.isArray(config.connectors) ? config.connectors : [];
+  return connectors.some((item) => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) return false;
+    const connector = item as Record<string, unknown>;
+    const enabledTools = Array.isArray(connector.enabled_tools) ? connector.enabled_tools : [];
+    const approvalTools = Array.isArray(connector.approval_required_tools)
+      ? connector.approval_required_tools
+      : [];
+    return (
+      connector.name === connectorName &&
+      enabledTools.includes(toolName) &&
+      approvalTools.includes(toolName)
+    );
+  });
+}
+
+/**
+ * Capture raw provider required-actions before normalization removes arguments and identifiers.
+ * Every approval is rebound to the immutable session generation plus the live, reviewed
+ * Composio grant/connector/identity; model-authored summaries are never trusted.
+ */
+export async function captureTrueForgeRequiredActions(input: {
+  sql: ReturnType<typeof createSql>;
+  bootstrap: AgUiRunBootstrap;
+  raw: Record<string, unknown>;
+}): Promise<{ ok: true; inserted: boolean } | { ok: false; reason: string }> {
+  const requiredActions = extractRawRequiredActions(input.raw);
+  if (requiredActions.length === 0) {
+    return { ok: true, inserted: false };
+  }
+
+  const approvalToolNames = [
+    ...new Set(
+      requiredActions.flatMap((action) => {
+        const type = typeof action.type === "string" ? action.type.toLowerCase() : "";
+        if (!type.includes("approval")) return [];
+        const toolName = action.tool_name ?? action.toolName ?? action.name ?? action.tool;
+        return typeof toolName === "string" && toolName.length > 0 ? [toolName] : [];
+      }),
+    ),
+  ];
+
+  const rows = await input.sql<PauseCaptureBindingRow[]>`
+    SELECT
+      gen.generation,
+      gen.approval_policy_hash,
+      gen.trueforge_session_id,
+      gen.state AS generation_state,
+      cas.current_generation_id,
+      turn.session_generation_id,
+      cas.workspace_id,
+      cas.channel_id,
+      cas.agent_profile_id,
+      sr.effective_config_redacted_json,
+      tg.connector_binding_id,
+      cb.trueforge_connector_name,
+      cb.allowed_tools_json,
+      cb.acting_identity_json,
+      cb.status AS connector_status,
+      tg.tool_name,
+      tg.classification,
+      tg.approval_policy,
+      tg.observed_descriptor_hash
+    FROM agent_turns AS turn
+    JOIN channel_agent_session_generations AS gen ON gen.id = turn.session_generation_id
+    JOIN channel_agent_sessions AS cas ON cas.id = turn.channel_agent_session_id
+    JOIN session_revisions AS sr ON sr.id = gen.session_revision_id
+    JOIN tool_grants AS tg
+      ON tg.workspace_id = cas.workspace_id
+      AND tg.channel_id = cas.channel_id
+      AND tg.agent_profile_id = cas.agent_profile_id
+      AND tg.revoked_at IS NULL
+    JOIN connector_bindings AS cb
+      ON cb.id = tg.connector_binding_id
+      AND cb.workspace_id = cas.workspace_id
+    WHERE turn.id = ${input.bootstrap.agentTurnId}
+      AND turn.trueforge_turn_id = ${input.bootstrap.trueforgeTurnId}
+      AND tg.tool_name IN ${input.sql(approvalToolNames.length > 0 ? approvalToolNames : ["__none__"])}
+  `;
+
+  const byTool = new Map(rows.map((row) => [row.tool_name, row]));
+  let connectorBindingId = "not_applicable";
+  let actingIdentityJson: Record<string, unknown> = {};
+  let generation: number | null = null;
+  let approvalPolicyHash: string | null = null;
+
+  const reviewed = new Map<string, ReturnType<typeof requireToolPolicy>>();
+  for (const toolName of approvalToolNames) {
+    let policy: ReturnType<typeof requireToolPolicy>;
+    try {
+      policy = requireToolPolicy(toolName);
+    } catch {
+      return { ok: false, reason: `unreviewed_approval_tool:${toolName}` };
+    }
+    const row = byTool.get(toolName);
+    if (!row) return { ok: false, reason: `missing_live_tool_binding:${toolName}` };
+    const allowedTools = Array.isArray(row.allowed_tools_json) ? row.allowed_tools_json : [];
+    const effectiveConfig = row.effective_config_redacted_json ?? {};
+    const classification = policy.riskClass === "read" ? "read" : "write";
+    const identity = actingIdentitySchema.safeParse(row.acting_identity_json);
+    if (
+      row.generation_state !== "ready" ||
+      row.current_generation_id !== row.session_generation_id ||
+      row.trueforge_session_id !== input.bootstrap.trueforgeSessionId ||
+      row.channel_id !== input.bootstrap.channelId ||
+      row.agent_profile_id !== input.bootstrap.coworkerId ||
+      row.connector_status !== "active" ||
+      !allowedTools.includes(toolName) ||
+      !configuredConnectorAllowsTool(effectiveConfig, row.trueforge_connector_name, toolName) ||
+      row.classification !== classification ||
+      row.approval_policy !== "required" ||
+      row.observed_descriptor_hash !== policy.observedDescriptorHash ||
+      !identity.success
+    ) {
+      return { ok: false, reason: `invalid_live_tool_binding:${toolName}` };
+    }
+    if (
+      connectorBindingId !== "not_applicable" &&
+      connectorBindingId !== row.connector_binding_id
+    ) {
+      return { ok: false, reason: "mixed_connector_bindings" };
+    }
+    if (generation !== null && generation !== row.generation) {
+      return { ok: false, reason: "mixed_session_generations" };
+    }
+    connectorBindingId = row.connector_binding_id;
+    actingIdentityJson = identity.data;
+    generation = row.generation;
+    approvalPolicyHash = row.approval_policy_hash;
+    reviewed.set(toolName, policy);
+  }
+
+  if (generation === null || approvalPolicyHash === null) {
+    const base = await input.sql<
+      Array<{
+        generation: number;
+        approval_policy_hash: string;
+        trueforge_session_id: string;
+        generation_state: string;
+        current_generation_id: string | null;
+        session_generation_id: string;
+        channel_id: string;
+        agent_profile_id: string;
+      }>
+    >`
+      SELECT
+        gen.generation, gen.approval_policy_hash, gen.trueforge_session_id,
+        gen.state AS generation_state, cas.current_generation_id,
+        turn.session_generation_id, cas.channel_id, cas.agent_profile_id
+      FROM agent_turns AS turn
+      JOIN channel_agent_session_generations AS gen ON gen.id = turn.session_generation_id
+      JOIN channel_agent_sessions AS cas ON cas.id = turn.channel_agent_session_id
+      WHERE turn.id = ${input.bootstrap.agentTurnId}
+        AND turn.trueforge_turn_id = ${input.bootstrap.trueforgeTurnId}
+      LIMIT 1
+    `;
+    const row = base[0];
+    if (
+      !row ||
+      row.generation_state !== "ready" ||
+      row.current_generation_id !== row.session_generation_id ||
+      row.trueforge_session_id !== input.bootstrap.trueforgeSessionId ||
+      row.channel_id !== input.bootstrap.channelId ||
+      row.agent_profile_id !== input.bootstrap.coworkerId
+    ) {
+      return { ok: false, reason: "invalid_session_generation_binding" };
+    }
+    generation = row.generation;
+    approvalPolicyHash = row.approval_policy_hash;
+  }
+
+  const plan = buildPauseGroupCapturePlan({
+    trueforgeTurnId: input.bootstrap.trueforgeTurnId,
+    generation,
+    requiredActions,
+    persistentThreadId: input.bootstrap.threadId,
+    approvalRedaction: {
+      redactApproval(toolName, args) {
+        const policy = reviewed.get(toolName);
+        if (!policy) throw new Error(`unreviewed approval tool: ${toolName}`);
+        const preview = policy.renderPreview(args);
+        return buildApprovalRedactionResult({
+          observedDescriptorHash: policy.observedDescriptorHash,
+          riskClass: policy.riskClass,
+          redactedArguments: { ...preview.redactedArguments },
+          redactedTarget: { ...preview.target },
+          expectedEffect: preview.expectedEffect,
+        });
+      },
+    },
+  });
+  if ("ok" in plan) {
+    return { ok: false, reason: plan.reason };
+  }
+  const persisted = await persistPauseGroupCapture(input.sql, {
+    agentTurnId: input.bootstrap.agentTurnId,
+    trueforgeTurnId: input.bootstrap.trueforgeTurnId,
+    generation: plan.generation,
+    actions: plan.actions,
+    runStepState: plan.runStepState,
+    connectorBindingId,
+    actingIdentityJson,
+    approvalPolicyHash,
+  });
+  return persisted.ok
+    ? { ok: true, inserted: persisted.inserted }
+    : { ok: false, reason: persisted.reason };
+}
+
+function stableArtifactId(input: {
+  trueforgeTurnId: string;
+  sandboxId: string;
+  sandboxPath: string;
+}): string {
+  const preimage = `${input.trueforgeTurnId}\0${input.sandboxId}\0${input.sandboxPath}`;
+  // Opaque and restart-stable: replaying provider history addresses the same artifact.
+  return `artifact_${createHash("sha256").update(preimage).digest("hex").slice(0, 32)}`;
+}
+
+/**
+ * Project sandbox lifecycle from buffered raw events and publish every completed, declared file.
+ * Raw tool responses and file bytes never enter RunEvent JSON; only reviewed projections do.
+ */
+export async function persistAgUiSandboxArtifacts(input: {
+  sql: ReturnType<typeof createSql>;
+  bootstrap: AgUiRunBootstrap;
+  rawEvents: Array<Record<string, unknown>>;
+  trueforgeClient: Pick<TrueForgeClient, "downloadSandboxFile">;
+  artifacts: Pick<ArtifactService, "publishArtifact">;
+}): Promise<{ discovered: number; published: number }> {
+  const lifecycle = mapTrueForgeWireEventsToSandboxLifecycle(input.rawEvents);
+  for (const event of lifecycle) {
+    const ingested = await ingestNormalizedTrueForgeEvent(input.sql, {
+      agentTurnId: input.bootstrap.agentTurnId,
+      expectedTurnStates: ["creating", "streaming", "required_actions", "completed"],
+      event: {
+        trueforgeEventId: event.trueforgeEventId,
+        normalizedType: event.applicationType,
+        threadId: input.bootstrap.threadId,
+        sequenceNumber: null,
+        payloadRedacted: event.payloadRedacted,
+      },
+    });
+    if (!ingested.ok) throw new Error("Sandbox lifecycle projection failed");
+  }
+
+  const completedSandboxes = new Set(
+    lifecycle.filter((event) => event.commandState === "completed").map((event) => event.sandboxId),
+  );
+  const discoveries = extractDiscoveredSandboxArtifacts(input.rawEvents);
+  let published = 0;
+  for (const discovery of discoveries) {
+    const artifactId = stableArtifactId({
+      trueforgeTurnId: input.bootstrap.trueforgeTurnId,
+      sandboxId: discovery.sandboxId,
+      sandboxPath: discovery.sandboxPath,
+    });
+    const result = await publishSandboxArtifactFromDiscovery(
+      {
+        downloadSandboxFile: async ({ sessionId, turnId, sandboxPath }) =>
+          Buffer.from(
+            await input.trueforgeClient.downloadSandboxFile(sessionId, turnId, sandboxPath),
+          ),
+        publishArtifact: async (artifact) => {
+          const persisted = await input.artifacts.publishArtifact(artifact);
+          return persisted.ok
+            ? {
+                ok: true,
+                created: persisted.value.created,
+                sha256: persisted.value.artifact.sha256,
+                byteSize: persisted.value.artifact.byte_size,
+              }
+            : { ok: false, reason: persisted.error.code };
+        },
+      },
+      {
+        workspaceId: await (async () => {
+          const rows = await input.sql<Array<{ workspace_id: string }>>`
+            SELECT workspace_id FROM channel_agent_sessions
+            WHERE channel_id = ${input.bootstrap.channelId}
+              AND agent_profile_id = ${input.bootstrap.coworkerId}
+            LIMIT 1
+          `;
+          if (!rows[0]) throw new Error("Artifact workspace binding not found");
+          return rows[0].workspace_id;
+        })(),
+        channelId: input.bootstrap.channelId,
+        runId: input.bootstrap.applicationRunId,
+        runStepId: input.bootstrap.runStepId,
+        creatorAgentId: input.bootstrap.coworkerId,
+        trueforgeSessionId: input.bootstrap.trueforgeSessionId,
+        trueforgeTurnId: input.bootstrap.trueforgeTurnId,
+        artifactId,
+        revision: 1,
+        discovery,
+        sandboxCommandState: completedSandboxes.has(discovery.sandboxId) ? "completed" : "running",
+      },
+    );
+    for (const [index, event] of result.events.entries()) {
+      const ingested = await ingestNormalizedTrueForgeEvent(input.sql, {
+        agentTurnId: input.bootstrap.agentTurnId,
+        expectedTurnStates: ["creating", "streaming", "required_actions", "completed"],
+        event: {
+          trueforgeEventId: `${discovery.trueforgeEventId}:${event.normalizedType}:${index}`,
+          normalizedType: event.normalizedType,
+          threadId: input.bootstrap.threadId,
+          sequenceNumber: null,
+          payloadRedacted: event.payloadRedacted,
+        },
+      });
+      if (!ingested.ok) throw new Error("Artifact lifecycle projection failed");
+    }
+    if (result.ok) published += 1;
+  }
+  return { discovered: discoveries.length, published };
+}
 
 export type AgUiRunServiceError = {
   code:
@@ -84,9 +441,10 @@ export function createAgUiRunService(options: {
   trueforgeClient?: TrueForgeClient;
   composio?: ComposioSessionClient;
   sql?: ReturnType<typeof createSql>;
+  artifacts?: Pick<ArtifactService, "publishArtifact">;
   pausePayloadEncryptionSecret?: string;
 }): AgUiRunService {
-  const { workspace, trueforgeClient, sql, composio } = options;
+  const { workspace, trueforgeClient, sql, composio, artifacts } = options;
   const encryptionKey = derivePausePayloadKey(
     options.pausePayloadEncryptionSecret ?? "forgeroom-dev-pause-payload-secret",
   );
@@ -210,9 +568,24 @@ export function createAgUiRunService(options: {
             },
           };
         }
+        const routeMatchesPauseGroup =
+          gate.channelId === channelId &&
+          gate.channelAgentSessionId === resolved.value.channelAgentSessionId &&
+          gate.coworkerId === coworkerId &&
+          gate.logicalThreadId === resolved.value.logicalThreadId;
+        if (!routeMatchesPauseGroup) {
+          return {
+            ok: false,
+            error: {
+              code: "validation_failed",
+              message: "RunAgentInput.resume does not match the PauseGroup route binding.",
+              details: { reason: "pause_group_route_binding_mismatch" },
+            },
+          };
+        }
         const authorized = authorizeAgUiPauseGroupResume({
           resume: resumeItems,
-          interruptIds: gate.interruptIds,
+          actionAliases: gate.actions,
           requiredActionCount: gate.requiredActionCount,
           pauseGroupReady:
             gate.state === "ready" || gate.state === "resuming" || gate.state === "uncertain",
@@ -243,6 +616,12 @@ export function createAgUiRunService(options: {
           workspaceId: session.workspace_id,
           workerId: `agui_${session.user.id}`,
           encryptionKey,
+          expectedBinding: {
+            channelId,
+            channelAgentSessionId: gate.channelAgentSessionId,
+            coworkerId,
+            logicalThreadId: resolved.value.logicalThreadId,
+          },
         });
         if (!claim.ok && claim.reason === "already_resuming" && claim.existingPauseResumeId) {
           const existing = await loadPauseResumeForCreate(sql, {
@@ -274,8 +653,10 @@ export function createAgUiRunService(options: {
             agentTurnId: existing.agentTurnId,
             previousTrueforgeTurnId: existing.previousTrueforgeTurnId,
             trueforgeSessionId: existing.trueforgeSessionId,
-            channelAgentSessionId: "",
-            logicalThreadId: resolved.value.logicalThreadId,
+            channelId: gate.channelId,
+            channelAgentSessionId: gate.channelAgentSessionId,
+            coworkerId: gate.coworkerId,
+            logicalThreadId: gate.logicalThreadId,
             requiredActionIds: gate.requiredActionIds,
           };
         }
@@ -618,6 +999,7 @@ export function createAgUiRunService(options: {
       });
 
       let observedTerminal = false;
+      const rawTrueForgeEvents: Array<Record<string, unknown>> = [];
       let deliveryAuthorized = true;
       let durableMirrorHealthy = true;
       const canDeliver = async () => {
@@ -682,7 +1064,27 @@ export function createAgUiRunService(options: {
             return rows as Array<Record<string, unknown>>;
           },
           onUpstreamEvent: async (raw) => {
+            rawTrueForgeEvents.push(raw);
             const normalized = normalizeTrueForgeEvent(raw);
+            if (normalized.normalizedType === "turn.done") {
+              if (artifacts) {
+                await persistAgUiSandboxArtifacts({
+                  sql,
+                  bootstrap,
+                  rawEvents: rawTrueForgeEvents,
+                  trueforgeClient,
+                  artifacts,
+                });
+              }
+              const captured = await captureTrueForgeRequiredActions({
+                sql,
+                bootstrap,
+                raw,
+              });
+              if (!captured.ok) {
+                throw new Error(`Trusted required-action capture failed: ${captured.reason}`);
+              }
+            }
             const turnDoneOutcome =
               normalized.normalizedType === "turn.done"
                 ? evaluateTurnDoneOutcome(normalized.payloadRedacted)

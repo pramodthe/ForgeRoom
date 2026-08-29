@@ -37,8 +37,8 @@ Natural-language coworker requests become immutable, reviewable permission draft
 - [x] Draft creation/revision mutates no profile, grant, channel membership, connection or TrueForge agent/session.
 - [x] Confirm binds actor, current draft revision/hash, policy/catalogue revisions and expiry; stale data returns a new safe diff.
 - [x] Duplicate/concurrent confirm creates one profile/version/grant set/membership/provision command.
-- [ ] Remote provisioning timeout reconciles by idempotency/identity and never creates two coworkers; failure is visible/retryable. *(failed_provisioning path + idempotent confirm; live timeout probe deferred)*
-- [ ] P0 compiled AgentSpec has native subagents off and includes only confirmed exact tools/skills/components, TaskRecord grants, budgets and approval set. *(enforced at provision via session-provision; dedicated hash probe deferred to P0-505)*
+- [x] Remote provisioning timeout reconciles by idempotency/identity and never creates two coworkers; failure is visible/retryable. *(session-provision timeout/recovery and concurrent confirmation suites)*
+- [x] P0 compiled AgentSpec has native subagents off and includes only confirmed exact tools/skills/components, TaskRecord grants, budgets and approval set. *(compile/verification and session-provision effective-spec-hash suites)*
 
 ## Verification
 
@@ -59,6 +59,7 @@ Run structured-output/injection fixtures, exact prompt golden test, authorizatio
   - `pnpm --filter @forgeroom/api exec vitest run src/workspace/coworker-drafts.test.ts` — 3 passed, 1 postgres integration skipped (no DATABASE_URL in agent VM)
 - Permission-diff fixture: golden prompt → handle `research`, tool grant `GITHUB_GET_AN_ISSUE` only; denials for write/destructive/new account/native subagents/knowledge-memory-workflow/web (see `packages/domain/src/coworkers/drafts.test.ts` and `provider-fixtures/coworkers/conversational-research-draft.candidate.json`).
 - Redacted TrueForge manifest probe: confirm optionally calls `ensureCoworkerChannelSession` (P0-208); dedicated redacted manifest probe remains for P0-505 release demo.
+- Reconciliation/spec evidence: `apps/api/src/workspace/session-provision.test.ts`, `packages/integrations/trueforge/src/{index,mcp-connector}.test.ts`, and `packages/orchestration/src/session-provisioner.test.ts` cover timeout recovery, identity/idempotency, the exact compiled P0 AgentSpec and its effective hash.
 
 ## Handoff
 

@@ -701,6 +701,7 @@ export type WorkspaceService = {
   ): Promise<
     WorkspaceServiceResult<{
       coworker: { id: string; handle: string };
+      channelAgentSessionId: string | null;
       logicalThreadId: string;
       trueforgeSessionId: string | null;
       availability: ChannelRosterResponse["coworkers"][number]["availability"];
@@ -4567,6 +4568,7 @@ export function createWorkspaceService(options?: {
         ok: true,
         value: {
           coworker: { id: coworker.id, handle: coworker.handle },
+          channelAgentSessionId: agentSession?.id ?? null,
           logicalThreadId,
           trueforgeSessionId,
           availability: mapRosterAvailability(coworker, sessionStateByCoworker.get(coworkerId)),

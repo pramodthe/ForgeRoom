@@ -39,7 +39,7 @@ Run schema/limit/XSS/image tests, Storybook or fixture gallery review, axe check
 
 - [x] Fixture gallery validates all `provider-fixtures/controlled-ui/*` props client-side.
 - [x] Limit and prototype-key/XSS-string prop tests in `@forgeroom/ui-components`.
-- [ ] axe and 1440 px visual snapshots (deferred to **P0-407**).
+- [x] axe and 1440 px visual snapshots (verified by completed **P0-407**).
 
 ## Work log
 

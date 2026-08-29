@@ -52,6 +52,47 @@ describe("handleUiComponentsMcpRequest", () => {
     expect(response.result).toMatchObject({ isError: false });
   });
 
+  it("lists and dispatches explicitly offered application tools", async () => {
+    const callAdditionalTool = vi.fn(async () => ({
+      content: [{ type: "text" as const, text: JSON.stringify({ ok: true }) }],
+      isError: false,
+    }));
+    const handlers = {
+      enabledToolNames: ["ui.dataTable"],
+      additionalTools: [
+        {
+          name: "records.task.upsert.v1",
+          description: "Create or update a TaskRecord",
+          inputSchema: { type: "object" },
+        },
+      ],
+      callAdditionalTool,
+      callTool: vi.fn(),
+    };
+    const listed = await handleUiComponentsMcpRequest(
+      { jsonrpc: "2.0", id: 4, method: "tools/list" },
+      handlers,
+    );
+    expect(
+      (listed.result as { tools: Array<{ name: string }> }).tools.map((tool) => tool.name),
+    ).toEqual(["ui.dataTable", "records.task.upsert.v1"]);
+    const called = await handleUiComponentsMcpRequest(
+      {
+        jsonrpc: "2.0",
+        id: 5,
+        method: "tools/call",
+        params: { name: "records.task.upsert.v1", arguments: { channel_id: "ch_1" } },
+      },
+      handlers,
+    );
+    expect(callAdditionalTool).toHaveBeenCalledWith({
+      toolName: "records.task.upsert.v1",
+      arguments: { channel_id: "ch_1" },
+      requestId: 5,
+    });
+    expect(called.result).toMatchObject({ isError: false });
+  });
+
   it("parses notifications without an id", () => {
     const message = parseJsonRpcMessage({
       jsonrpc: "2.0",

@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "test": "vitest run",
-    "test:e2e": "playwright test",
+    "test:e2e": "node scripts/clean-artifacts.mjs && playwright test",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "devDependencies": {

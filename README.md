@@ -204,11 +204,22 @@ pnpm dev:worker
 ## Verify the project
 
 ```bash
+pnpm preflight
 pnpm lint
 pnpm typecheck
 pnpm test
 pnpm build
 ```
+
+`pnpm preflight` checks local dependency reachability and the checked-in P0 safety,
+package, fixture, worker, component, coworker, Task, and skill invariants. It reports
+each surface as `verified`, `reachable`, `configured`, or `blocked` and never prints
+credential values. Local/static checks still run when provider credentials are absent;
+provider-backed readiness remains blocked until those inputs are configured.
+
+Use `pnpm preflight -- --json` for machine-readable output. Before a provider-backed
+release rehearsal, use `pnpm preflight -- --require-providers`; a provider reported as
+`configured` is ready for live testing, not proof that the live scenario passed.
 
 To reset the optional local PostgreSQL database, remove its Docker volume and recreate it:
 
@@ -256,4 +267,11 @@ Start with the [specification workspace](./specs/README.md). It explains the pro
 
 ## License
 
-License terms have not been added yet. Until a license is published, do not assume permission to reuse the code beyond what applicable law allows.
+ForgeRoom is licensed under the [Apache License 2.0](./LICENSE). See
+[NOTICE](./NOTICE) for attribution information and the
+[production dependency review](./DEPENDENCY_LICENSES.md) for third-party license
+evidence. The self-hosted core described in this repository does not require a
+proprietary ForgeRoom control plane. An optional managed service may be offered
+separately through stable public interfaces; that does not change the license or
+capability contract of the self-hosted core. The full boundary is documented in the
+[open-source product contract](./specs/002-forgeroom-platform/open-source.md).

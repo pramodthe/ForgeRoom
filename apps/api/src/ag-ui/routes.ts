@@ -14,6 +14,7 @@ import {
 } from "../http-guards";
 import { createAgUiRunService, type AgUiRunServiceError } from "./run-service";
 import type { WorkspaceService } from "../workspace/service";
+import type { ArtifactService } from "../artifacts/service";
 
 function fail(c: Context, error: AgUiRunServiceError) {
   const status =
@@ -44,6 +45,7 @@ export function mountAgUiRoutes(
     workspace: WorkspaceService;
     trueforgeClient?: import("@forgeroom/trueforge").TrueForgeClient;
     sql?: ReturnType<typeof createSql>;
+    artifacts?: Pick<ArtifactService, "publishArtifact">;
   },
 ) {
   const composio =
@@ -61,6 +63,7 @@ export function mountAgUiRoutes(
     ...(options.trueforgeClient ? { trueforgeClient: options.trueforgeClient } : {}),
     ...(composio ? { composio } : {}),
     ...(options.sql ? { sql: options.sql } : {}),
+    ...(options.artifacts ? { artifacts: options.artifacts } : {}),
     pausePayloadEncryptionSecret: options.env.pausePayloadEncryptionSecret,
   });
 

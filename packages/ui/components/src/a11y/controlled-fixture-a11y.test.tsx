@@ -1,10 +1,12 @@
-import { render } from "@testing-library/react";
+import { fireEvent, render, within } from "@testing-library/react";
 import { loadControlledUiFixtures } from "@forgeroom/test-fixtures";
-import { describe, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { axe } from "vitest-axe";
 import { AXE_JSDOM_OPTIONS, expectNoAxeViolations } from "./axe-helpers";
 import {
   ControlledInstance,
+  ControlledBarOrLineChart,
+  ControlledChoiceForm,
   P0_AGENT_TOOL_COMPONENT_NAMES,
   type ControlledInstanceData,
 } from "../index";
@@ -82,4 +84,71 @@ describe("controlled component accessibility", () => {
       expectNoAxeViolations(results);
     });
   }
+
+  it("exposes the chart summary and its equivalent table fallback", () => {
+    const { container } = render(
+      <ControlledBarOrLineChart
+        title="Record counts"
+        description="Synthetic fixture"
+        chart_type="bar"
+        x_axis_label="Status"
+        y_axis_label="Count"
+        accessible_table_caption="Record counts by status"
+        series={[{ key: "count", label: "Count" }]}
+        points={[{ label: "Open", count: 2 }]}
+      />,
+    );
+    const chart = within(container);
+
+    expect(chart.getByRole("img", { name: "Record counts by status" })).toBeTruthy();
+    fireEvent.click(chart.getByRole("button", { name: "View data table" }));
+    expect(chart.getByRole("table", { name: "Record counts by status" })).toBeTruthy();
+  });
+
+  it("announces bounded form errors without moving the user's focus", () => {
+    const form = (errors: Record<string, string>, formError: string | null) => (
+      <ControlledChoiceForm
+        title="Choose a filter"
+        submit_label="Apply"
+        cancel_label="Cancel"
+        fields={[
+          {
+            id: "status",
+            label: "Status",
+            required: true,
+            kind: "single_choice",
+            options: [
+              { id: "open", label: "Open" },
+              { id: "closed", label: "Closed" },
+            ],
+          },
+          { id: "include_archived", label: "Include archived", kind: "checkbox" },
+        ]}
+        errors={errors}
+        formError={formError}
+      />
+    );
+    const { container, rerender } = render(form({}, null));
+    const firstChoice = within(container).getAllByRole("radio")[0]!;
+    firstChoice.focus();
+    expect(document.activeElement).toBe(firstChoice);
+
+    rerender(
+      form(
+        { status: "Choose one status.", include_archived: "This choice is unavailable." },
+        "The filter could not be applied.",
+      ),
+    );
+
+    expect(
+      within(container)
+        .getAllByRole("alert")
+        .map((node) => node.textContent),
+    ).toEqual([
+      "Choose one status.",
+      "This choice is unavailable.",
+      "The filter could not be applied.",
+    ]);
+    expect(document.activeElement).toBe(firstChoice);
+  });
 });

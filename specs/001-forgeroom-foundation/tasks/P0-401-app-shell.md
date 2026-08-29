@@ -18,12 +18,12 @@ Authenticated owner can navigate Channels, Tasks, Coworkers, Skills and Connecti
 
 ## Acceptance criteria
 
-- [ ] Login redirect/session expiry/logout work.
-- [ ] Routes and deep links match UX contract.
-- [ ] Channel layout has left navigation, center timeline/composer and right Work panel.
-- [ ] Shell includes stable host slots/error boundaries for AG-UI activities and controlled components; it has no generated-frame route or slot in P0.
-- [ ] Loading, unauthenticated, forbidden and route-error states are polished.
-- [ ] No provider credential or raw runtime payload enters browser state.
+- [x] Login redirect/session expiry/logout work.
+- [x] Routes and deep links match UX contract.
+- [x] Channel layout has left navigation, center timeline/composer and right Work panel.
+- [x] Shell includes stable host slots/error boundaries for AG-UI activities and controlled components; it has no generated-frame route or slot in P0.
+- [x] Loading, unauthenticated, forbidden and route-error states are polished.
+- [x] No provider credential or raw runtime payload enters browser state.
 
 ## Verification
 
@@ -31,5 +31,5 @@ Run component/router tests and 1440 px visual check with mocked canonical contra
 
 ## Completion evidence
 
-- Tests/results:
-- Screenshots:
+- Tests/results: `apps/web/src/app-shell.test.ts`, route/session helpers, P0 exclusions, controlled host tests and the P0-407 axe/layout suite; included in the passing release unit/security runs.
+- Screenshots: P0-407 1440px visual baselines and P0-504 Playwright artifacts.

@@ -1,6 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import type postgres from "postgres";
 import { sealPauseResponsePayload } from "./pause-crypto";
+import { TURN_QUEUE_PRIORITY } from "./turn-queue";
 
 export type SqlClient = postgres.Sql;
 
@@ -412,19 +413,25 @@ export async function recordApprovalDecision(
 
     const decisionKind = input.command.decision;
     const proposalState = decisionKind === "allow" ? "allowed" : "denied";
-    const responseRedacted = {
+    const responsePlaintext = {
       decision: decisionKind === "allow" ? "allow" : "deny",
       request_changes: decisionKind === "request_changes",
       reason: input.command.reason ?? null,
     };
-    const sealed = sealPauseResponsePayload(responseRedacted, input.encryptionKey);
+    const responseRedacted = {
+      decision: responsePlaintext.decision,
+      request_changes: responsePlaintext.request_changes,
+      reason_present: Boolean(input.command.reason),
+      reason_length: input.command.reason?.length ?? 0,
+    };
+    const sealed = sealPauseResponsePayload(responsePlaintext, input.encryptionKey);
 
     const won = await tx<{ id: string }[]>`
       UPDATE action_proposals
       SET
         state = ${proposalState},
         decided_by = ${input.actorUserId},
-        decision_reason = ${input.command.reason ?? null},
+        decision_reason = NULL,
         decided_at = ${now}
       WHERE id = ${row.id} AND state = 'proposed'
       RETURNING id
@@ -438,7 +445,7 @@ export async function recordApprovalDecision(
       SET
         state = 'resolved',
         response_ciphertext = ${sealed.ciphertext},
-        response_redacted_json = ${JSON.stringify(responseRedacted)}::jsonb,
+        response_redacted_json = ${JSON.stringify(responseRedacted)}::text::jsonb,
         resolved_by = ${input.actorUserId},
         resolved_at = ${now}
       WHERE id = ${row.required_action_id} AND state = 'pending'
@@ -484,7 +491,6 @@ export async function recordApprovalDecision(
     } | null = null;
 
     if (decisionKind === "request_changes") {
-      const content = (input.command.reason ?? "").trim();
       const correctionStepId = opaqueId("step");
       await tx`
         INSERT INTO run_steps (
@@ -494,8 +500,14 @@ export async function recordApprovalDecision(
           ${correctionStepId},
           rs.run_id,
           rs.assigned_agent_id,
-          ${`Correction: ${content}`},
-          ${JSON.stringify([{ prior_run_step_id: row.run_step_id }])}::jsonb,
+          'Approval correction requested',
+          ${JSON.stringify([
+            {
+              prior_run_step_id: row.run_step_id,
+              pause_group_id: row.pause_group_id,
+              required_action_id: row.required_action_id,
+            },
+          ])}::text::jsonb,
           'queued',
           1
         FROM run_steps AS rs
@@ -519,23 +531,25 @@ export async function recordApprovalDecision(
       await tx`
         INSERT INTO turn_queue_items (
           id, channel_agent_session_id, run_step_id, bound_session_generation_id, input_type,
-          input_payload_redacted_json, fifo_sequence, state, created_at
+          input_payload_redacted_json, priority, fifo_sequence, state, created_at
         ) VALUES (
           ${queueItemId}, ${row.channel_agent_session_id}, ${correctionStepId},
           ${row.session_generation_id}, 'correction',
           ${JSON.stringify({
-            content,
+            pause_group_id: row.pause_group_id,
+            required_action_id: row.required_action_id,
             prior_run_step_id: row.run_step_id,
             priority: 10,
-          })}::jsonb,
-          ${fifoSequence}, 'queued', ${now}
+            content_source: "encrypted_required_action_response",
+          })}::text::jsonb,
+          ${TURN_QUEUE_PRIORITY.correction}, ${fifoSequence}, 'queued', ${now}
         )
       `;
       correctionDraft = {
         queueItemId,
         runStepId: correctionStepId,
         priorRunStepId: row.run_step_id,
-        content,
+        content: "[REDACTED]",
       };
     }
 

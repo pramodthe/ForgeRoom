@@ -79,6 +79,7 @@ export type ComponentToolGenerationContext = {
   coworkerId: string;
   logicalThreadId: string;
   offeredComponentToolNames: string[];
+  offeredApplicationToolNames: string[];
 };
 
 export async function loadComponentToolGenerationContext(
@@ -130,6 +131,9 @@ export async function loadComponentToolGenerationContext(
     logicalThreadId: row.logical_thread_id,
     offeredComponentToolNames: parseStringArray(
       readEffectiveConfig(row.effective_config).component_tool_names,
+    ),
+    offeredApplicationToolNames: parseStringArray(
+      readEffectiveConfig(row.effective_config).application_tool_names,
     ),
   };
 }

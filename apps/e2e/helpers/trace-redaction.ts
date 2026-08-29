@@ -1,8 +1,10 @@
+import { execFileSync } from "node:child_process";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 
 /** Patterns that must never appear in Playwright traces or screenshots metadata. */
 const FORBIDDEN: RegExp[] = [
+  /FORGEROOM_TRACE_ARCHIVE_UNREADABLE/g,
   /sk-[A-Za-z0-9]{20,}/g,
   /api[_-]?key["']?\s*[:=]\s*["']?[A-Za-z0-9_-]{16,}/gi,
   /Bearer\s+[A-Za-z0-9\-._~+/]{16,}/g,
@@ -10,6 +12,9 @@ const FORBIDDEN: RegExp[] = [
   /composio_api|daytona_api|OPENAI_API_KEY|ANTHROPIC_API_KEY/gi,
   /"reasoning"\s*:/gi,
   /rawEvent/g,
+  /raw[_-]?input["']?\s*[:=]\s*["'][^"']{4,}/gi,
+  /mount[_-]?nonce["']?\s*[:=]\s*["'][A-Za-z0-9_-]{8,}/gi,
+  /interaction[_-]?token["']?\s*[:=]\s*["'][A-Za-z0-9_-]{16,}/gi,
   /password["']?\s*[:=]\s*["'][^"']{4,}/gi,
 ];
 
@@ -40,19 +45,26 @@ function walk(dir: string, out: string[] = []): string[] {
   return out;
 }
 
-/**
- * Disposable demo seed password used by fixtures / CI live E2E — not a production secret.
- * Scrubbed before the password-field pattern so API-login traces can pass the scan.
- */
-function scrubKnownFixturePassword(body: string): string {
-  const fixture = process.env.FORGEROOM_E2E_OWNER_PASSWORD?.trim() || "correct-horse-battery";
-  if (!fixture) return body;
-  return body.split(fixture).join("x");
+function readArtifactBody(file: string): string {
+  const raw = readFileSync(file, "latin1");
+  if (!file.endsWith(".zip")) return raw;
+  try {
+    // Playwright traces are ZIP archives. Scan the expanded entry streams too;
+    // secret-like values are normally invisible in the raw deflated bytes.
+    const expanded = execFileSync("unzip", ["-p", file], {
+      encoding: "latin1",
+      maxBuffer: 256 * 1024 * 1024,
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+    return `${raw}\n${expanded}`;
+  } catch {
+    // Fail closed: an unreadable archive cannot provide redaction evidence.
+    return `${raw}\nFORGEROOM_TRACE_ARCHIVE_UNREADABLE`;
+  }
 }
 
 /**
- * Best-effort redaction scan over Playwright output.
- * ZIP bodies are scanned as latin1 text so compressed payloads still match string secrets.
+ * Best-effort redaction scan over Playwright output, including decompressed ZIP entries.
  */
 export function scanPlaywrightArtifacts(rootDirs: string[]): TraceScanResult {
   const hits: TraceScanResult["hits"] = [];
@@ -60,7 +72,10 @@ export function scanPlaywrightArtifacts(rootDirs: string[]): TraceScanResult {
   for (const root of rootDirs) {
     for (const file of walk(root)) {
       scannedFiles += 1;
-      const body = scrubKnownFixturePassword(readFileSync(file, "latin1"));
+      // Scan the evidence exactly as emitted. Known fixture credentials are still
+      // credentials in a trace and must make the release gate fail, not be erased
+      // in-memory before inspection.
+      const body = readArtifactBody(file);
       for (const pattern of FORBIDDEN) {
         pattern.lastIndex = 0;
         if (pattern.test(body)) {

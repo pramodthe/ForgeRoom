@@ -43,6 +43,12 @@ export type ComponentToolCallResult = {
 
 export type UiComponentsMcpHandlers = {
   enabledToolNames: readonly string[];
+  additionalTools?: readonly UiComponentsMcpTool[];
+  callAdditionalTool?: (input: {
+    toolName: string;
+    arguments: Record<string, unknown>;
+    requestId: string | number;
+  }) => Promise<{ content: Array<{ type: "text"; text: string }>; isError: boolean }>;
   callTool: (input: {
     toolName: string;
     stableName: string;
@@ -92,7 +98,10 @@ export async function handleUiComponentsMcpRequest(
       };
     }
     if (request.method === "tools/list") {
-      const tools = listControlledComponentMcpTools(handlers.enabledToolNames);
+      const tools = [
+        ...listControlledComponentMcpTools(handlers.enabledToolNames),
+        ...(handlers.additionalTools ?? []),
+      ];
       return {
         jsonrpc: "2.0",
         id,
@@ -107,7 +116,22 @@ export async function handleUiComponentsMcpRequest(
       const toolName = typeof params.name === "string" ? params.name : "";
       const stableName = resolveStableNameForMcpTool(toolName);
       if (!stableName) {
-        return rpcError(id, -32602, `Unknown component tool ${toolName}`);
+        const additional = handlers.additionalTools?.find((tool) => tool.name === toolName);
+        if (!additional || !handlers.callAdditionalTool) {
+          return rpcError(id, -32602, `Unknown application tool ${toolName}`);
+        }
+        const args =
+          params.arguments &&
+          typeof params.arguments === "object" &&
+          !Array.isArray(params.arguments)
+            ? (params.arguments as Record<string, unknown>)
+            : {};
+        const result = await handlers.callAdditionalTool({
+          toolName,
+          arguments: args,
+          requestId: id,
+        });
+        return { jsonrpc: "2.0", id, result };
       }
       if (!handlers.enabledToolNames.includes(toolName)) {
         return rpcError(id, -32602, `Component tool ${toolName} is not offered in this session`);

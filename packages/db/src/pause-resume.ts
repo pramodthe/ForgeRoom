@@ -163,6 +163,13 @@ export type ClaimPauseGroupResumeInput = {
   encryptionKey: Buffer;
   /** Optional caller-supplied claim token; generated when omitted. */
   resumeClaimToken?: string;
+  /** Route identity already authorized by the caller; checked under the claim transaction. */
+  expectedBinding?: {
+    channelId: string;
+    channelAgentSessionId: string;
+    coworkerId: string;
+    logicalThreadId: string;
+  };
   applicationRunToken?: string;
   /**
    * Pre-sealed durable payload. When omitted, claim assembles and seals from
@@ -189,7 +196,9 @@ export type ClaimPauseGroupResumeResult =
       agentTurnId: string;
       previousTrueforgeTurnId: string;
       trueforgeSessionId: string;
+      channelId: string;
       channelAgentSessionId: string;
+      coworkerId: string;
       logicalThreadId: string;
       requiredActionIds: string[];
     }
@@ -198,6 +207,7 @@ export type ClaimPauseGroupResumeResult =
       reason:
         | "not_found"
         | "forbidden"
+        | "binding_mismatch"
         | "incomplete"
         | "not_ready"
         | "unsupported_connection"
@@ -233,6 +243,7 @@ export async function claimPauseGroupResume(
         workspace_id: string;
         channel_id: string;
         channel_agent_session_id: string;
+        agent_profile_id: string;
         session_generation_id: string;
         logical_thread_id: string;
         trueforge_session_id: string | null;
@@ -244,6 +255,7 @@ export async function claimPauseGroupResume(
         pg.resume_claim_token, pg.agent_turn_id, pg.trueforge_turn_id,
         c.workspace_id, c.id AS channel_id,
         t.channel_agent_session_id, t.session_generation_id, t.run_step_id,
+        cas.agent_profile_id,
         cas.logical_agui_thread_id AS logical_thread_id,
         gen.trueforge_session_id
       FROM pause_groups AS pg
@@ -262,6 +274,15 @@ export async function claimPauseGroupResume(
     }
     if (group.workspace_id !== input.workspaceId) {
       return { ok: false, reason: "forbidden" };
+    }
+    if (
+      input.expectedBinding &&
+      (group.channel_id !== input.expectedBinding.channelId ||
+        group.channel_agent_session_id !== input.expectedBinding.channelAgentSessionId ||
+        group.agent_profile_id !== input.expectedBinding.coworkerId ||
+        group.logical_thread_id !== input.expectedBinding.logicalThreadId)
+    ) {
+      return { ok: false, reason: "binding_mismatch" };
     }
 
     const existingResumes = await tx<
@@ -329,6 +350,27 @@ export async function claimPauseGroupResume(
       return { ok: false, reason: "incomplete" };
     }
 
+    let decryptedActions: Array<ResolvedPauseActionRow>;
+    try {
+      decryptedActions = actions.map((row) => {
+        if (!row.response_ciphertext) {
+          throw new Error("missing encrypted RequiredAction response");
+        }
+        return {
+          requiredActionId: row.id,
+          providerActionId: row.provider_action_id,
+          actionType: row.action_type,
+          responseRedacted: openPauseResponsePayload(row.response_ciphertext, input.encryptionKey),
+          responseCiphertext: row.response_ciphertext,
+          toolCallId: row.tool_call_id,
+          threadId: null,
+          payloadRedacted: row.payload_redacted_json ?? {},
+        };
+      });
+    } catch {
+      return { ok: false, reason: "missing_binding" };
+    }
+
     const assembled = assemblePauseResumePlaintext({
       applicationRunToken:
         input.sealed?.plaintext.application_run_token ??
@@ -336,16 +378,7 @@ export async function claimPauseGroupResume(
         opaqueId("art_resume"),
       previousTrueforgeTurnId: group.trueforge_turn_id,
       logicalThreadId: group.logical_thread_id,
-      actions: actions.map((row) => ({
-        requiredActionId: row.id,
-        providerActionId: row.provider_action_id,
-        actionType: row.action_type,
-        responseRedacted: row.response_redacted_json,
-        responseCiphertext: row.response_ciphertext,
-        toolCallId: row.tool_call_id,
-        threadId: null,
-        payloadRedacted: row.payload_redacted_json ?? {},
-      })),
+      actions: decryptedActions,
     });
     if (!assembled.ok) {
       return { ok: false, reason: assembled.reason };
@@ -477,7 +510,9 @@ export async function claimPauseGroupResume(
       agentTurnId: group.agent_turn_id,
       previousTrueforgeTurnId: group.trueforge_turn_id,
       trueforgeSessionId: group.trueforge_session_id!,
+      channelId: group.channel_id,
       channelAgentSessionId: group.channel_agent_session_id,
+      coworkerId: group.agent_profile_id,
       logicalThreadId: group.logical_thread_id,
       requiredActionIds: actions.map((row) => row.id),
     };
@@ -804,8 +839,9 @@ export async function recordQuestionAnswer(
       return { ok: false, reason: "stale_prompt" };
     }
 
-    const responseRedacted = { answer: input.answer };
-    const sealed = sealPauseResponsePayload(responseRedacted, input.encryptionKey);
+    const responsePlaintext = { answer: input.answer };
+    const responseRedacted = { answer_present: true, answer_length: input.answer.length };
+    const sealed = sealPauseResponsePayload(responsePlaintext, input.encryptionKey);
 
     await tx`
       UPDATE questions
@@ -813,7 +849,7 @@ export async function recordQuestionAnswer(
         state = 'answered',
         answered_by = ${input.actorUserId},
         answer_ciphertext = ${sealed.ciphertext},
-        answer_redacted_json = ${JSON.stringify({ answer_length: input.answer.length })}::jsonb,
+        answer_redacted_json = ${JSON.stringify({ answer_length: input.answer.length })}::text::jsonb,
         answered_at = ${now}
       WHERE id = ${row.id} AND state = 'requested'
     `;
@@ -822,7 +858,7 @@ export async function recordQuestionAnswer(
       SET
         state = 'resolved',
         response_ciphertext = ${sealed.ciphertext},
-        response_redacted_json = ${JSON.stringify(responseRedacted)}::jsonb,
+        response_redacted_json = ${JSON.stringify(responseRedacted)}::text::jsonb,
         resolved_by = ${input.actorUserId},
         resolved_at = ${now}
       WHERE id = ${row.required_action_id} AND state = 'pending'
@@ -916,9 +952,14 @@ export async function loadPauseGroupResumeGate(
       expired: boolean;
       requiredActionIds: string[];
       providerActionIds: string[];
+      actions: Array<{ requiredActionId: string; providerActionId: string }>;
       interruptIds: string[];
       requiredActionCount: number;
       resolvedActionCount: number;
+      channelId: string;
+      channelAgentSessionId: string;
+      coworkerId: string;
+      logicalThreadId: string;
     }
   | { ok: false; reason: "not_found" | "forbidden" }
 > {
@@ -929,12 +970,20 @@ export async function loadPauseGroupResumeGate(
       required_action_count: number;
       resolved_action_count: number;
       workspace_id: string;
+      channel_id: string;
+      channel_agent_session_id: string;
+      coworker_id: string;
+      logical_thread_id: string;
     }[]
   >`
     SELECT
-      pg.id, pg.state, pg.required_action_count, pg.resolved_action_count, c.workspace_id
+      pg.id, pg.state, pg.required_action_count, pg.resolved_action_count, c.workspace_id,
+      c.id AS channel_id, cas.id AS channel_agent_session_id,
+      cas.agent_profile_id AS coworker_id,
+      cas.logical_agui_thread_id AS logical_thread_id
     FROM pause_groups AS pg
     JOIN agent_turns AS t ON t.id = pg.agent_turn_id
+    JOIN channel_agent_sessions AS cas ON cas.id = t.channel_agent_session_id
     JOIN run_steps AS rs ON rs.id = t.run_step_id
     JOIN runs AS r ON r.id = rs.run_id
     JOIN channels AS c ON c.id = r.channel_id
@@ -955,6 +1004,10 @@ export async function loadPauseGroupResumeGate(
   `;
   const requiredActionIds = actions.map((a) => a.id);
   const providerActionIds = actions.map((a) => a.provider_action_id);
+  const actionAliases = actions.map((action) => ({
+    requiredActionId: action.id,
+    providerActionId: action.provider_action_id,
+  }));
   // Clients may resume with either durable RequiredAction ids or provider interrupt ids.
   const interruptIds = [...new Set([...requiredActionIds, ...providerActionIds])];
   return {
@@ -968,8 +1021,13 @@ export async function loadPauseGroupResumeGate(
     expired: row.state === "expired",
     requiredActionIds,
     providerActionIds,
+    actions: actionAliases,
     interruptIds,
     requiredActionCount: row.required_action_count,
     resolvedActionCount: row.resolved_action_count,
+    channelId: row.channel_id,
+    channelAgentSessionId: row.channel_agent_session_id,
+    coworkerId: row.coworker_id,
+    logicalThreadId: row.logical_thread_id,
   };
 }

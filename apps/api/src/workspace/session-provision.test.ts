@@ -10,11 +10,47 @@ import {
 import { createMemoryWorkspaceStore } from "./store";
 import { createPostgresWorkspaceStore } from "./postgres-store";
 import {
+  applicationToolNamesFromCoworker,
+  connectorsFromCoworker,
   ensureCoworkerChannelSession,
   initialSessionGenerationId,
   stableChannelAgentSessionId,
 } from "./session-provision";
 import { loadApiEnv } from "../env";
+import {
+  P0_COMPOSIO_APPROVAL_REQUIRED_TOOLS,
+  P0_COMPOSIO_ENABLED_TOOLS,
+  P0_COMPOSIO_TRUEFORGE_CONNECTOR_NAME,
+} from "@forgeroom/composio";
+
+describe("coworker runtime grants", () => {
+  const coworker = {
+    id: "cw_demo_operator",
+    editableConfigJson: {
+      tool_grants: [...P0_COMPOSIO_ENABLED_TOOLS],
+      task_record_grants: [
+        { channel_id: "ch_demo_general", operations: ["create", "update_status"] },
+      ],
+    },
+  } as never;
+
+  it("compiles typed direct-tool grants into the exact Composio connector policy", () => {
+    expect(connectorsFromCoworker(coworker)).toEqual([
+      {
+        name: P0_COMPOSIO_TRUEFORGE_CONNECTOR_NAME,
+        enabledTools: [...P0_COMPOSIO_ENABLED_TOOLS],
+        approvalRequiredTools: [...P0_COMPOSIO_APPROVAL_REQUIRED_TOOLS],
+      },
+    ]);
+  });
+
+  it("offers the TaskRecord tool only for a channel-scoped create/update grant", () => {
+    expect(applicationToolNamesFromCoworker(coworker, "ch_demo_general")).toEqual([
+      "records.task.upsert.v1",
+    ]);
+    expect(applicationToolNamesFromCoworker(coworker, "ch_other")).toEqual([]);
+  });
+});
 
 describe("ensureCoworkerChannelSession", () => {
   it("provisions distinct TrueForge sessions per coworker and stores hashes", async () => {

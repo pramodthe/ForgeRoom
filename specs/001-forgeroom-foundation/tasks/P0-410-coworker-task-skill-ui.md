@@ -23,7 +23,7 @@ The 0.1 product exposes trusted, polished user flows for creating a coworker, ma
 - [x] TaskCard/list/detail shows canonical status, assignee, channel, source Run/Message, revision, history and only authorized transitions; conflict preserves user input and shows latest revision.
 - [x] Completed Run exposes Save as skill; review shows method, inputs, required tools/components/data, output, validation, failures, approvals, source and package diff before publish/attach.
 - [x] Loading, empty, stale, denied, conflict, provisioning, blocked-capability, partial and failed states are explicit and contain no raw JSON/secrets/reasoning.
-- [ ] Flows are keyboard accessible, labelled, focus-safe, responsive at the P0 viewport and pass axe/visual review. *(deferred to **P0-407**)*
+- [x] Flows are keyboard accessible, labelled, focus-safe, responsive at the P0 viewport and pass axe/visual review. *(verified by completed P0-407 axe, focus and 1440px baselines)*
 - [x] Refresh during CoworkerDraft review, Task update or SkillDraft review restores the exact server revision without duplicate mutation.
 
 ## Verification

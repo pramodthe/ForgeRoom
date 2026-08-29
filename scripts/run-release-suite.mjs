@@ -33,7 +33,15 @@ const workspaceDirectories = {
 const suites = {
   integration: [
     { package: "@forgeroom/db", files: [".integration.test.ts"], workers: 4 },
-    { package: "@forgeroom/api", files: [".integration.test.ts"], workers: 4 },
+    {
+      package: "@forgeroom/api",
+      files: [
+        ".integration.test.ts",
+        "src/ag-ui/routes.test.ts",
+        "src/workspace/event-log.test.ts",
+      ],
+      workers: 4,
+    },
     {
       package: "@forgeroom/orchestration",
       files: [
@@ -70,6 +78,10 @@ const suites = {
     },
     { package: "@forgeroom/artifacts", files: ["src/extraction.test.ts"] },
     { package: "@forgeroom/ui-components-mcp", files: ["src/protocol.test.ts"] },
+    {
+      package: "@forgeroom/web",
+      files: ["src/ag-ui/channel-timeline-reducer.test.ts"],
+    },
   ],
   security: [
     {
@@ -92,6 +104,7 @@ const suites = {
         "src/skills/draft.test.ts",
         "src/skills/publish.test.ts",
         "src/tasks/grants.test.ts",
+        "src/audit/receipt.test.ts",
         "src/transitions.test.ts",
       ],
     },
@@ -111,6 +124,7 @@ const suites = {
         "src/session-rotation.integration.test.ts",
         "src/skill-bindings.integration.test.ts",
         "src/skill-drafts.integration.test.ts",
+        "src/turn-queue.integration.test.ts",
         "src/turn-lifecycle.integration.test.ts",
         "src/ui-interactions.integration.test.ts",
       ],
@@ -160,10 +174,13 @@ const suites = {
       files: [
         "src/ag-ui/routes.test.ts",
         "src/approvals/decisions.test.ts",
+        "src/artifacts/artifacts.test.ts",
         "src/auth/rate-limit.test.ts",
         "src/components/grant-rotation.test.ts",
+        "src/connections/connections.test.ts",
         "src/mcp/ui-components-routes.test.ts",
         "src/questions/answers.test.ts",
+        "src/runs/receipt.integration.test.ts",
         "src/server.test.ts",
         "src/skills/draft-turn.test.ts",
         "src/tasks/task-tool.test.ts",
@@ -171,7 +188,9 @@ const suites = {
         "src/ui-instances/ui-instances.test.ts",
         "src/workspace/coworker-drafts.test.ts",
         "src/workspace/coworker-drafts.integration.test.ts",
+        "src/workspace/context-pins.test.ts",
         "src/workspace/session-provision.test.ts",
+        "src/workspace/workspace.test.ts",
       ],
     },
     {
@@ -192,6 +211,10 @@ const suites = {
         "src/controlled/presentation-limits.test.ts",
         "src/controlled/validate-props.test.ts",
       ],
+    },
+    {
+      package: "@forgeroom/artifacts",
+      files: ["src/extraction.test.ts", "src/preview-sharp.test.ts"],
     },
     { package: "@forgeroom/e2e", files: ["helpers/trace-redaction.test.ts"] },
   ],

@@ -73,9 +73,9 @@ draft → validating → private_ready → published
 
 | ID | Contract | First release |
 | --- | --- | --- |
-| SK-001 | A successful run can produce a reviewable skill draft with source Run/RunStep IDs and content hashes. | 0.1 |
-| SK-002 | A confirmed immutable version states exact inputs, outputs, steps, validation, failure behavior, required tools/components/data, and approvals. | 0.1 |
-| SK-003 | Drafting excludes credentials, raw reasoning, signatures, transient tokens, unrelated history, and executable content not explicitly packaged/reviewed. | 0.1 |
+| SK-001 | A completed successful Run can become a reviewable SkillDraft with source Run/RunStep IDs and content hashes. | 0.1 |
+| SK-002 | A confirmed immutable SkillVersion records exact inputs, outputs, steps, validation, failures, required tools/components/data and approval boundaries. | 0.1 |
+| SK-003 | Draft/publish excludes credentials, private reasoning, signatures, transient answers, unrelated history, unredacted tool bodies and unreviewed executable package content. | 0.1 |
 | SK-004 | Attachment cannot expand coworker authority; missing requirements display a diff and block attachment/use. | 0.1 |
 | SK-005 | Attaching or detaching a skill creates a coworker runtime revision and safe session rotation. | 0.1 |
 | SK-006 | Users can browse, inspect, enable/disable, test, version, compare, upgrade, deprecate, revoke, roll back, import, export, and archive skills; every binding-changing lifecycle action rotates affected runtimes safely. | 0.2 |

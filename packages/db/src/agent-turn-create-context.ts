@@ -1,4 +1,5 @@
 import type postgres from "postgres";
+import { openPauseResponsePayload } from "./pause-crypto";
 
 type SqlClient = postgres.Sql;
 
@@ -46,6 +47,7 @@ export type AgentTurnCreateContext =
 export async function loadAgentTurnCreateContext(
   sql: SqlClient,
   agentTurnId: string,
+  pausePayloadEncryptionKey?: Buffer,
 ): Promise<AgentTurnCreateContext | null> {
   const rows = await sql<
     {
@@ -134,7 +136,48 @@ export async function loadAgentTurnCreateContext(
   }
 
   const payload = asRecord(row.input_payload_redacted_json);
-  const content = typeof payload.content === "string" ? payload.content : null;
+  let content = typeof payload.content === "string" ? payload.content : null;
+  let correctionPreviousTurnId: string | null = null;
+  if (
+    row.input_type === "correction" &&
+    payload.content_source === "encrypted_required_action_response"
+  ) {
+    const requiredActionId =
+      typeof payload.required_action_id === "string" ? payload.required_action_id : null;
+    const pauseGroupId = typeof payload.pause_group_id === "string" ? payload.pause_group_id : null;
+    if (!requiredActionId || !pauseGroupId || !pausePayloadEncryptionKey) return null;
+
+    const sources = await sql<
+      Array<{ response_ciphertext: string | null; trueforge_turn_id: string | null }>
+    >`
+      SELECT ra.response_ciphertext, source_turn.trueforge_turn_id
+      FROM required_actions AS ra
+      JOIN pause_groups AS pg ON pg.id = ra.pause_group_id
+      JOIN agent_turns AS source_turn ON source_turn.id = pg.agent_turn_id
+      JOIN agent_turns AS correction_turn
+        ON correction_turn.channel_agent_session_id = source_turn.channel_agent_session_id
+      WHERE ra.id = ${requiredActionId}
+        AND pg.id = ${pauseGroupId}
+        AND correction_turn.id = ${agentTurnId}
+        AND ra.state = 'resolved'
+        AND ra.response_redacted_json->>'request_changes' = 'true'
+      LIMIT 1
+    `;
+    const source = sources[0];
+    if (!source?.response_ciphertext || !source.trueforge_turn_id) return null;
+    try {
+      const opened = asRecord(
+        openPauseResponsePayload(source.response_ciphertext, pausePayloadEncryptionKey),
+      );
+      content =
+        opened.request_changes === true && typeof opened.reason === "string"
+          ? opened.reason.trim()
+          : null;
+      correctionPreviousTurnId = source.trueforge_turn_id;
+    } catch {
+      return null;
+    }
+  }
   if (!content) {
     return null;
   }
@@ -156,7 +199,7 @@ export async function loadAgentTurnCreateContext(
     inputType: row.input_type,
     applicationRunToken: row.application_run_token,
     content,
-    previousTrueforgeTurnId: previousRows[0]?.trueforge_turn_id ?? null,
+    previousTrueforgeTurnId: correctionPreviousTurnId ?? previousRows[0]?.trueforge_turn_id ?? null,
     localTrueforgeTurnId: row.trueforge_turn_id,
     trueforgeSessionId: row.trueforge_session_id,
   };

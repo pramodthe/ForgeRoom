@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { isForbiddenPayloadKey } from "@forgeroom/contracts";
 import type { TurnQueueInputType } from "./turn-queue";
 
 /** Raw TrueForge required-action item before application capture. */
@@ -84,6 +85,46 @@ export type PauseGroupCaptureFailure =
 
 function readSafeString(value: unknown): string | null {
   return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+const REDACTED_PROVIDER_TEXT = "[REDACTED]";
+const PROVIDER_TEXT_SECRET_PATTERNS = [
+  /\b(?:sk|sk-proj)-[A-Za-z0-9_-]{12,}\b/g,
+  /\bgithub_pat_[A-Za-z0-9_]{20,}\b/g,
+  /\bgh[pousr]_[A-Za-z0-9]{12,}\b/gi,
+  /\b(?:AKIA|ASIA)[A-Z0-9]{16}\b/g,
+  /\bxox[baprs]-[A-Za-z0-9-]{10,}\b/gi,
+  /\bglpat-[A-Za-z0-9_-]{20,}\b/g,
+  /\bnpm_[A-Za-z0-9]{30,}\b/g,
+  /\b(?:sk|rk)_(?:live|test)_[A-Za-z0-9]{16,}\b/g,
+  /\bBearer\s+[A-Za-z0-9._~+/=-]{8,}\b/gi,
+  /\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b/g,
+  /\b(api[_-]?key|access[_-]?token|refresh[_-]?token|password|secret)\s*[:=]\s*(?:["'][^"']+["']|[^\s,;]+)/gi,
+] as const;
+
+function redactProviderString(value: string): string {
+  return PROVIDER_TEXT_SECRET_PATTERNS.reduce(
+    (redacted, pattern) => redacted.replace(pattern, REDACTED_PROVIDER_TEXT),
+    value,
+  );
+}
+
+/**
+ * Explicitly redact untrusted provider-authored question/connection text before persistence.
+ * Key filtering alone is insufficient because providers may embed credentials in free text.
+ */
+export function redactProviderRequiredActionText(value: unknown): unknown {
+  if (typeof value === "string") return redactProviderString(value);
+  if (Array.isArray(value)) return value.map(redactProviderRequiredActionText);
+  if (!value || typeof value !== "object") return value;
+
+  const output: Record<string, unknown> = {};
+  for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+    output[key] = isForbiddenPayloadKey(key)
+      ? REDACTED_PROVIDER_TEXT
+      : redactProviderRequiredActionText(item);
+  }
+  return output;
 }
 
 function sortKeys(value: unknown): unknown {
@@ -336,10 +377,12 @@ export function buildPauseGroupCapturePlan(input: {
     }
 
     if (classified === "question") {
-      const prompt = raw.prompt ??
-        raw.question ??
-        raw.message ??
-        raw.text ?? { prompt: "Additional input is required." };
+      const prompt = redactProviderRequiredActionText(
+        raw.prompt ??
+          raw.question ??
+          raw.message ??
+          raw.text ?? { prompt: "Additional input is required." },
+      );
       const promptRedacted =
         typeof prompt === "string"
           ? { prompt }
@@ -366,15 +409,19 @@ export function buildPauseGroupCapturePlan(input: {
       continue;
     }
 
-    const connector =
+    const connector = redactProviderRequiredActionText(
       readSafeString(raw.connector) ??
-      readSafeString(raw.provider) ??
-      readSafeString(raw.toolkit) ??
-      "unknown";
+        readSafeString(raw.provider) ??
+        readSafeString(raw.toolkit) ??
+        "unknown",
+    );
+    const reason = redactProviderRequiredActionText(
+      readSafeString(raw.reason) ?? readSafeString(raw.message) ?? "connection_required",
+    );
     const payloadRedacted = {
       type: "connection",
       connector,
-      reason: readSafeString(raw.reason) ?? readSafeString(raw.message) ?? "connection_required",
+      reason,
     };
     actions.push({
       actionType: "connection",
@@ -400,17 +447,21 @@ export function buildPauseGroupCapturePlan(input: {
 }
 
 /**
- * While a PauseGroup is unresolved, only that group's response intent may proceed.
- * Normal / correction / component responses wait behind it.
+ * While a PauseGroup is unresolved, only that group's response intent or its
+ * explicitly linked request-changes correction may proceed.
  */
 export function sessionAcceptsInputWhilePaused(input: {
   hasUnresolvedPauseGroup: boolean;
   inputType: TurnQueueInputType;
+  isLinkedPauseCorrection?: boolean;
 }): { ok: true } | { ok: false; reason: "pause_group_unresolved" } {
   if (!input.hasUnresolvedPauseGroup) {
     return { ok: true };
   }
   if (input.inputType === "pause_group_response") {
+    return { ok: true };
+  }
+  if (input.inputType === "correction" && input.isLinkedPauseCorrection === true) {
     return { ok: true };
   }
   return { ok: false, reason: "pause_group_unresolved" };

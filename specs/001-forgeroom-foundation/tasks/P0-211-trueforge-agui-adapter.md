@@ -24,7 +24,7 @@ Each persistent coworker is consumable as a sanitized standard AG-UI agent backe
 - [x] Authenticated per-coworker endpoint accepts `RunAgentInput` and emits official-schema AG-UI SSE (bootstrap slice: direct TrueForge turn + `listTurnEvents` poll).
 - [x] `/api/copilotkit` is absent by default; if P0-210 enables it, the gateway exposes only server-registered adapters and preserves the same validated stream.
 - [x] The pure POST route—and optional gateway when enabled—enforces expected Origin and the current session-bound CSRF header; clients attach it, and missing/forged values fail before a Run/message is persisted.
-- [ ] Lifecycle, text, tool, activity and interrupt mappings match `contracts/ag-ui.md`; each run has exactly one terminal. *(text + interrupt bootstrap done; full tool/state/activity deferred)*
+- [x] Lifecycle, text, tool, activity and interrupt mappings match `contracts/ag-ui.md`; each run has exactly one terminal. *(closed by the pinned full-event-profile and illegal-order conformance fixture in P0-506)*
 - [x] Required actions produce interrupt outcome and cannot terminalize RunStep or trigger synthesis.
 - [x] Direct `RunAgentInput.resume` is rejected and a disabled integration seam is exposed; P0-308 alone enables that seam by delegating to the canonical PauseGroup service.
 - [x] Raw/reasoning/thinking events, secrets, signatures, arbitrary tool bodies and raw TrueForge IDs are absent from normalized JSON/browser/log/audit output; only access-controlled typed correlation columns retain required IDs for dedupe/lineage.
@@ -49,4 +49,4 @@ Run golden mapping, illegal-order, redaction, interrupt and official-client conf
 - The official browser client may bind a composer-created `sourceMessageId`/Run/RunStep through a strict server-verified `forgeroomV1` reference; this launches the existing work item instead of creating a duplicate human message or Run.
 - Safe lifecycle and assistant-text projections persist before channel broadcast and the channel shell renders their replay with coworker attribution. This is an incremental prerequisite slice only: P0-212 still owns full activity/state revisioning, source refs, compaction and replay equivalence, while P0-408 owns the complete rich renderer integration.
 - Normalized persistence retains provider IDs only in typed correlation columns and drops arbitrary provider/tool bodies.
-- Remaining: full tool/state/activity mapping (P0-314/P0-212), canonical approval resume (P0-306/P0-308), and the complete P0-212/P0-408 replay/render acceptance suites.
+- Full tool/state/activity mapping, canonical approval resume, and replay/render acceptance are closed by P0-212/P0-306/P0-308/P0-408/P0-506; `event-conformance.test.ts` locks the complete P0 event profile.

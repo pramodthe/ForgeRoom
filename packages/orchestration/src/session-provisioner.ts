@@ -127,11 +127,12 @@ export async function provisionChannelCoworkerSession(
   const createdAt = new Date().toISOString();
   const generationId = input.generationId ?? createSessionGenerationId();
   const componentToolNames = input.componentToolNames ?? [];
+  const applicationToolNames = input.applicationToolNames ?? [];
   const revision = compileSessionRevision(
     {
       ...input,
       providerSessionCorrelationId: generationId,
-      ...(componentToolNames.length > 0
+      ...(componentToolNames.length + applicationToolNames.length > 0
         ? { uiComponentsMcpConnectorName: buildUiComponentsMcpConnectorName(generationId) }
         : {}),
     },

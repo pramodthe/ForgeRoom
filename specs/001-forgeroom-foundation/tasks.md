@@ -27,11 +27,11 @@ Each task file is authoritative for its status and evidence. Keep this index and
 | [x] | [P0-201](./tasks/P0-201-trueforge-sessions.md) | TrueForge adapter and sessions | done | P0-000, P0-103, P0-105 |
 | [x] | [P0-202](./tasks/P0-202-turn-queue.md) | Per-session serial turn queue | done | P0-103, P0-201 |
 | [x] | [P0-203](./tasks/P0-203-turn-events.md) | Turn creation and event normalization | done | P0-107, P0-202 |
-| [ ] | [P0-204](./tasks/P0-204-reconnect-stop.md) | Reconnect, stop and correction | in_review | P0-203 |
+| [x] | [P0-204](./tasks/P0-204-reconnect-stop.md) | Reconnect, stop and correction | done | P0-203 |
 | [x] | [P0-205](./tasks/P0-205-router.md) | Direct mention/team router | done | P0-102, P0-106 |
 | [x] | [P0-206](./tasks/P0-206-multi-agent-run.md) | Direct multi-agent Run engine | done | P0-202, P0-203, P0-205 |
 | [x] | [P0-208](./tasks/P0-208-session-rotation.md) | Capability/skill intersection and rotation | done | P0-202, P0-302, P0-314 |
-| [ ] | [P0-210](./tasks/P0-210-agui-compatibility-spike.md) | Freeze AG-UI and prove bridge | in_review | P0-000, P0-101 |
+| [x] | [P0-210](./tasks/P0-210-agui-compatibility-spike.md) | Freeze AG-UI and prove bridge | done | P0-000, P0-101 |
 | [x] | [P0-211](./tasks/P0-211-trueforge-agui-adapter.md) | TrueForge-to-AG-UI adapter | done | P0-102, P0-203, P0-210 |
 | [x] | [P0-212](./tasks/P0-212-agui-persistence-state-replay.md) | AG-UI persistence and replay | done | P0-103, P0-107, P0-211 |
 | [x] | [P0-213](./tasks/P0-213-conversational-coworker-drafts.md) | Conversational CoworkerDraft provisioning | done | P0-106, P0-208 |
@@ -62,9 +62,9 @@ Each task file is authoritative for its status and evidence. Keep this index and
 | [x] | [P0-407](./tasks/P0-407-ux-accessibility.md) | Required states and accessibility | done | P0-402–P0-406, P0-316, P0-410 |
 | [x] | [P0-408](./tasks/P0-408-agui-rich-timeline.md) | AG-UI reducers and controlled rich timeline | done | P0-212, P0-315, P0-316, P0-403 |
 | [x] | [P0-410](./tasks/P0-410-coworker-task-skill-ui.md) | Coworker/Task/skill review flows | done | P0-109, P0-213, P0-318, P0-402, P0-406 |
-| [ ] | [P0-501](./tasks/P0-501-unit-suite.md) | Unit suite completion | in_progress | P0-108, P0-109, P0-212, P0-213, P0-303, P0-306, P0-312, P0-314–P0-316, P0-318 |
-| [ ] | [P0-502](./tasks/P0-502-integration-suite.md) | Runtime/integration suite | blocked | P0-109, P0-204, P0-208, P0-212, P0-213, P0-305, P0-309, P0-312, P0-313, P0-315, P0-318 |
-| [ ] | [P0-503](./tasks/P0-503-security-suite.md) | Core security acceptance | blocked | P0-104, P0-109, P0-208, P0-213, P0-303, P0-306–P0-309, P0-311–P0-314, P0-318 |
+| [x] | [P0-501](./tasks/P0-501-unit-suite.md) | Unit suite completion | done | P0-108, P0-109, P0-212, P0-213, P0-303, P0-306, P0-312, P0-314–P0-316, P0-318 |
+| [ ] | [P0-502](./tasks/P0-502-integration-suite.md) | Runtime/integration suite | in_progress | P0-109, P0-204, P0-208, P0-212, P0-213, P0-305, P0-309, P0-312, P0-313, P0-315, P0-318 |
+| [x] | [P0-503](./tasks/P0-503-security-suite.md) | Core security acceptance | done | P0-104, P0-109, P0-208, P0-213, P0-303, P0-306–P0-309, P0-311–P0-314, P0-318 |
 | [ ] | [P0-504](./tasks/P0-504-browser-e2e.md) | Complete browser E2E | in_progress | P0-109, P0-213, P0-305, P0-309, P0-312, P0-313, P0-318, P0-407, P0-408, P0-410 |
 | [ ] | [P0-506](./tasks/P0-506-agui-genui-conformance.md) | AG-UI/controlled-GenUI conformance | blocked | P0-211, P0-212, P0-308, P0-313–P0-316, P0-408 |
 | [ ] | [P0-505](./tasks/P0-505-release-demo.md) | Preflight, docs and demo rehearsal | blocked | P0-313, P0-501–P0-504, P0-506 |

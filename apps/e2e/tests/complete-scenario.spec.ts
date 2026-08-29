@@ -5,6 +5,7 @@ import {
   assertLiveP0SurfacesAbsent,
   assertProvidersConfigured,
   createResearchCoworker,
+  ensureSeededOperatorSession,
   gotoDemoChannel,
   gotoDemoTasks,
   loginAsOwner,
@@ -57,7 +58,8 @@ test.describe("P0-504 complete browser scenario (live)", () => {
     assertProvidersConfigured();
 
     // 1–2 auth + seeded channel
-    await loginAsOwner(page);
+    const csrfToken = await loginAsOwner(page);
+    await ensureSeededOperatorSession(page, csrfToken);
     await gotoDemoChannel(page);
     await expect(page.getByText("Workspace service account")).toBeVisible();
     await expect(page.getByText(/Operator/i).first()).toBeVisible();

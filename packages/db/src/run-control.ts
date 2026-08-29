@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import type postgres from "postgres";
 import { enqueueTurnQueueItem, TURN_QUEUE_PRIORITY } from "./turn-queue";
+import { staleWaitingUiComponentInterruptsForRunStep } from "./ui-component-interrupts";
 
 export type SqlClient = postgres.Sql;
 
@@ -78,6 +79,11 @@ export async function requestRunStepStop(
       await tx`
         UPDATE run_steps SET state = 'cancelling' WHERE id = ${step.id}
       `;
+      await staleWaitingUiComponentInterruptsForRunStep(tx as unknown as SqlClient, {
+        runStepId: step.id,
+        now,
+        reason: "run_cancelling",
+      });
     }
 
     const turns = await tx<
@@ -150,6 +156,11 @@ export async function settleCancelledStep(
 ): Promise<void> {
   const now = input.now ?? new Date().toISOString();
   await sql.begin(async (tx) => {
+    await staleWaitingUiComponentInterruptsForRunStep(tx as unknown as SqlClient, {
+      runStepId: input.runStepId,
+      now,
+      reason: "run_cancelling",
+    });
     await tx`
       UPDATE run_steps
       SET state = 'cancelled', completed_at = ${now}

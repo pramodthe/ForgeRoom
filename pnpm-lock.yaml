@@ -414,12 +414,18 @@ importers:
 
   packages/test-fixtures:
     dependencies:
+      '@forgeroom/composio':
+        specifier: workspace:*
+        version: link:../integrations/composio
       '@forgeroom/contracts':
         specifier: workspace:*
         version: link:../contracts
       '@forgeroom/db':
         specifier: workspace:*
         version: link:../db
+      '@forgeroom/domain':
+        specifier: workspace:*
+        version: link:../domain
       postgres:
         specifier: ^3.4.7
         version: 3.4.9
