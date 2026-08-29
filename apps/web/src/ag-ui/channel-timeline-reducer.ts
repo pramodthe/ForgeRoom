@@ -23,6 +23,7 @@ export type TimelineMessage = {
 
 export type TimelineRun = {
   runStepId: string;
+  applicationRunId?: string;
   coworkerId: string;
   sequence: number;
   status: "running" | "complete" | "partial" | "needs_input" | "failed";
@@ -157,6 +158,11 @@ function applyRunProjection(
     ...runs,
     [envelope.runStepId]: {
       runStepId: envelope.runStepId,
+      ...(envelope.applicationRunId
+        ? { applicationRunId: envelope.applicationRunId }
+        : prior?.applicationRunId
+          ? { applicationRunId: prior.applicationRunId }
+          : {}),
       coworkerId: envelope.coworkerId,
       sequence: envelope.channelSequence,
       status: projectedStatus,
@@ -248,6 +254,7 @@ export function channelTimelineReducer(
         ...state.runs,
         [runStepId]: {
           runStepId,
+          ...(envelope.applicationRunId ? { applicationRunId: envelope.applicationRunId } : {}),
           coworkerId: envelope.coworkerId,
           sequence: envelope.channelSequence,
           status: "running",
@@ -280,6 +287,11 @@ export function channelTimelineReducer(
         ...state.runs,
         [runStepId]: {
           runStepId,
+          ...(envelope.applicationRunId
+            ? { applicationRunId: envelope.applicationRunId }
+            : prior?.applicationRunId
+              ? { applicationRunId: prior.applicationRunId }
+              : {}),
           coworkerId: envelope.coworkerId,
           sequence: envelope.channelSequence,
           status: event.type === "RUN_ERROR" ? "failed" : interrupted ? "needs_input" : "complete",

@@ -195,6 +195,14 @@ describe("P0-108 channel context and pins", () => {
     expect(pin.label).toBe("Brief");
     expect(pinPayload.sequence).toBeGreaterThan(messageBody.sequence);
 
+    const listedPins = await app.request(`/api/channels/${channel.id}/pins`, {
+      headers: { cookie: `${env.sessionCookieName}=${cookie}` },
+    });
+    expect(listedPins.status).toBe(200);
+    const pinsBody = withoutRequestId(await listedPins.json()) as { pins: unknown[] };
+    expect(pinsBody.pins).toHaveLength(1);
+    expect(channelPinSchema.parse(pinsBody.pins[0]).id).toBe(pin.id);
+
     const events = await app.request(`/api/channels/${channel.id}/events?afterSequence=-1`, {
       headers: { cookie: `${env.sessionCookieName}=${cookie}` },
     });

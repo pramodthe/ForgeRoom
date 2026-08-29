@@ -56,6 +56,22 @@ export function mountApprovalRoutes(
 ) {
   const { env, auth, approvals } = options;
 
+  app.get("/api/channels/:channelId/pending-approvals", async (c) => {
+    const authed = await requireSession(c, env, auth);
+    if (authed instanceof Response) {
+      return authed;
+    }
+    const channelId = requireParam(c, "channelId");
+    if (channelId instanceof Response) {
+      return channelId;
+    }
+    const result = await approvals.listPendingApprovals(authed.session, channelId);
+    if (!result.ok) {
+      return fail(c, result.error);
+    }
+    return okJson(c, result.value, 200);
+  });
+
   app.get("/api/approvals/:proposalId", async (c) => {
     const authed = await requireSession(c, env, auth);
     if (authed instanceof Response) {

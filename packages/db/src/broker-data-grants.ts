@@ -6,6 +6,7 @@ type SqlClient = postgres.Sql | postgres.TransactionSql;
 
 const DEFAULT_MAX_ROWS = 25;
 const DEFAULT_MAX_BYTES = 4096;
+const DEFAULT_MAX_TIME_MS = 1_000;
 
 function opaqueId(prefix: string): string {
   return `${prefix}_${randomBytes(10).toString("hex")}`;
@@ -19,9 +20,13 @@ function grantExpiresAt(now: string): string {
   return new Date(Date.parse(now) + 24 * 60 * 60 * 1000).toISOString();
 }
 
-function readLimits(value: unknown): { maxRows: number; maxBytes: number } {
+function readLimits(value: unknown): { maxRows: number; maxBytes: number; maxTimeMs: number } {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return { maxRows: DEFAULT_MAX_ROWS, maxBytes: DEFAULT_MAX_BYTES };
+    return {
+      maxRows: DEFAULT_MAX_ROWS,
+      maxBytes: DEFAULT_MAX_BYTES,
+      maxTimeMs: DEFAULT_MAX_TIME_MS,
+    };
   }
   const record = value as Record<string, unknown>;
   const maxRows =
@@ -34,7 +39,13 @@ function readLimits(value: unknown): { maxRows: number; maxBytes: number } {
     record.max_bytes >= 0
       ? record.max_bytes
       : DEFAULT_MAX_BYTES;
-  return { maxRows, maxBytes };
+  const maxTimeMs =
+    typeof record.max_time_ms === "number" &&
+    Number.isInteger(record.max_time_ms) &&
+    record.max_time_ms > 0
+      ? record.max_time_ms
+      : DEFAULT_MAX_TIME_MS;
+  return { maxRows, maxBytes, maxTimeMs };
 }
 
 function rowsAllowedFieldPaths(props: Record<string, unknown>): string[][] {
@@ -74,6 +85,7 @@ export type BrokerDataGrantPlan = {
     allowedFieldPaths: string[][];
     maxRows: number;
     maxBytes: number;
+    maxTimeMs: number;
   }>;
 };
 
@@ -119,6 +131,7 @@ export async function planBrokerDataGrants(
     const limits = limitsByFunction.get(functionName) ?? {
       maxRows: DEFAULT_MAX_ROWS,
       maxBytes: DEFAULT_MAX_BYTES,
+      maxTimeMs: DEFAULT_MAX_TIME_MS,
     };
     grants.push({
       functionName,
@@ -127,6 +140,7 @@ export async function planBrokerDataGrants(
         functionName === "rows" ? rowsAllowedFieldPaths(input.validatedProps) : [[functionName]],
       maxRows: limits.maxRows,
       maxBytes: limits.maxBytes,
+      maxTimeMs: limits.maxTimeMs,
     });
   }
 
@@ -186,6 +200,7 @@ export async function insertBrokerDataGrants(
       allowed_field_paths: grant.allowedFieldPaths,
       max_rows: grant.maxRows,
       max_bytes: grant.maxBytes,
+      max_time_ms: grant.maxTimeMs,
       redaction_policy_key: "workspace-safe-v1",
       retained_snapshot_blob_key: `snapshots/${dataGrantId}`,
       immutable_snapshot_hash: immutableSnapshotHash,

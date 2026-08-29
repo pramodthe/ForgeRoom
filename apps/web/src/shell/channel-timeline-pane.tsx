@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { LoadingState, RouteErrorState } from "@forgeroom/ui-components";
 import type { Channel } from "@forgeroom/contracts";
@@ -17,6 +17,8 @@ import { useSession } from "../auth/session-context";
 import { ChannelComposer } from "./channel-composer";
 import { ChannelHeader } from "./channel-header";
 import { ChannelTimeline } from "./channel-timeline";
+import { PendingApprovalsStrip } from "./pending-approvals-strip";
+import { useChannelWorkroomUi } from "./channel-workroom-ui-context";
 
 type ChannelTimelinePaneProps = {
   workspaceId: string;
@@ -61,6 +63,10 @@ export function ChannelTimelinePane({
     initialMessages: messagesQuery.data?.messages ?? EMPTY_TIMELINE_MESSAGES,
     onMessageCreated: refreshMessages,
   });
+  const workroomUi = useChannelWorkroomUi();
+  useEffect(() => {
+    workroomUi.setRuns(timeline.runs);
+  }, [timeline.runs, workroomUi.setRuns]);
 
   const membershipMutation = useMutation({
     mutationFn: async (input: { action: "add" | "remove"; coworkerId: string }) => {
@@ -126,6 +132,7 @@ export function ChannelTimelinePane({
           membershipMutation.mutate({ action: "remove", coworkerId })
         }
       />
+      <PendingApprovalsStrip channelId={channel.id} archived={archived} />
       <ChannelTimeline
         workspaceId={workspaceId}
         channelId={channel.id}
@@ -137,6 +144,7 @@ export function ChannelTimelinePane({
         archived={archived}
         currentHumanId={session?.user.id ?? null}
         currentHumanName={session?.user.display_name ?? "Workspace owner"}
+        onOpenRun={workroomUi.openRunDrawer}
       />
       {launchError ? (
         <div

@@ -340,6 +340,19 @@ describe("channelTimelineReducer", () => {
     expect(state.runs.step_coworker_research?.sequence).toBe(20);
   });
 
+  it("retains applicationRunId on projected runs", () => {
+    let state = initialChannelTimelineState("channel_demo");
+    state = channelTimelineReducer(state, {
+      type: "event",
+      envelope: coworkerEnvelope(10, {
+        type: "RUN_STARTED",
+        threadId: "thread_coworker_research",
+        runId: "agui_step_1",
+      }),
+    });
+    expect(state.runs.step_coworker_research?.applicationRunId).toBe("run_demo");
+  });
+
   it("renders unsupported capability snapshots as inert activities", () => {
     let state = initialChannelTimelineState("channel_demo");
     state = channelTimelineReducer(state, {

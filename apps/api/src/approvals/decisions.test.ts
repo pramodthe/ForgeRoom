@@ -233,6 +233,13 @@ describe("secure approval decision API", () => {
       expect(cardBody.card.expected_effect).toBe("Add labels");
       expect(cardBody.card.coworker_handle).toBe("research");
 
+      const pendingRes = await app.request("/api/channels/ch_1/pending-approvals", {
+        headers: { cookie: `${env.sessionCookieName}=${cookie}` },
+      });
+      expect(pendingRes.status).toBe(200);
+      const pendingBody = (await pendingRes.json()) as { proposal_ids: string[] };
+      expect(pendingBody.proposal_ids).toContain(proposalId);
+
       const unauth = await app.request(`/api/approvals/${proposalId}/decision`, {
         method: "POST",
         headers: { "content-type": "application/json", origin: env.appOrigin },

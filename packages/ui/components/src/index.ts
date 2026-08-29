@@ -2,6 +2,19 @@ export { HostButton, type HostButtonProps } from "./host-button";
 export { ComponentHostBoundary, AgUiActivitySlot, ControlledComponentSlot } from "./component-host";
 export { LoadingState, ForbiddenState, RouteErrorState, EmptyState } from "./shell-states";
 export {
+  ControlledInstance,
+  type ControlledInstanceData,
+  type ControlledInstanceProps,
+} from "./controlled/controlled-instance";
+export {
+  ControlledArtifactCard,
+  ControlledBarOrLineChart,
+  ControlledChoiceForm,
+  ControlledDataTable,
+  ControlledTaskCard,
+} from "./controlled/renderers";
+export { validateControlledProps, type PropValidationResult } from "./controlled/validate-props";
+export {
   ActivityCardShell,
   CustomEventActivityCard,
   ForgeRoomActivityCard,

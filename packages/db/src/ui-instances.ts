@@ -164,6 +164,7 @@ function mapDataGrant(grant: SurfaceGrantRow): DataGrantDisclosure | null {
     allowedFieldPaths: dataGrant.allowed_field_paths,
     maxRows: dataGrant.max_rows,
     maxBytes: dataGrant.max_bytes,
+    maxTimeMs: dataGrant.max_time_ms,
     immutableSnapshotHash: dataGrant.immutable_snapshot_hash,
     expiresAt: toIso(grant.expires_at),
     revoked: grant.revoked_at !== null,

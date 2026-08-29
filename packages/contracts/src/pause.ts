@@ -467,6 +467,14 @@ export const approvalDecisionResultSchema = z
   })
   .strict();
 
+export const channelPendingApprovalsResponseSchema = z
+  .object({
+    schemaVersion: schemaVersion1,
+    channel_id: opaqueIdSchema,
+    proposal_ids: z.array(opaqueIdSchema),
+  })
+  .strict();
+
 export const questionSchema = z
   .object({
     schemaVersion: schemaVersion1,
@@ -530,5 +538,6 @@ export type ApprovalDecisionKind = z.infer<typeof approvalDecisionKindSchema>;
 export type ApprovalDecisionCommand = z.infer<typeof approvalDecisionCommandSchema>;
 export type ApprovalCard = z.infer<typeof approvalCardSchema>;
 export type ApprovalDecisionResult = z.infer<typeof approvalDecisionResultSchema>;
+export type ChannelPendingApprovalsResponse = z.infer<typeof channelPendingApprovalsResponseSchema>;
 export type Question = z.infer<typeof questionSchema>;
 export type QuestionAnswerCommand = z.infer<typeof questionAnswerCommandSchema>;

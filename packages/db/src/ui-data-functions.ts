@@ -1,6 +1,6 @@
 import type postgres from "postgres";
 import { dataGrantSchema } from "@forgeroom/contracts";
-import { loadRetainedDataGrantSnapshot } from "./retained-data-grants";
+import { DataGrantLimitExceededError, loadRetainedDataGrantSnapshot } from "./retained-data-grants";
 import { executeUiDataFunctionHandler } from "./ui-data-function-handlers";
 
 type SqlClient = postgres.Sql;
@@ -138,6 +138,7 @@ export async function invokeUiDataFunction(
     };
   }
 
+  const startedAtMs = Date.now();
   const retained = await loadRetainedDataGrantSnapshot(sql, {
     uiInstanceId: input.instanceId,
     dataGrantId: input.dataGrantId,
@@ -154,6 +155,14 @@ export async function invokeUiDataFunction(
     };
   }
 
+  if (Date.now() - startedAtMs > retained.dataGrant.max_time_ms) {
+    return {
+      ok: false,
+      code: "ui_interaction_not_allowed",
+      message: "DataGrant time_ms limit exceeded.",
+    };
+  }
+
   if (retained.dataGrant.data_ref !== input.functionName) {
     return {
       ok: false,
@@ -162,11 +171,24 @@ export async function invokeUiDataFunction(
     };
   }
 
-  const data = executeUiDataFunctionHandler(input.functionName, {
-    snapshot: retained.snapshot,
-    dataGrant: retained.dataGrant,
-    arguments: input.arguments,
-  });
+  let data: unknown;
+  try {
+    data = executeUiDataFunctionHandler(input.functionName, {
+      snapshot: retained.snapshot,
+      dataGrant: retained.dataGrant,
+      arguments: input.arguments,
+      startedAtMs,
+    });
+  } catch (error) {
+    if (error instanceof DataGrantLimitExceededError) {
+      return {
+        ok: false,
+        code: "ui_interaction_not_allowed",
+        message: `DataGrant ${error.limit} limit exceeded.`,
+      };
+    }
+    throw error;
+  }
   if (data === null) {
     return {
       ok: false,

@@ -351,6 +351,7 @@ describe("UI interaction gateway", () => {
         ],
         max_rows: 20,
         max_bytes: 4096,
+        max_time_ms: 1_000,
         redaction_policy_key: "workspace-safe-v1",
         retained_snapshot_blob_key: "snapshots/snap_1",
         immutable_snapshot_hash: HASH,

@@ -120,7 +120,11 @@ export type {
   ComponentToolMcpBrokerResult,
   BrokerComponentAuthoritySnapshot,
 } from "./component-tool-gateway";
-export { recordApprovalDecision, loadApprovalProposalForCard } from "./approval-decision";
+export {
+  recordApprovalDecision,
+  loadApprovalProposalForCard,
+  listPendingApprovalProposalIds,
+} from "./approval-decision";
 export type {
   ApprovalDecisionCommandInput,
   ApprovalProposalCardSnapshot,

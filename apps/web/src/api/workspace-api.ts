@@ -2,6 +2,8 @@ import type {
   Channel,
   ChannelMessageCommand,
   ChannelParticipantAddCommand,
+  ChannelPin,
+  ChannelPinRemoveCommand,
   ChannelRosterCoworker,
   ChannelRosterResponse,
   ChannelTimelineMessage,
@@ -20,6 +22,9 @@ import type {
 import {
   channelRosterResponseSchema,
   channelSchema,
+  channelPinsListResponseSchema,
+  channelPinSchema,
+  channelPinRemoveCommandSchema,
   channelTimelineMessagesResponseSchema,
   coworkerDraftSchema,
   coworkerProfileSchema,
@@ -356,6 +361,52 @@ export async function listChannelRoster(
     throw new Error("roster_channel_mismatch");
   }
   return roster;
+}
+
+export async function listChannelTasks(channelId: string): Promise<TaskRecordV1[]> {
+  if (useMockApi) {
+    return MOCK_TASKS.map((task) => fixtureTask(task)).filter(
+      (task) => task.channel_id === channelId,
+    );
+  }
+  const body = await apiFetch<{ tasks: unknown[]; request_id: string }>(
+    `/api/channels/${encodeURIComponent(channelId)}/tasks`,
+  );
+  return taskRecordV1Schema.array().parse(stripRequestId(body).tasks);
+}
+
+export async function listChannelPins(channelId: string): Promise<ChannelPin[]> {
+  if (useMockApi) {
+    return [];
+  }
+  const body = await apiFetch<unknown>(`/api/channels/${encodeURIComponent(channelId)}/pins`);
+  const parsed = channelPinsListResponseSchema.parse(
+    stripRequestId(body as { request_id: string }),
+  );
+  if (parsed.channel_id !== channelId) {
+    throw new Error("pins_channel_mismatch");
+  }
+  return parsed.pins;
+}
+
+export async function removeChannelPin(input: {
+  channelId: string;
+  pinId: string;
+  csrfToken: string;
+}): Promise<ChannelPin> {
+  const command: ChannelPinRemoveCommand = channelPinRemoveCommandSchema.parse({
+    schemaVersion: 1,
+    idempotency_key: newIdempotencyKey("unpin"),
+  });
+  const body = await apiFetch<{ pin: unknown; request_id: string }>(
+    `/api/channels/${encodeURIComponent(input.channelId)}/pins/${encodeURIComponent(input.pinId)}`,
+    {
+      method: "DELETE",
+      csrfToken: input.csrfToken,
+      body: JSON.stringify(command),
+    },
+  );
+  return channelPinSchema.parse(stripRequestId(body).pin);
 }
 
 export async function listTasks(workspaceId: string): Promise<TaskRecordV1[]> {
