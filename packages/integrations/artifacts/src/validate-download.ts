@@ -33,16 +33,23 @@ function normalizeMime(value: string): string {
   return value.split(";")[0]?.trim().toLowerCase() ?? "";
 }
 
-const SENSITIVE_PATH_PATTERN =
-  /(?:^|\/)(?:\.env(?:\.|$)|credentials?(?:\.|$)|secrets?(?:\.|$)|id_(?:rsa|ed25519)(?:\.|$)|tool[-_. ]?(?:output|response|result)(?:\.|$))/iu;
+const SENSITIVE_PATH_PATTERNS = [
+  /(?:^|\/)\.env(?:\.[^/]*)?$/iu,
+  /(?:^|\/)id_(?:rsa|ed25519)(?:\.pub)?$/iu,
+  /(?:^|\/)\.aws\/(?:credentials|config)$/iu,
+  /(?:^|\/)\.config\/gcloud\/(?:application_default_credentials\.json|credentials\.db)$/iu,
+  /(?:^|\/)(?:credentials|secrets)\.(?:json|ya?ml|toml)$/iu,
+] as const;
 const SENSITIVE_CONTENT_PATTERNS = [
   /\bsk-(?:proj-)?[A-Za-z0-9_-]{16,}\b/u,
+  /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/u,
+  /\bAKIA[0-9A-Z]{16}\b/u,
   /\b(?:OPENAI|COMPOSIO|DAYTONA)_API_KEY\s*[:=]\s*["']?(?!\[REDACTED\])[^\s,"']+/iu,
-  /["']?(?:access_token|refresh_token|authorization|cookie|set-cookie|api_key|owner_password|raw_body|tool_response|tool_output)["']?\s*[:=]\s*["']?(?!\[REDACTED\])[^\s,"'}]+/iu,
+  /["']?(?:access_token|refresh_token|authorization|cookie|set-cookie|api_key|owner_password|private_key|client_secret|secret_access_key|aws_secret_access_key|aws_session_token|raw_body|tool_response|tool_output)["']?\s*[:=]\s*["']?(?!\[REDACTED\])[^\s,"'}]+/iu,
 ] as const;
 
 function isSensitiveArtifactPath(path: string): boolean {
-  return SENSITIVE_PATH_PATTERN.test(path);
+  return SENSITIVE_PATH_PATTERNS.some((pattern) => pattern.test(path));
 }
 
 function containsSensitiveText(content: Buffer): boolean {
@@ -50,18 +57,41 @@ function containsSensitiveText(content: Buffer): boolean {
   return SENSITIVE_CONTENT_PATTERNS.some((pattern) => pattern.test(text));
 }
 
+function looksLikeZip(content: Buffer): boolean {
+  if (content.byteLength < 4) return false;
+  const signature = content.readUInt32LE(0);
+  return signature === 0x04034b50 || signature === 0x06054b50 || signature === 0x02014b50;
+}
+
 function inspectZipContent(content: Buffer): "safe" | "sensitive" | "invalid" {
   let endOffset = -1;
   for (let offset = content.length - 22; offset >= Math.max(0, content.length - 65_557); offset--) {
-    if (content.readUInt32LE(offset) === 0x06054b50) {
+    if (
+      content.readUInt32LE(offset) === 0x06054b50 &&
+      offset + 22 + content.readUInt16LE(offset + 20) === content.length
+    ) {
       endOffset = offset;
       break;
     }
   }
   if (endOffset < 0 || endOffset + 22 > content.length) return "invalid";
+  const diskNumber = content.readUInt16LE(endOffset + 4);
+  const centralDisk = content.readUInt16LE(endOffset + 6);
+  const entriesOnDisk = content.readUInt16LE(endOffset + 8);
   const entryCount = content.readUInt16LE(endOffset + 10);
+  const centralSize = content.readUInt32LE(endOffset + 12);
   const centralOffset = content.readUInt32LE(endOffset + 16);
-  if (entryCount === 0xffff || centralOffset === 0xffffffff) return "invalid";
+  if (
+    diskNumber !== 0 ||
+    centralDisk !== 0 ||
+    entriesOnDisk !== entryCount ||
+    entryCount === 0xffff ||
+    centralSize === 0xffffffff ||
+    centralOffset === 0xffffffff ||
+    centralOffset + centralSize > endOffset
+  ) {
+    return "invalid";
+  }
 
   let offset = centralOffset;
   let inspectedBytes = 0;
@@ -100,9 +130,11 @@ function inspectZipContent(content: Buffer): "safe" | "sensitive" | "invalid" {
             ? inflateRawSync(compressed, { maxOutputLength: P0_MAX_ARTIFACT_BYTES })
             : null;
       if (!entry || entry.byteLength !== uncompressedSize) return "invalid";
+      if (/\.zip$/iu.test(name) || looksLikeZip(entry)) return "invalid";
       if (containsSensitiveText(entry)) return "sensitive";
       offset = nameEnd + extraLength + commentLength;
     }
+    if (offset > centralOffset + centralSize) return "invalid";
   } catch {
     return "invalid";
   }
