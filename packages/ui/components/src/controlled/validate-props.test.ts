@@ -2,6 +2,15 @@ import { describe, expect, it } from "vitest";
 import { validateControlledProps } from "./validate-props";
 
 describe("validateControlledProps", () => {
+  it("rejects malformed column entries", () => {
+    const result = validateControlledProps("DataTable", {
+      caption: "Records",
+      empty_text: "None",
+      columns: [null],
+    });
+    expect(result.ok).toBe(false);
+  });
+
   it("accepts valid DataTable props", () => {
     const result = validateControlledProps("DataTable", {
       caption: "Records",

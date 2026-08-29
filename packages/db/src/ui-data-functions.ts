@@ -138,6 +138,7 @@ export async function invokeUiDataFunction(
     };
   }
 
+  const startedAtMs = Date.now();
   const retained = await loadRetainedDataGrantSnapshot(sql, {
     uiInstanceId: input.instanceId,
     dataGrantId: input.dataGrantId,
@@ -151,6 +152,14 @@ export async function invokeUiDataFunction(
       ok: false,
       code: retained.code === "not_found" ? "not_found" : "ui_interaction_not_allowed",
       message: retained.message,
+    };
+  }
+
+  if (Date.now() - startedAtMs > retained.dataGrant.max_time_ms) {
+    return {
+      ok: false,
+      code: "ui_interaction_not_allowed",
+      message: "DataGrant time_ms limit exceeded.",
     };
   }
 
@@ -168,6 +177,7 @@ export async function invokeUiDataFunction(
       snapshot: retained.snapshot,
       dataGrant: retained.dataGrant,
       arguments: input.arguments,
+      startedAtMs,
     });
   } catch (error) {
     if (error instanceof DataGrantLimitExceededError) {

@@ -261,6 +261,9 @@ export function resolveRetainedDataGrantRead(input: {
   startedAtMs?: number;
 }): unknown {
   const startedAtMs = input.startedAtMs ?? Date.now();
+  if (Date.now() - startedAtMs > input.dataGrant.max_time_ms) {
+    throw new DataGrantLimitExceededError("time_ms");
+  }
   const filtered = pickAllowedFieldPaths(input.snapshot, input.dataGrant.allowed_field_paths);
   const selectionPaths =
     input.allowedSelectionPaths.length > 0

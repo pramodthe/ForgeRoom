@@ -49,7 +49,7 @@ export function ChannelWorkroom({ workspaceId, channelId }: ChannelWorkroomProps
   }
 
   return (
-    <ChannelWorkroomUiProvider>
+    <ChannelWorkroomUiProvider key={channelId}>
       <div className="flex h-full min-h-0 flex-col lg:flex-row">
         <ChannelListPane
           workspaceId={workspaceId}

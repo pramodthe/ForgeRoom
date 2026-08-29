@@ -30,7 +30,27 @@ function validateValue(
     return typeof value === "boolean" ? null : `${path} must be a boolean`;
   }
   if (type === "array") {
-    return Array.isArray(value) ? null : `${path} must be an array`;
+    if (!Array.isArray(value)) {
+      return `${path} must be an array`;
+    }
+    const maxItems = schema.maxItems;
+    if (typeof maxItems === "number" && value.length > maxItems) {
+      return `${path} exceeds max items`;
+    }
+    const items = schema.items;
+    if (items && typeof items === "object") {
+      for (let index = 0; index < value.length; index += 1) {
+        const itemError = validateValue(
+          items as Record<string, unknown>,
+          value[index],
+          `${path}[${index}]`,
+        );
+        if (itemError) {
+          return itemError;
+        }
+      }
+    }
+    return null;
   }
   if (Array.isArray(type)) {
     const allowed = type
@@ -39,7 +59,33 @@ function validateValue(
     return allowed ? null : `${path} has an invalid type`;
   }
   if (type === "object" || type === undefined) {
-    return isPlainObject(value) ? null : `${path} must be an object`;
+    if (!isPlainObject(value)) {
+      return `${path} must be an object`;
+    }
+    const properties = schema.properties as Record<string, Record<string, unknown>> | undefined;
+    if (!properties) {
+      return null;
+    }
+    const required = (schema.required ?? []) as string[];
+    const additionalProperties = schema.additionalProperties === false;
+    for (const key of required) {
+      if (!(key in value)) {
+        return `${path}.${key} is required`;
+      }
+    }
+    for (const [key, fieldValue] of Object.entries(value)) {
+      if (!(key in properties)) {
+        if (additionalProperties) {
+          return `${path}.${key} is not allowed`;
+        }
+        continue;
+      }
+      const error = validateValue(properties[key]!, fieldValue, `${path}.${key}`);
+      if (error) {
+        return error;
+      }
+    }
+    return null;
   }
   if (type === "null") {
     return value === null ? null : `${path} must be null`;

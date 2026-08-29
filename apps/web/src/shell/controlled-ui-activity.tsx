@@ -128,10 +128,30 @@ export function ControlledUiActivity({ content }: ControlledUiActivityProps) {
     );
   }
 
+  if (dataGrant && dataQuery.error) {
+    const reason =
+      dataQuery.error instanceof ApiError
+        ? dataQuery.error.message
+        : "Controlled data could not be loaded.";
+    return (
+      <ControlledComponentSlot slotId={content.surfaceId}>
+        <ControlledInstance
+          instanceId={replay.instanceId}
+          componentName={replay.componentName}
+          status="failed"
+          textAlternative={`${replay.textAlternative} (${reason})`}
+          validatedProps={replay.validatedProps}
+        />
+      </ControlledComponentSlot>
+    );
+  }
+
   const instanceData =
     dataGrant && dataQuery.data
       ? mapDataFunctionResult(dataGrant.dataRef, dataQuery.data)
       : undefined;
+
+  const interactionEnabled = replay.interactionEnabled && replay.componentName !== "ChoiceForm";
 
   return (
     <ControlledComponentSlot slotId={content.surfaceId}>
@@ -142,7 +162,7 @@ export function ControlledUiActivity({ content }: ControlledUiActivityProps) {
         textAlternative={replay.textAlternative}
         validatedProps={replay.validatedProps}
         data={instanceData}
-        interactionEnabled={replay.interactionEnabled}
+        interactionEnabled={interactionEnabled}
       />
     </ControlledComponentSlot>
   );

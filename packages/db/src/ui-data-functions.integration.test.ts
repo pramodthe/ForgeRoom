@@ -187,10 +187,10 @@ describe("UI data functions", () => {
   it("denies invocation for an unregistered data-function name", async () => {
     await withMigratedDatabase(async (sql) => {
       await seedRuntime(sql);
-      const snapshot = { task: { id: "task_1" } };
+      const snapshot = { metrics: { count: 1 } };
       const dataGrantBody = {
         schemaVersion: 1,
-        id: "dg_task",
+        id: "dg_metrics",
         workspace_id: "ws_1",
         channel_id: "ch_1",
         surface_id: "ui_1",
@@ -203,12 +203,12 @@ describe("UI data functions", () => {
         kind: "data",
         bound_render_revision: 0,
         bound_manifest_hash: HASH,
-        data_ref: "task",
-        source: { kind: "query_snapshot", query_key: "tasks", snapshot_id: "snap_1" },
+        data_ref: "metrics",
+        source: { kind: "query_snapshot", query_key: "metrics", snapshot_id: "snap_1" },
         classification: "workspace_safe",
         classification_provenance: "fixture",
         snapshot_schema_hash: HASH,
-        allowed_field_paths: [["task", "id"]],
+        allowed_field_paths: [["metrics", "count"]],
         max_rows: 20,
         max_bytes: 4096,
         max_time_ms: 1_000,
@@ -224,10 +224,10 @@ describe("UI data functions", () => {
           accessible_summary, content_hash, data_snapshot_json, data_snapshot_hash, validation_state,
           created_at, promoted_at
         ) VALUES (
-          'uirev_task_0', 'ui_1', 'render', 0, 'compv_1', ${HASH},
+          'uirev_metrics_0', 'ui_1', 'render', 0, 'compv_1', ${HASH},
           'registry_v1', '[{"nodeId":"node_1"}]'::jsonb, ${HASH}, '{}'::jsonb,
           ${HASH}, '{}'::jsonb, ${HASH}, '{}'::jsonb, ${HASH},
-          'A task', ${HASH}, ${JSON.stringify(snapshot)}::jsonb, ${HASH}, 'valid', ${NOW}, ${NOW}
+          'Metrics', ${HASH}, ${JSON.stringify(snapshot)}::jsonb, ${HASH}, 'valid', ${NOW}, ${NOW}
         )
       `;
       await sql`
@@ -242,7 +242,7 @@ describe("UI data functions", () => {
           data_ref, allowed_field_paths_json, snapshot_schema_hash, immutable_snapshot_hash,
           grant_body_redacted_json, grant_scope_hash, issued_by, expires_at, created_at
         ) VALUES (
-          'dg_task', 'ui_1', 'data', 1, 0, ${HASH}, 'task', '[["task","id"]]'::jsonb, ${HASH}, ${HASH},
+          'dg_metrics', 'ui_1', 'data', 1, 0, ${HASH}, 'metrics', '[["metrics","count"]]'::jsonb, ${HASH}, ${HASH},
           ${JSON.stringify(dataGrantBody)}::jsonb, ${HASH}, 'application_policy', ${NOW}, ${NOW}
         )
       `;
@@ -250,7 +250,7 @@ describe("UI data functions", () => {
         INSERT INTO ui_data_function_grants (
           id, component_version_id, function_name, workspace_id, limits_json, granted_by, granted_at
         ) VALUES (
-          'dfg_task', 'compv_1', 'task', 'ws_1', '{}'::jsonb, 'user_1', ${NOW}
+          'dfg_metrics', 'compv_1', 'metrics', 'ws_1', '{}'::jsonb, 'user_1', ${NOW}
         )
       `;
 
@@ -258,9 +258,9 @@ describe("UI data functions", () => {
         instanceId: "ui_1",
         workspaceId: "ws_1",
         actorUserId: "user_1",
-        functionName: "task",
+        functionName: "metrics",
         renderRevision: 0,
-        dataGrantId: "dg_task",
+        dataGrantId: "dg_metrics",
         expectedManifestHash: HASH,
         arguments: {},
         now: TEST_NOW,

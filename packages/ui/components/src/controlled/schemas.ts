@@ -19,7 +19,20 @@ export const PARAMETER_SCHEMAS: Record<
       caption: { type: "string" },
       description: { type: ["string", "null"] },
       empty_text: { type: "string" },
-      columns: { type: "array" },
+      columns: {
+        type: "array",
+        maxItems: 25,
+        items: {
+          type: "object",
+          additionalProperties: false,
+          properties: {
+            key: { type: "string" },
+            label: { type: "string" },
+            align: { type: "string", enum: ["start", "center", "end"] },
+          },
+          required: ["key", "label"],
+        },
+      },
     },
     required: ["caption", "empty_text", "columns"],
   },
@@ -32,7 +45,19 @@ export const PARAMETER_SCHEMAS: Record<
       chart_type: { type: "string", enum: ["bar", "line"] },
       x_axis_label: { type: "string" },
       y_axis_label: { type: "string" },
-      series: { type: "array" },
+      series: {
+        type: "array",
+        maxItems: 8,
+        items: {
+          type: "object",
+          additionalProperties: false,
+          properties: {
+            key: { type: "string" },
+            label: { type: "string" },
+          },
+          required: ["key", "label"],
+        },
+      },
       accessible_table_caption: { type: "string" },
     },
     required: [
@@ -75,7 +100,21 @@ export const PARAMETER_SCHEMAS: Record<
       description: { type: ["string", "null"] },
       submit_label: { type: "string" },
       cancel_label: { type: "string" },
-      fields: { type: "array" },
+      fields: {
+        type: "array",
+        maxItems: 50,
+        items: {
+          type: "object",
+          additionalProperties: false,
+          properties: {
+            id: { type: "string" },
+            label: { type: "string" },
+            kind: { type: "string" },
+            required: { type: "boolean" },
+          },
+          required: ["id", "label", "kind", "required"],
+        },
+      },
     },
     required: ["title", "submit_label", "cancel_label", "fields"],
   },

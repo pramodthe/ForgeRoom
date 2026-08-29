@@ -100,6 +100,28 @@ describe("independent controlled-UI grants", () => {
     expect(renderGrantSchema.safeParse({ ...grant, rail: "iframe_v1" }).success).toBe(false);
   });
 
+  it("defaults max_time_ms for legacy persisted grants", () => {
+    const parsed = dataGrantSchema.parse({
+      ...grantBase,
+      id: "udg_legacy",
+      kind: "data",
+      bound_render_revision: 2,
+      bound_manifest_hash: HASH,
+      data_ref: "report_rows",
+      source: { kind: "artifact_revision", artifact_id: "artifact_1", revision: 3 },
+      classification: "workspace_safe",
+      classification_provenance: "workspace connector read classified by policy-7",
+      snapshot_schema_hash: HASH,
+      allowed_field_paths: [["rows", "id"]],
+      max_rows: 200,
+      max_bytes: 65_536,
+      redaction_policy_key: "workspace-safe-v1",
+      retained_snapshot_blob_key: "snapshots/sha256/fixture",
+      immutable_snapshot_hash: HASH,
+    });
+    expect(parsed.max_time_ms).toBe(1_000);
+  });
+
   it("binds a DataGrant to one revision, manifest and retained redacted source", () => {
     const grant = dataGrantSchema.parse({
       ...grantBase,
