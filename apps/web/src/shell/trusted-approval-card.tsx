@@ -3,6 +3,7 @@ import type { ApprovalCard } from "@forgeroom/contracts";
 import { getApprovalCard, postApprovalDecision } from "../api/channel-resources-api";
 import { ApiError } from "../api/http-client";
 import { useSession } from "../auth/session-context";
+import { formatPauseGroupLifecycleMessage } from "./pause-group-lifecycle";
 
 type TrustedApprovalCardProps = {
   proposalId: string;
@@ -76,6 +77,16 @@ export function TrustedApprovalCard({ proposalId, onDecided }: TrustedApprovalCa
   const card = cardQuery.data;
   const decided = card.state !== "proposed" && card.state !== "executing";
   const busy = decisionMutation.isPending;
+  const lifecycleLines =
+    decisionMutation.data != null
+      ? formatPauseGroupLifecycleMessage({
+          recordedVerb: "decision",
+          pauseGroupReady: decisionMutation.data.pause_group_ready,
+          pauseGroupState: decisionMutation.data.pause_group_state,
+          requiredActionCount: decisionMutation.data.required_action_count,
+          resolvedActionCount: decisionMutation.data.resolved_action_count,
+        })
+      : null;
 
   return (
     <section
@@ -157,9 +168,13 @@ export function TrustedApprovalCard({ proposalId, onDecided }: TrustedApprovalCa
           </button>
         </div>
       ) : (
-        <p className="mt-4 text-xs text-zinc-600">
-          Decision recorded. Resume state updates on the timeline.
-        </p>
+        <div className="mt-4 space-y-1 text-xs text-zinc-600" data-testid="approval-lifecycle">
+          {(lifecycleLines ?? ["Decision recorded. Resume state updates on the timeline."]).map(
+            (line) => (
+              <p key={line}>{line}</p>
+            ),
+          )}
+        </div>
       )}
     </section>
   );

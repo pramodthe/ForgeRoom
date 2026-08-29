@@ -3,6 +3,7 @@ import type { QuestionCard } from "@forgeroom/contracts";
 import { getQuestionCard, postQuestionAnswer } from "../api/channel-resources-api";
 import { ApiError } from "../api/http-client";
 import { useSession } from "../auth/session-context";
+import { formatPauseGroupLifecycleMessage } from "./pause-group-lifecycle";
 
 type TrustedQuestionCardProps = {
   questionId: string;
@@ -99,6 +100,16 @@ export function TrustedQuestionCard({ questionId, onAnswered }: TrustedQuestionC
   const answered = card.state !== "requested";
   const busy = answerMutation.isPending;
   const waitingMessage = groupWaitingMessage(card);
+  const lifecycleLines =
+    answerMutation.data != null
+      ? formatPauseGroupLifecycleMessage({
+          recordedVerb: "answer",
+          pauseGroupReady: answerMutation.data.pause_group_ready,
+          pauseGroupState: answerMutation.data.pause_group_state,
+          requiredActionCount: answerMutation.data.required_action_count,
+          resolvedActionCount: answerMutation.data.resolved_action_count,
+        })
+      : null;
 
   return (
     <section
@@ -171,9 +182,13 @@ export function TrustedQuestionCard({ questionId, onAnswered }: TrustedQuestionC
           </button>
         </form>
       ) : (
-        <p className="mt-4 text-xs text-zinc-600">
-          Answer recorded. Resume state updates on the timeline.
-        </p>
+        <div className="mt-4 space-y-1 text-xs text-zinc-600" data-testid="question-lifecycle">
+          {(lifecycleLines ?? ["Answer recorded. Resume state updates on the timeline."]).map(
+            (line) => (
+              <p key={line}>{line}</p>
+            ),
+          )}
+        </div>
       )}
     </section>
   );

@@ -26,6 +26,23 @@ describe("activity presentation", () => {
     });
   });
 
+  it("maps pause group lifecycle events to readable cards", () => {
+    expect(presentCustomEvent("pause_group.ready")).toMatchObject({
+      title: "Pause group ready",
+      status: "Ready",
+      tone: "success",
+    });
+    expect(presentCustomEvent("pause_group.resume_started")).toMatchObject({
+      title: "Resume started",
+      status: "Resuming",
+      tone: "violet",
+    });
+    expect(presentCustomEvent("tool.succeeded")).toMatchObject({
+      title: "Tool completed",
+      tone: "success",
+    });
+  });
+
   it("maps custom task and tool events to readable cards", () => {
     expect(presentCustomEvent("task.created")).toMatchObject({
       title: "Task created",

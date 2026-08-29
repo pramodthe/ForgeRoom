@@ -263,6 +263,7 @@ const CUSTOM_EVENT_PRESENTATION: Partial<Record<ApplicationSourceName, ActivityP
   "approval.decided": {
     eyebrow: "Approval",
     title: "Approval recorded",
+    detail: "Human decision persisted; external execution waits for resume",
     tone: "success",
   },
   "approval.stale": {
@@ -281,7 +282,43 @@ const CUSTOM_EVENT_PRESENTATION: Partial<Record<ApplicationSourceName, ActivityP
   "question.answered": {
     eyebrow: "Question",
     title: "Question answered",
+    detail: "Encrypted answer stored until resume is confirmed",
     tone: "success",
+  },
+  "pause_group.created": {
+    eyebrow: "Human action",
+    title: "Pause group opened",
+    detail: "Waiting for owner decisions",
+    status: "Waiting",
+    tone: "warning",
+  },
+  "pause_group.ready": {
+    eyebrow: "Human action",
+    title: "Pause group ready",
+    detail: "Every required action has resolved",
+    status: "Ready",
+    tone: "success",
+  },
+  "pause_group.resume_started": {
+    eyebrow: "Human action",
+    title: "Resume started",
+    detail: "Response-only turn queued",
+    status: "Resuming",
+    tone: "violet",
+  },
+  "pause_group.resumed": {
+    eyebrow: "Human action",
+    title: "Resume completed",
+    detail: "Work continues after human input",
+    status: "Resumed",
+    tone: "success",
+  },
+  "pause_group.resume_uncertain": {
+    eyebrow: "Human action",
+    title: "Resume uncertain",
+    detail: "Outcome needs reconciliation",
+    status: "Uncertain",
+    tone: "warning",
   },
   "connection.blocked": {
     eyebrow: "Connection",
