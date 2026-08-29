@@ -38,6 +38,10 @@ describe("run detail API", () => {
         state: "running",
       });
       expect(parsed.source_message_body).toBe("Please inspect");
+      expect(parsed.events).toEqual([]);
+      expect(parsed.tasks).toEqual([]);
+      expect(parsed.artifacts).toEqual([]);
+      expect(parsed.decisions).toEqual([]);
     });
   }, 60_000);
 

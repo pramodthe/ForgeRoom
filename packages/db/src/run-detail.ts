@@ -1,13 +1,52 @@
-import type { Run, RunStepState } from "@forgeroom/contracts";
+import type { Run, RunStepState, SafeJsonValue } from "@forgeroom/contracts";
+import {
+  formatQuestionPromptLabel,
+  formatRunEventDetail,
+  formatRunEventTitle,
+} from "@forgeroom/domain";
 import type postgres from "postgres";
 import { aggregateRunFromStepsLocal } from "./multi-agent-run";
 
 type SqlClient = postgres.Sql;
 
+const WAITING_EVENT_TYPES = new Set([
+  "approval.requested",
+  "question.requested",
+  "connection.required",
+]);
+
 export type RunDetailRecord = {
   workspaceId: string;
   run: Run;
   sourceMessageBody: string;
+  events: Array<{
+    id: string;
+    normalizedType: string;
+    title: string;
+    detail: string;
+    occurredAt: string;
+    waiting: boolean;
+  }>;
+  tasks: Array<{
+    id: string;
+    title: string;
+    status: string;
+    currentRevision: number;
+  }>;
+  artifacts: Array<{
+    id: string;
+    name: string;
+    mimeType: string;
+    revision: number;
+    byteSize: number;
+  }>;
+  decisions: Array<{
+    kind: "approval" | "question";
+    id: string;
+    state: string;
+    label: string;
+    waiting: boolean;
+  }>;
 };
 
 export async function loadRunDetail(
@@ -82,6 +121,65 @@ export async function loadRunDetail(
     SELECT body FROM messages WHERE id = ${run.source_message_id} LIMIT 1
   `;
 
+  const eventRows = await sql<
+    {
+      id: string;
+      normalized_type: string;
+      normalized_payload_redacted_json: unknown;
+      first_seen_at: string | Date;
+    }[]
+  >`
+    SELECT re.id, re.normalized_type, re.normalized_payload_redacted_json, re.first_seen_at
+    FROM run_events AS re
+    JOIN agent_turns AS at ON at.id = re.agent_turn_id
+    JOIN run_steps AS rs ON rs.id = at.run_step_id
+    WHERE rs.run_id = ${runId}
+    ORDER BY re.first_seen_at ASC, re.id ASC
+  `;
+
+  const taskRows = await sql<
+    {
+      id: string;
+      title: string;
+      status: string;
+      current_revision: number;
+    }[]
+  >`
+    SELECT id, title, status, current_revision
+    FROM tasks
+    WHERE source_run_id = ${runId}
+    ORDER BY created_at ASC
+  `;
+
+  const artifactRows = await sql<
+    {
+      id: string;
+      name: string;
+      mime_type: string;
+      revision: number;
+      byte_size: number;
+    }[]
+  >`
+    SELECT id, name, mime_type, revision, byte_size
+    FROM artifacts
+    WHERE run_id = ${runId}
+    ORDER BY created_at ASC
+  `;
+
+  const approvalRows = await sql<{ id: string; state: string; tool_name: string }[]>`
+    SELECT id, state, tool_name
+    FROM action_proposals
+    WHERE run_id = ${runId}
+    ORDER BY id ASC
+  `;
+
+  const questionRows = await sql<{ id: string; state: string; prompt_redacted_json: unknown }[]>`
+    SELECT id, state, prompt_redacted_json
+    FROM questions
+    WHERE run_id = ${runId}
+    ORDER BY id ASC
+  `;
+
   const projection = aggregateRunFromStepsLocal(steps.map((step) => ({ state: step.state })));
   const toIso = (value: string | Date | null): string | null =>
     value === null ? null : value instanceof Date ? value.toISOString() : value;
@@ -112,5 +210,45 @@ export async function loadRunDetail(
         attempt: step.attempt,
       })),
     },
+    events: eventRows.map((row) => {
+      const payload = row.normalized_payload_redacted_json as SafeJsonValue;
+      return {
+        id: row.id,
+        normalizedType: row.normalized_type,
+        title: formatRunEventTitle(row.normalized_type),
+        detail: formatRunEventDetail(row.normalized_type, payload),
+        occurredAt: toIso(row.first_seen_at) ?? new Date().toISOString(),
+        waiting: WAITING_EVENT_TYPES.has(row.normalized_type),
+      };
+    }),
+    tasks: taskRows.map((row) => ({
+      id: row.id,
+      title: row.title,
+      status: row.status,
+      currentRevision: row.current_revision,
+    })),
+    artifacts: artifactRows.map((row) => ({
+      id: row.id,
+      name: row.name,
+      mimeType: row.mime_type,
+      revision: row.revision,
+      byteSize: row.byte_size,
+    })),
+    decisions: [
+      ...approvalRows.map((row) => ({
+        kind: "approval" as const,
+        id: row.id,
+        state: row.state,
+        label: row.tool_name,
+        waiting: row.state === "proposed",
+      })),
+      ...questionRows.map((row) => ({
+        kind: "question" as const,
+        id: row.id,
+        state: row.state,
+        label: formatQuestionPromptLabel(row.prompt_redacted_json as SafeJsonValue),
+        waiting: row.state === "requested",
+      })),
+    ],
   };
 }
