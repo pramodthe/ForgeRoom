@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { Run, RunStep } from "@forgeroom/contracts";
-import { useRef, useState } from "react";
+import { useRef, useState, useId } from "react";
 import { cancelRun, getRun, getRunReceipt } from "../api/channel-resources-api";
 import { newIdempotencyKey } from "../api/http-client";
 import { isFixtureMode } from "../api/mode";
@@ -8,6 +8,7 @@ import { listChannelRoster, publishFixtureRunSkill } from "../api/workspace-api"
 import { useSession } from "../auth/session-context";
 import { Avatar } from "../ui/avatar";
 import { useDialogFocus } from "../ui/use-dialog-focus";
+import { PoliteStatus } from "./polite-status";
 
 type RunDetailDrawerProps = {
   workspaceId: string;
@@ -63,6 +64,8 @@ function LiveRunDetailDrawer({
   const { session } = useSession();
   const queryClient = useQueryClient();
   const [cancelError, setCancelError] = useState<string | null>(null);
+  const [cancelStatus, setCancelStatus] = useState<string | null>(null);
+  const statusId = useId();
   const drawerRef = useRef<HTMLElement>(null);
   useDialogFocus(drawerRef, onClose);
   const runQuery = useQuery({
@@ -93,12 +96,14 @@ function LiveRunDetailDrawer({
     },
     onSuccess: async () => {
       setCancelError(null);
+      setCancelStatus("Stop requested. Remaining work is cancelling.");
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["run", runId] }),
         queryClient.invalidateQueries({ queryKey: ["run-receipt", runId] }),
       ]);
     },
     onError: (error) => {
+      setCancelStatus(null);
       setCancelError(error instanceof Error ? error.message : "Unable to stop remaining work.");
     },
   });
@@ -123,7 +128,13 @@ function LiveRunDetailDrawer({
         role="dialog"
         aria-modal="true"
         aria-labelledby="run-drawer-title"
+        aria-describedby={statusId}
+        aria-busy={cancelMutation.isPending}
       >
+        <PoliteStatus
+          id={statusId}
+          message={cancelMutation.isPending ? "Stopping remaining work." : cancelStatus}
+        />
         <header className="sticky top-0 z-10 flex items-start justify-between border-b border-zinc-200 bg-white/95 px-6 py-5 backdrop-blur">
           <div>
             <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-violet-700">
@@ -140,6 +151,7 @@ function LiveRunDetailDrawer({
           </div>
           <button
             type="button"
+            data-autofocus
             onClick={onClose}
             className="grid h-9 w-9 place-items-center rounded-xl border border-zinc-200 bg-white text-lg text-zinc-500 hover:bg-zinc-50"
           >
@@ -249,6 +261,7 @@ function LiveRunDetailDrawer({
             <div className="border-t border-zinc-200 pt-4">
               <button
                 type="button"
+                aria-label="Stop remaining work on this run"
                 disabled={cancelMutation.isPending}
                 onClick={() => void cancelMutation.mutate(run)}
                 className="rounded-xl border border-zinc-300 bg-white px-4 py-2.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:text-zinc-400"

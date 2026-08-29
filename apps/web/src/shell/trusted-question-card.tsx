@@ -1,9 +1,11 @@
+import { useId } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { QuestionCard } from "@forgeroom/contracts";
 import { getQuestionCard, postQuestionAnswer } from "../api/channel-resources-api";
 import { ApiError } from "../api/http-client";
 import { useSession } from "../auth/session-context";
 import { formatPauseGroupLifecycleMessage } from "./pause-group-lifecycle";
+import { PoliteStatus } from "./polite-status";
 
 type TrustedQuestionCardProps = {
   questionId: string;
@@ -50,6 +52,9 @@ function groupWaitingMessage(card: QuestionCard): string | null {
 export function TrustedQuestionCard({ questionId, onAnswered }: TrustedQuestionCardProps) {
   const { session } = useSession();
   const queryClient = useQueryClient();
+  const answerFieldId = useId();
+  const credentialWarningId = useId();
+  const statusId = useId();
   const cardQuery = useQuery({
     queryKey: ["question-card", questionId],
     queryFn: () => getQuestionCard(questionId),
@@ -77,7 +82,11 @@ export function TrustedQuestionCard({ questionId, onAnswered }: TrustedQuestionC
 
   if (cardQuery.isLoading) {
     return (
-      <section className="rounded-2xl border border-sky-200 bg-sky-50/70 p-4 text-sm text-sky-900">
+      <section
+        className="rounded-2xl border border-sky-200 bg-sky-50/70 p-4 text-sm text-sky-900"
+        aria-busy="true"
+        aria-label="Loading question"
+      >
         Loading question…
       </section>
     );
@@ -110,13 +119,21 @@ export function TrustedQuestionCard({ questionId, onAnswered }: TrustedQuestionC
           resolvedActionCount: answerMutation.data.resolved_action_count,
         })
       : null;
+  const statusMessage = busy
+    ? "Submitting answer."
+    : lifecycleLines
+      ? lifecycleLines.join(" ")
+      : null;
 
   return (
     <section
       className="rounded-2xl border border-sky-300 bg-sky-50/80 p-4 shadow-sm"
       aria-label="Trusted question card"
+      aria-busy={busy}
+      aria-describedby={`${credentialWarningId} ${statusId}`.trim()}
       data-testid="trusted-question-card"
     >
+      <PoliteStatus id={statusId} message={statusMessage} />
       <div className="flex items-start justify-between gap-3">
         <div>
           <div className="text-[11px] font-semibold uppercase tracking-wide text-sky-800">
@@ -131,7 +148,10 @@ export function TrustedQuestionCard({ questionId, onAnswered }: TrustedQuestionC
 
       <p className="mt-4 text-sm font-medium text-zinc-950">{formatPrompt(card.prompt_redacted)}</p>
 
-      <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+      <p
+        id={credentialWarningId}
+        className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900"
+      >
         Do not paste passwords, API keys, OAuth tokens, or other credentials in your answer.
       </p>
 
@@ -150,6 +170,7 @@ export function TrustedQuestionCard({ questionId, onAnswered }: TrustedQuestionC
       {!answered ? (
         <form
           className="mt-4 space-y-2"
+          aria-label="Answer trusted question"
           onSubmit={(event) => {
             event.preventDefault();
             const form = event.currentTarget;
@@ -159,17 +180,16 @@ export function TrustedQuestionCard({ questionId, onAnswered }: TrustedQuestionC
             form.reset();
           }}
         >
-          <label
-            className="block text-xs font-medium text-zinc-600"
-            htmlFor={`answer-${questionId}`}
-          >
+          <label className="block text-xs font-medium text-zinc-600" htmlFor={answerFieldId}>
             Your answer
           </label>
           <textarea
-            id={`answer-${questionId}`}
+            id={answerFieldId}
             name="answer"
             rows={3}
+            required
             disabled={busy || !session}
+            aria-describedby={credentialWarningId}
             className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 disabled:opacity-50"
             placeholder="Type your answer…"
           />
@@ -182,7 +202,11 @@ export function TrustedQuestionCard({ questionId, onAnswered }: TrustedQuestionC
           </button>
         </form>
       ) : (
-        <div className="mt-4 space-y-1 text-xs text-zinc-600" data-testid="question-lifecycle">
+        <div
+          className="mt-4 space-y-1 text-xs text-zinc-600"
+          data-testid="question-lifecycle"
+          aria-live="polite"
+        >
           {(lifecycleLines ?? ["Answer recorded. Resume state updates on the timeline."]).map(
             (line) => (
               <p key={line}>{line}</p>
