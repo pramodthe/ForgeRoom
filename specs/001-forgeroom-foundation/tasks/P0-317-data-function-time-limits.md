@@ -1,7 +1,7 @@
 ---
 id: P0-317
 title: Bound controlled data-function reads with a time limit
-status: in_review
+status: done
 owner: unassigned
 depends_on: [P0-315]
 requirements: [GUI-010]
@@ -59,14 +59,14 @@ pnpm lint && pnpm typecheck && pnpm test && pnpm build
 
 Manual or provider-backed checks:
 
-- [ ] A grant whose bound is exceeded returns the typed limit error and persists no partial read.
+- [x] A grant whose bound is exceeded returns the typed limit error and persists no partial read. *(`retained-data-grants.test.ts` time_ms breach; `ui-data-functions.integration.test.ts` invoke path)*
 
 ## Evidence
 
-- Files changed:
-- Commands and results:
-- Screenshots or artifacts:
-- Redacted provider trace:
+- Files changed: `packages/contracts/src/components.ts`, `packages/db/src/retained-data-grants.ts`, `packages/db/src/ui-data-functions.ts`, integration/unit tests.
+- Commands and results: `pnpm --filter @forgeroom/db exec vitest run src/retained-data-grants.test.ts src/ui-data-functions.integration.test.ts` green; full `pnpm lint && pnpm typecheck && pnpm test && pnpm build` green on main.
+- Screenshots or artifacts: n/a (server-side bound).
+- Redacted provider trace: n/a.
 
 ## Work log
 
@@ -74,9 +74,10 @@ Manual or provider-backed checks:
   limits but has no time bound on `DataGrant` or anywhere in the data-function path.
 - 2026-08-29 — Closeout: `max_time_ms` on `DataGrant`, `applySnapshotLimits` + `invokeUiDataFunction`
   enforcement, attributed `DataGrantLimitExceededError`, integration tests for bytes/time breach.
+- 2026-08-29 — Task marked `done`; manual breach check covered by unit/integration tests above.
 
 ## Handoff
 
-- Outcome:
-- Open risks:
-- Follow-up tasks:
+- Outcome: P0 data-function reads enforce row, byte, and time limits from the retained grant.
+- Open risks: defence-in-depth only on in-memory snapshots; live-query timeouts out of scope.
+- Follow-up tasks: none.
