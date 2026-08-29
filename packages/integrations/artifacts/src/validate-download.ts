@@ -63,6 +63,26 @@ function looksLikeZip(content: Buffer): boolean {
   return signature === 0x04034b50 || signature === 0x06054b50 || signature === 0x02014b50;
 }
 
+function inspectZipExtra(extra: Buffer): "safe" | "sensitive" | "invalid" {
+  if (containsSensitiveText(extra)) return "sensitive";
+  let offset = 0;
+  while (offset < extra.length) {
+    if (offset + 4 > extra.length) return "invalid";
+    const headerId = extra.readUInt16LE(offset);
+    const dataLength = extra.readUInt16LE(offset + 2);
+    const dataStart = offset + 4;
+    const dataEnd = dataStart + dataLength;
+    if (dataEnd > extra.length) return "invalid";
+    if (headerId === 0x7075) {
+      const data = extra.subarray(dataStart, dataEnd);
+      if (data.length < 5 || data[0] !== 1) return "invalid";
+      if (isSensitiveArtifactPath(data.subarray(5).toString("utf8"))) return "sensitive";
+    }
+    offset = dataEnd;
+  }
+  return "safe";
+}
+
 function inspectZipContent(content: Buffer): "safe" | "sensitive" | "invalid" {
   let endOffset = -1;
   for (let offset = content.length - 22; offset >= Math.max(0, content.length - 65_557); offset--) {
@@ -90,13 +110,14 @@ function inspectZipContent(content: Buffer): "safe" | "sensitive" | "invalid" {
     entryCount === 0xffff ||
     centralSize === 0xffffffff ||
     centralOffset === 0xffffffff ||
-    centralOffset + centralSize > endOffset
+    centralOffset + centralSize !== endOffset
   ) {
     return "invalid";
   }
 
   let offset = centralOffset;
   let inspectedBytes = 0;
+  const localRanges: Array<{ start: number; end: number }> = [];
   try {
     for (let index = 0; index < entryCount; index++) {
       if (offset + 46 > content.length || content.readUInt32LE(offset) !== 0x02014b50) {
@@ -116,7 +137,8 @@ function inspectZipContent(content: Buffer): "safe" | "sensitive" | "invalid" {
       if (isSensitiveArtifactPath(name)) return "sensitive";
       const centralExtraEnd = nameEnd + extraLength;
       if (centralExtraEnd > content.length) return "invalid";
-      if (containsSensitiveText(content.subarray(nameEnd, centralExtraEnd))) return "sensitive";
+      const centralExtraInspection = inspectZipExtra(content.subarray(nameEnd, centralExtraEnd));
+      if (centralExtraInspection !== "safe") return centralExtraInspection;
       const entryCommentStart = centralExtraEnd;
       const entryCommentEnd = entryCommentStart + commentLength;
       if (entryCommentEnd > content.length) return "invalid";
@@ -134,10 +156,19 @@ function inspectZipContent(content: Buffer): "safe" | "sensitive" | "invalid" {
       if (localExtraEnd > content.length) return "invalid";
       const localName = content.subarray(localNameStart, localNameEnd).toString("utf8");
       if (isSensitiveArtifactPath(localName)) return "sensitive";
-      if (containsSensitiveText(content.subarray(localNameEnd, localExtraEnd))) return "sensitive";
+      const localExtraInspection = inspectZipExtra(content.subarray(localNameEnd, localExtraEnd));
+      if (localExtraInspection !== "safe") return localExtraInspection;
       const dataStart = localExtraEnd;
       const dataEnd = dataStart + compressedSize;
-      if (dataEnd > content.length) return "invalid";
+      if (dataEnd > centralOffset) return "invalid";
+      let localEnd = dataEnd;
+      if ((flags & 0x8) !== 0) {
+        const hasSignature =
+          dataEnd + 4 <= centralOffset && content.readUInt32LE(dataEnd) === 0x08074b50;
+        localEnd += hasSignature ? 16 : 12;
+        if (localEnd > centralOffset) return "invalid";
+      }
+      localRanges.push({ start: localOffset, end: localEnd });
       inspectedBytes += uncompressedSize;
       if (inspectedBytes > P0_MAX_ARTIFACT_BYTES) return "invalid";
       const compressed = content.subarray(dataStart, dataEnd);
@@ -152,7 +183,14 @@ function inspectZipContent(content: Buffer): "safe" | "sensitive" | "invalid" {
       if (containsSensitiveText(entry)) return "sensitive";
       offset = nameEnd + extraLength + commentLength;
     }
-    if (offset > centralOffset + centralSize) return "invalid";
+    if (offset !== centralOffset + centralSize) return "invalid";
+    localRanges.sort((left, right) => left.start - right.start);
+    let expectedOffset = 0;
+    for (const range of localRanges) {
+      if (range.start !== expectedOffset || range.end < range.start) return "invalid";
+      expectedOffset = range.end;
+    }
+    if (expectedOffset !== centralOffset) return "invalid";
   } catch {
     return "invalid";
   }

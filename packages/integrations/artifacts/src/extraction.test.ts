@@ -13,12 +13,14 @@ function createStoredZip(
   content: Buffer,
   comment = "",
   entryComment = "",
-  extra = "",
+  extra: string | Buffer = "",
+  gap: string | Buffer = "",
 ): Buffer {
   const nameBytes = Buffer.from(name, "utf8");
   const commentBytes = Buffer.from(comment, "utf8");
   const entryCommentBytes = Buffer.from(entryComment, "utf8");
-  const extraBytes = Buffer.from(extra, "utf8");
+  const extraBytes = Buffer.isBuffer(extra) ? extra : Buffer.from(extra, "utf8");
+  const gapBytes = Buffer.isBuffer(gap) ? gap : Buffer.from(gap, "utf8");
   const local = Buffer.alloc(30 + nameBytes.length + extraBytes.length + content.length);
   local.writeUInt32LE(0x04034b50, 0);
   local.writeUInt32LE(content.length, 18);
@@ -47,10 +49,10 @@ function createStoredZip(
   end.writeUInt16LE(1, 8);
   end.writeUInt16LE(1, 10);
   end.writeUInt32LE(central.length, 12);
-  end.writeUInt32LE(local.length, 16);
+  end.writeUInt32LE(local.length + gapBytes.length, 16);
   end.writeUInt16LE(commentBytes.length, 20);
   commentBytes.copy(end, 22);
-  return Buffer.concat([local, central, end]);
+  return Buffer.concat([local, gapBytes, central, end]);
 }
 
 describe("P0-312 sandbox artifact discovery", () => {
@@ -241,6 +243,37 @@ describe("P0-312 download validation", () => {
     expect(
       validateDiscoveredArtifactDownload({ discovery: zipDiscovery, content: sensitiveExtraZip }),
     ).toMatchObject({ ok: false, reason: "sensitive_content" });
+    const unicodePath = Buffer.from(".env", "utf8");
+    const unicodePathExtra = Buffer.alloc(9 + unicodePath.length);
+    unicodePathExtra.writeUInt16LE(0x7075, 0);
+    unicodePathExtra.writeUInt16LE(5 + unicodePath.length, 2);
+    unicodePathExtra[4] = 1;
+    unicodePath.copy(unicodePathExtra, 9);
+    const sensitiveUnicodePathZip = createStoredZip(
+      "summary.txt",
+      Buffer.from("safe"),
+      "",
+      "",
+      unicodePathExtra,
+    );
+    expect(
+      validateDiscoveredArtifactDownload({
+        discovery: zipDiscovery,
+        content: sensitiveUnicodePathZip,
+      }),
+    ).toMatchObject({ ok: false, reason: "sensitive_content" });
+
+    const gapZip = createStoredZip(
+      "summary.txt",
+      Buffer.from("safe"),
+      "",
+      "",
+      "",
+      "access_token=provider-secret-value",
+    );
+    expect(
+      validateDiscoveredArtifactDownload({ discovery: zipDiscovery, content: gapZip }),
+    ).toMatchObject({ ok: false, reason: "archive_invalid" });
 
     const nestedZip = createStoredZip(
       "inner.zip",
