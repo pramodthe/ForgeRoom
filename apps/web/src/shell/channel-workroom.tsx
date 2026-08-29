@@ -30,11 +30,12 @@ export function ChannelWorkroom({ workspaceId, channelId }: ChannelWorkroomProps
     return <LoadingState title="Loading channel workroom…" />;
   }
 
-  if (channelsQuery.error || channelQuery.error || connectionsQuery.error) {
+  // Connections may be unavailable without Composio credentials; channel chrome still loads.
+  if (channelsQuery.error || channelQuery.error) {
     return (
       <RouteErrorState
         title="Unable to load channel"
-        description="The channel workroom could not be loaded from the mock workspace API."
+        description="The channel workroom could not be loaded."
       />
     );
   }
@@ -49,6 +50,8 @@ export function ChannelWorkroom({ workspaceId, channelId }: ChannelWorkroomProps
     );
   }
 
+  const connections = connectionsQuery.error ? [] : (connectionsQuery.data ?? []);
+
   return (
     <ChannelWorkroomUiProvider key={channelId}>
       <TrustedHitlHostProvider>
@@ -57,14 +60,14 @@ export function ChannelWorkroom({ workspaceId, channelId }: ChannelWorkroomProps
             workspaceId={workspaceId}
             channels={channelsQuery.data ?? []}
             selectedChannelId={channelId}
-            connections={connectionsQuery.data ?? []}
+            connections={connections}
           />
           <div className="flex min-w-0 flex-1 justify-center">
             <div className="flex h-full w-full max-w-[820px] min-w-0 flex-col border-x border-zinc-200">
               <ChannelTimelinePane
                 channel={channel}
                 workspaceId={workspaceId}
-                connections={connectionsQuery.data ?? []}
+                connections={connections}
               />
             </div>
           </div>

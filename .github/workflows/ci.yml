@@ -9,7 +9,7 @@ on:
 jobs:
   check:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     services:
       postgres:
         image: postgres:16
@@ -46,3 +46,15 @@ jobs:
         run: pnpm test:e2e
         env:
           CI: true
+      - name: Browser E2E (live API smoke)
+        run: pnpm test:e2e
+        env:
+          CI: true
+          FORGEROOM_E2E_LIVE: api
+          HOST: 127.0.0.1
+          PORT: "3000"
+          APP_ORIGIN: http://127.0.0.1:5173
+          OWNER_EMAIL: owner@example.test
+          OWNER_PASSWORD: correct-horse-battery
+          FORGEROOM_E2E_OWNER_PASSWORD: correct-horse-battery
+          FORGEROOM_EMBED_WORKER: "true"
