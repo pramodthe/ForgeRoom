@@ -28,6 +28,9 @@ import type {
   RunCancelCommand,
   RunCancelResult,
   RunDetailResponse,
+  SkillBinding,
+  SkillBindingCreateCommand,
+  SkillBindingDeleteCommand,
   SkillDraft,
   SkillDraftCreateCommand,
   SkillDraftPublishCommand,
@@ -77,7 +80,17 @@ import { getRunReceiptForSession } from "../runs/receipt";
 import { getRunForSession } from "../runs/detail";
 import { cancelRunForSession } from "../runs/cancel";
 import { createSkillDraftForRun, getSkillDraftForSession } from "../skills/drafts";
+import {
+  getSkillDraftBySkillForSession,
+  getSkillVersionBySkillForSession,
+  listWorkspaceSkillsForSession,
+} from "../skills/catalog";
 import { getSkillVersionForSession, publishSkillDraftForSession } from "../skills/publish";
+import {
+  attachSkillBindingForSession,
+  detachSkillBindingForSession,
+  getSkillBindingForSession,
+} from "../skills/bindings";
 import { getSkillDraftById, getSkillVersionById } from "@forgeroom/db";
 import { customAguiEvent, messageCreatedAguiEvent, pinAguiEvent } from "./event-builders";
 import { ChannelEventPersistenceError } from "./event-guard";
@@ -615,6 +628,18 @@ export type WorkspaceService = {
     session: SessionResponse,
     draftId: string,
   ): Promise<WorkspaceServiceResult<SkillDraft>>;
+  listWorkspaceSkills(
+    session: SessionResponse,
+    workspaceId: string,
+  ): Promise<WorkspaceServiceResult<{ drafts: SkillDraft[]; versions: SkillVersion[] }>>;
+  getSkillDraftBySkill(
+    session: SessionResponse,
+    skillId: string,
+  ): Promise<WorkspaceServiceResult<SkillDraft>>;
+  getSkillVersionBySkill(
+    session: SessionResponse,
+    skillId: string,
+  ): Promise<WorkspaceServiceResult<SkillVersion>>;
   publishSkillDraft(
     session: SessionResponse,
     draftId: string,
@@ -624,6 +649,21 @@ export type WorkspaceService = {
     session: SessionResponse,
     versionId: string,
   ): Promise<WorkspaceServiceResult<SkillVersion>>;
+  createSkillBinding(
+    session: SessionResponse,
+    coworkerId: string,
+    command: SkillBindingCreateCommand,
+  ): Promise<WorkspaceServiceResult<SkillBinding>>;
+  deleteSkillBinding(
+    session: SessionResponse,
+    coworkerId: string,
+    bindingId: string,
+    command: SkillBindingDeleteCommand,
+  ): Promise<WorkspaceServiceResult<SkillBinding>>;
+  getSkillBinding(
+    session: SessionResponse,
+    bindingId: string,
+  ): Promise<WorkspaceServiceResult<SkillBinding>>;
   steerCorrection(
     session: SessionResponse,
     runId: string,
@@ -4244,7 +4284,17 @@ export function createWorkspaceService(options?: {
           return loaded.draft;
         },
         run: async () =>
-          createSkillDraftForRun(sql, session, runId, command, now, { draftId, skillId }),
+          createSkillDraftForRun(
+            sql,
+            session,
+            runId,
+            command,
+            now,
+            { draftId, skillId },
+            {
+              trueforgeClient,
+            },
+          ),
       });
     },
 
@@ -4256,6 +4306,36 @@ export function createWorkspaceService(options?: {
         };
       }
       return getSkillDraftForSession(sql, session, draftId);
+    },
+
+    async listWorkspaceSkills(session, workspaceId) {
+      if (!sql) {
+        return {
+          ok: false,
+          error: { code: "not_found", message: "Skills require a database-backed API." },
+        };
+      }
+      return listWorkspaceSkillsForSession(sql, session, workspaceId);
+    },
+
+    async getSkillDraftBySkill(session, skillId) {
+      if (!sql) {
+        return {
+          ok: false,
+          error: { code: "not_found", message: "Skill drafts require a database-backed API." },
+        };
+      }
+      return getSkillDraftBySkillForSession(sql, session, skillId);
+    },
+
+    async getSkillVersionBySkill(session, skillId) {
+      if (!sql) {
+        return {
+          ok: false,
+          error: { code: "not_found", message: "Skill versions require a database-backed API." },
+        };
+      }
+      return getSkillVersionBySkillForSession(sql, session, skillId);
     },
 
     async publishSkillDraft(session, draftId, command) {
@@ -4289,6 +4369,99 @@ export function createWorkspaceService(options?: {
         };
       }
       return getSkillVersionForSession(sql, session, versionId);
+    },
+
+    async createSkillBinding(session, coworkerId, command) {
+      if (!sql) {
+        return {
+          ok: false,
+          error: { code: "not_found", message: "Skill bindings require a database-backed API." },
+        };
+      }
+      const coworker = await store.getCoworker(coworkerId);
+      if (!coworker || coworker.workspaceId !== session.workspace_id) {
+        return { ok: false, error: { code: "not_found", message: "Coworker not found." } };
+      }
+      const bindingId = randomOpaqueId("skb");
+      const agentVersionId = randomOpaqueId("av");
+      return withIdempotency({
+        workspaceId: session.workspace_id,
+        commandKind: "skill_binding.create",
+        idempotencyKey: command.idempotency_key,
+        resultId: bindingId,
+        reload: async (id) => {
+          const loaded = await getSkillBindingForSession(sql, session, id);
+          return loaded.ok ? loaded.value : null;
+        },
+        run: async () =>
+          attachSkillBindingForSession(
+            sql,
+            session,
+            coworkerId,
+            command,
+            {
+              bindingId,
+              agentVersionId,
+            },
+            {
+              coworker,
+              trueforgeClient,
+              apiEnv,
+              now,
+            },
+          ),
+      });
+    },
+
+    async deleteSkillBinding(session, coworkerId, bindingId, command) {
+      if (!sql) {
+        return {
+          ok: false,
+          error: { code: "not_found", message: "Skill bindings require a database-backed API." },
+        };
+      }
+      const coworker = await store.getCoworker(coworkerId);
+      if (!coworker || coworker.workspaceId !== session.workspace_id) {
+        return { ok: false, error: { code: "not_found", message: "Coworker not found." } };
+      }
+      const agentVersionId = randomOpaqueId("av");
+      return withIdempotency({
+        workspaceId: session.workspace_id,
+        commandKind: "skill_binding.delete",
+        idempotencyKey: command.idempotency_key,
+        resultId: bindingId,
+        reload: async (id) => {
+          const loaded = await getSkillBindingForSession(sql, session, id);
+          return loaded.ok ? loaded.value : null;
+        },
+        run: async () =>
+          detachSkillBindingForSession(
+            sql,
+            session,
+            coworkerId,
+            bindingId,
+            command,
+            {
+              agentVersionId,
+            },
+            {
+              coworker,
+              trueforgeClient,
+              apiEnv,
+              now,
+            },
+          ),
+      });
+    },
+
+    async getSkillBinding(session, bindingId) {
+      if (!sql) {
+        return {
+          ok: false,
+          error: { code: "not_found", message: "Skill bindings require a database-backed API." },
+        };
+      }
+      return getSkillBindingForSession(sql, session, bindingId);
     },
 
     async getRun(session, runId) {

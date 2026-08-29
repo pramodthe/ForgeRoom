@@ -3,12 +3,19 @@ import { notifyApiUnauthorized } from "./unauthorized";
 export class ApiError extends Error {
   readonly code: string;
   readonly status: number;
+  readonly details: Record<string, unknown>;
 
-  constructor(code: string, message: string, status: number) {
+  constructor(
+    code: string,
+    message: string,
+    status: number,
+    details: Record<string, unknown> = {},
+  ) {
     super(message);
     this.name = "ApiError";
     this.code = code;
     this.status = status;
+    this.details = details;
   }
 }
 
@@ -25,12 +32,13 @@ type ApiFetchOptions = RequestInit & {
 async function readApiError(response: Response): Promise<ApiError> {
   try {
     const body = (await response.json()) as {
-      error?: { code?: string; message?: string };
+      error?: { code?: string; message?: string; details?: Record<string, unknown> };
     };
     return new ApiError(
       body.error?.code ?? "unknown",
       body.error?.message ?? response.statusText,
       response.status,
+      body.error?.details ?? {},
     );
   } catch {
     return new ApiError("unknown", response.statusText, response.status);

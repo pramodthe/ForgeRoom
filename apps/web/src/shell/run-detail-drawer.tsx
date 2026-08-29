@@ -1,11 +1,24 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { Run, RunStep } from "@forgeroom/contracts";
-import { useRef, useState, useId } from "react";
+import type { Run, RunStep, SkillDraft } from "@forgeroom/contracts";
+import { useEffect, useRef, useState, useId } from "react";
 import { cancelRun, getRun, getRunReceipt } from "../api/channel-resources-api";
 import { apiUrl } from "../api/http-client";
 import { newIdempotencyKey } from "../api/http-client";
 import { isFixtureMode } from "../api/mode";
-import { listChannelRoster, publishFixtureRunSkill } from "../api/workspace-api";
+import {
+  createSkillDraftFromRun,
+  createSkillBinding,
+  getCoworker,
+  getSkillDraft,
+  listChannelRoster,
+  publishFixtureRunSkill,
+  publishSkillDraft,
+} from "../api/workspace-api";
+import {
+  clearSkillDraftReview,
+  persistSkillDraftReview,
+  readSkillDraftReview,
+} from "../pages/review-flow-helpers";
 import { useSession } from "../auth/session-context";
 import { Avatar } from "../ui/avatar";
 import { useDialogFocus } from "../ui/use-dialog-focus";
@@ -91,6 +104,9 @@ function LiveRunDetailDrawer({
   const queryClient = useQueryClient();
   const [cancelError, setCancelError] = useState<string | null>(null);
   const [cancelStatus, setCancelStatus] = useState<string | null>(null);
+  const [skillReviewOpen, setSkillReviewOpen] = useState(false);
+  const [skillDraft, setSkillDraft] = useState<SkillDraft | null>(null);
+  const [saveSkillError, setSaveSkillError] = useState<string | null>(null);
   const statusId = useId();
   const drawerRef = useRef<HTMLElement>(null);
   useDialogFocus(drawerRef, onClose);
@@ -139,6 +155,61 @@ function LiveRunDetailDrawer({
   const isLoading = runQuery.isLoading || receiptQuery.isLoading;
   const hasLoadError = runQuery.error || receiptQuery.error;
   const stoppable = run?.steps.some((step) => STOPPABLE_STEP_STATES.has(step.state)) ?? false;
+  const savable =
+    run?.lifecycle === "completed" &&
+    (run.steps.length === 0 || run.steps.every((step) => step.state === "completed"));
+  const attachCoworkerId =
+    run?.steps.find((step) => step.state === "completed")?.assigned_coworker_id ?? null;
+
+  useEffect(() => {
+    if (isFixtureMode || !session) return;
+    const draftId = readSkillDraftReview(runId);
+    if (!draftId) return;
+    void getSkillDraft(workspaceId, draftId)
+      .then((restored) => {
+        if (!restored) {
+          clearSkillDraftReview(runId);
+          return;
+        }
+        setSkillDraft(restored);
+        setSkillReviewOpen(true);
+      })
+      .catch(() => {
+        clearSkillDraftReview(runId);
+      });
+  }, [runId, session, workspaceId]);
+
+  const createSkillDraftMutation = useMutation({
+    mutationFn: async () => {
+      if (!session || !run) {
+        throw new Error("Session required.");
+      }
+      const sourceStepIds = run.steps
+        .filter((step) => step.state === "completed")
+        .map((step) => step.id);
+      if (sourceStepIds.length === 0) {
+        throw new Error("No completed steps are available for skill drafting.");
+      }
+      return createSkillDraftFromRun({
+        runId,
+        csrfToken: session.csrf_token,
+        command: {
+          schemaVersion: 1,
+          source_step_ids: sourceStepIds,
+          idempotency_key: newIdempotencyKey("skill_draft"),
+        },
+      });
+    },
+    onSuccess: (draft) => {
+      setSaveSkillError(null);
+      setSkillDraft(draft);
+      persistSkillDraftReview(runId, draft.id);
+      setSkillReviewOpen(true);
+    },
+    onError: (error) => {
+      setSaveSkillError(error instanceof Error ? error.message : "Unable to create skill draft.");
+    },
+  });
 
   return (
     <div className="fixed inset-0 z-40 flex justify-end bg-zinc-950/30" role="presentation">
@@ -449,8 +520,42 @@ function LiveRunDetailDrawer({
               ) : null}
             </div>
           ) : null}
+          {run && savable ? (
+            <div className="flex items-center justify-between border-t border-zinc-200 pt-4">
+              <p className="max-w-md text-xs leading-5 text-zinc-500">
+                Save this completed run as a reviewed private skill. Attachment stays within the
+                coworker&apos;s existing authority.
+              </p>
+              <button
+                type="button"
+                disabled={createSkillDraftMutation.isPending}
+                onClick={() => void createSkillDraftMutation.mutate()}
+                className="rounded-xl bg-zinc-950 px-4 py-2.5 text-sm font-semibold text-white hover:bg-zinc-800 disabled:cursor-not-allowed disabled:bg-zinc-400"
+              >
+                {createSkillDraftMutation.isPending ? "Preparing draft…" : "Save as skill"}
+              </button>
+            </div>
+          ) : null}
+          {saveSkillError ? (
+            <p className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-800" role="alert">
+              {saveSkillError}
+            </p>
+          ) : null}
         </div>
       </section>
+      {skillReviewOpen && skillDraft && attachCoworkerId ? (
+        <SaveAsSkillReview
+          workspaceId={workspaceId}
+          runId={runId}
+          draft={skillDraft}
+          coworkerId={attachCoworkerId}
+          onClose={() => {
+            setSkillReviewOpen(false);
+            setSkillDraft(null);
+            clearSkillDraftReview(runId);
+          }}
+        />
+      ) : null}
     </div>
   );
 }
@@ -626,7 +731,11 @@ function FixtureRunDetailDrawer({
         </div>
       </section>
       {skillReviewOpen ? (
-        <SaveAsSkillReview workspaceId={workspaceId} onClose={() => setSkillReviewOpen(false)} />
+        <SaveAsSkillReview
+          workspaceId={workspaceId}
+          fixture
+          onClose={() => setSkillReviewOpen(false)}
+        />
       ) : null}
     </div>
   );
@@ -716,7 +825,22 @@ function RunDrawerSummary(props: {
   );
 }
 
-function SaveAsSkillReview({ workspaceId, onClose }: { workspaceId: string; onClose: () => void }) {
+function SaveAsSkillReview({
+  workspaceId,
+  runId,
+  onClose,
+  draft,
+  coworkerId,
+  fixture = false,
+}: {
+  workspaceId: string;
+  runId?: string;
+  onClose: () => void;
+  draft?: SkillDraft;
+  coworkerId?: string;
+  fixture?: boolean;
+}) {
+  const { session } = useSession();
   const queryClient = useQueryClient();
   const [stage, setStage] = useState<"review" | "publishing" | "attached">("review");
   const [error, setError] = useState<string | null>(null);
@@ -727,18 +851,59 @@ function SaveAsSkillReview({ workspaceId, onClose }: { workspaceId: string; onCl
     setError(null);
     setStage("publishing");
     try {
-      await publishFixtureRunSkill(workspaceId);
+      if (fixture) {
+        await publishFixtureRunSkill(workspaceId);
+      } else if (draft && coworkerId && session) {
+        const coworker = await getCoworker(workspaceId, coworkerId);
+        if (!coworker) {
+          throw new Error("Coworker not found.");
+        }
+        const version = await publishSkillDraft({
+          draftId: draft.id,
+          csrfToken: session.csrf_token,
+          command: {
+            schemaVersion: 1,
+            expected_revision: draft.revision,
+            expected_draft_hash: draft.draft_hash,
+            expected_source_content_hash: draft.source_content_hash,
+            idempotency_key: newIdempotencyKey("skill_publish"),
+          },
+        });
+        await createSkillBinding({
+          coworkerId,
+          csrfToken: session.csrf_token,
+          command: {
+            schemaVersion: 1,
+            skill_version_id: version.id,
+            expected_manifest_hash: version.manifest_hash,
+            expected_coworker_config_revision: coworker.config_revision,
+            idempotency_key: newIdempotencyKey("skill_bind"),
+          },
+        });
+      } else {
+        throw new Error("Skill review is missing draft context.");
+      }
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["skill-versions", workspaceId] }),
-        queryClient.invalidateQueries({ queryKey: ["coworkers", workspaceId] }),
-        queryClient.invalidateQueries({ queryKey: ["coworker", workspaceId, "cw_operator_001"] }),
+        queryClient.invalidateQueries({ queryKey: ["skill-drafts", workspaceId] }),
+        queryClient.invalidateQueries({ queryKey: ["coworker-directory", workspaceId] }),
+        queryClient.invalidateQueries({ queryKey: ["coworker", workspaceId, coworkerId ?? ""] }),
       ]);
+      if (runId) {
+        clearSkillDraftReview(runId);
+      }
       setStage("attached");
     } catch (publishError) {
       setError(publishError instanceof Error ? publishError.message : "Unable to publish skill.");
       setStage("review");
     }
   }
+
+  const title = draft?.when_to_use ?? "Save support operations plan";
+  const methodSteps = draft?.method ?? [];
+  const requiredTools = draft?.required_tools ?? [];
+  const requiredComponents = draft?.required_components ?? [];
+  const requiredApprovals = draft?.required_approvals ?? [];
 
   return (
     <div
@@ -759,7 +924,7 @@ function SaveAsSkillReview({ workspaceId, onClose }: { workspaceId: string; onCl
               Trusted skill review · draft revision 1
             </div>
             <h2 id="skill-review-title" className="mt-1 text-xl font-semibold text-zinc-950">
-              Save support operations plan
+              {title}
             </h2>
           </div>
           <button
@@ -776,23 +941,38 @@ function SaveAsSkillReview({ workspaceId, onClose }: { workspaceId: string; onCl
             <div className="grid grid-cols-2 gap-3">
               <ReviewBlock
                 title="When to use"
-                body="After a support review when sourced evidence should become an accountable operating plan."
+                body={
+                  draft?.when_to_use ??
+                  "After a support review when sourced evidence should become an accountable operating plan."
+                }
               />
               <ReviewBlock
                 title="Inputs"
-                body="Date range, support dataset artifact, operating objective."
+                body={(
+                  draft?.inputs ?? ["Date range", "support dataset artifact", "operating objective"]
+                ).join(" · ")}
               />
               <ReviewBlock
                 title="Output"
-                body="Chart, TaskRecord, PDF brief, and approval-ready external change."
+                body={
+                  draft?.output ??
+                  "Chart, TaskRecord, PDF brief, and approval-ready external change."
+                }
               />
               <ReviewBlock
                 title="Validation"
-                body="Every claim cites the source revision; task and artifact must persist before completion."
+                body={
+                  draft?.validation ??
+                  "Every claim cites the source revision; task and artifact must persist before completion."
+                }
               />
               <ReviewBlock
                 title="No or stale data"
-                body="Return a sourced no-change result and ask for a current dataset. Never infer missing facts."
+                body={(
+                  draft?.failures ?? [
+                    "Return a sourced no-change result and ask for a current dataset.",
+                  ]
+                ).join(" · ")}
               />
               <ReviewBlock
                 title="Failure behavior"
@@ -804,15 +984,8 @@ function SaveAsSkillReview({ workspaceId, onClose }: { workspaceId: string; onCl
                 Procedure
               </h3>
               <ol className="mt-3 grid grid-cols-2 gap-2 text-xs text-zinc-700">
-                {[
-                  "Read bounded support evidence",
-                  "Validate categories and totals",
-                  "Create the authoritative TaskRecord",
-                  "Publish revisioned artifacts",
-                  "Request approval for external writes",
-                  "Return the safe final receipt",
-                ].map((step, index) => (
-                  <li key={step} className="flex gap-2 rounded-lg bg-zinc-50 p-2.5">
+                {methodSteps.map((step, index) => (
+                  <li key={`${step}-${index}`} className="flex gap-2 rounded-lg bg-zinc-50 p-2.5">
                     <span className="font-semibold text-violet-700">{index + 1}.</span>
                     {step}
                   </li>
@@ -820,21 +993,23 @@ function SaveAsSkillReview({ workspaceId, onClose }: { workspaceId: string; onCl
               </ol>
             </section>
             <div className="mt-4 grid grid-cols-2 gap-3">
-              <ReviewBlock
-                title="Required tools"
-                body="support.read · sandbox.publish_summary · TaskRecord.create · INTERCOM_UPDATE_MACRO"
-              />
-              <ReviewBlock
-                title="Required components"
-                body="BarOrLineChart · DataTable · TaskCard · ArtifactCard"
-              />
+              <ReviewBlock title="Required tools" body={requiredTools.join(" · ")} />
+              <ReviewBlock title="Required components" body={requiredComponents.join(" · ")} />
               <ReviewBlock
                 title="Approval boundary"
-                body="Every external write requires a fresh immutable approval. This skill gains no new authority."
+                body={
+                  requiredApprovals.length > 0
+                    ? `${requiredApprovals.join(" · ")} · This skill gains no new authority.`
+                    : "This skill gains no new authority."
+                }
               />
               <ReviewBlock
                 title="Source lineage"
-                body="Run run_4A91 · Analyst step 1 · Operator step 2 · source content hash locked"
+                body={
+                  draft
+                    ? `Run ${draft.source_run_id} · source content hash ${draft.source_content_hash}`
+                    : "Run run_4A91 · Analyst step 1 · Operator step 2 · source content hash locked"
+                }
               />
             </div>
             <section className="mt-4 rounded-2xl border border-violet-100 bg-violet-50 p-4">
@@ -846,7 +1021,7 @@ function SaveAsSkillReview({ workspaceId, onClose }: { workspaceId: string; onCl
             </section>
             <div className="mt-5 flex items-center justify-between">
               <p className="max-w-md text-xs leading-5 text-zinc-500">
-                Publishing rotates Operator&apos;s channel sessions after current work settles.
+                Publishing rotates the coworker&apos;s channel sessions after current work settles.
                 Pending proposals may become stale.
               </p>
               <button
@@ -877,7 +1052,7 @@ function SaveAsSkillReview({ workspaceId, onClose }: { workspaceId: string; onCl
             </h3>
             <p className="mt-1 text-sm text-zinc-500">
               {stage === "attached"
-                ? "Operator will receive the new binding after session rotation."
+                ? "The coworker will receive the new binding after session rotation."
                 : "Validating manifest, lineage, and exact capability diff."}
             </p>
             {stage === "attached" ? (

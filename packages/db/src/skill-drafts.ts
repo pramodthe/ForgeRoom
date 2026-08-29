@@ -3,11 +3,13 @@ import type { SafeJsonValue, SkillDraft, SkillVersion } from "@forgeroom/contrac
 import { skillDraftSchema, skillVersionSchema } from "@forgeroom/contracts";
 import {
   buildSkillDraft,
+  buildSkillDraftWithBody,
   buildSkillDraftMarkdown,
   buildSkillVersionFromDraft,
   hashSkillMarkdown,
   publishedSkillMarkdownBlobKey,
   validateSkillDraftPublish,
+  type SkillDraftBody,
   type SkillRunEvidence,
 } from "@forgeroom/domain";
 import { loadRunDetail } from "./run-detail";
@@ -114,7 +116,7 @@ export type SkillDraftRow = {
   manifestJson: unknown;
 };
 
-function parseManifestJson(manifestJson: unknown): unknown {
+export function parseManifestJson(manifestJson: unknown): unknown {
   if (typeof manifestJson === "string") {
     try {
       return JSON.parse(manifestJson) as unknown;
@@ -376,19 +378,31 @@ export type CreateSkillDraftInput = {
   displayName: string;
   evidence: SkillRunEvidence;
   now: string;
+  draftBody?: SkillDraftBody;
 };
 
 export async function createSkillDraftRecord(
   sql: SqlClient,
   input: CreateSkillDraftInput,
 ): Promise<SkillDraft> {
-  const draft = buildSkillDraft({
-    evidence: input.evidence,
-    workspaceId: input.workspaceId,
-    draftId: input.draftId,
-    createdBy: input.createdBy,
-    createdAt: input.now,
-  });
+  const draft = input.draftBody
+    ? buildSkillDraftWithBody(
+        {
+          evidence: input.evidence,
+          workspaceId: input.workspaceId,
+          draftId: input.draftId,
+          createdBy: input.createdBy,
+          createdAt: input.now,
+        },
+        input.draftBody,
+      )
+    : buildSkillDraft({
+        evidence: input.evidence,
+        workspaceId: input.workspaceId,
+        draftId: input.draftId,
+        createdBy: input.createdBy,
+        createdAt: input.now,
+      });
   const markdown = buildSkillDraftMarkdown({
     when_to_use: draft.when_to_use,
     inputs: draft.inputs,
@@ -473,4 +487,76 @@ export function slugifySkillStableName(goal: string, runId: string): string {
     .slice(-8)
     .toLowerCase();
   return slug.length > 0 ? `${slug}_${suffix}` : `skill_${suffix}`;
+}
+
+export async function listWorkspaceSkillDrafts(
+  sql: SqlClient,
+  workspaceId: string,
+): Promise<SkillDraft[]> {
+  const rows = await sql<{ manifest_json: unknown }[]>`
+    SELECT sv.manifest_json
+    FROM skill_versions AS sv
+    JOIN skills AS s ON s.id = sv.skill_id
+    WHERE s.workspace_id = ${workspaceId}
+      AND sv.state = 'draft'
+    ORDER BY sv.created_at DESC
+  `;
+  return rows
+    .map((row) => parseManifestDraft(row.manifest_json))
+    .filter((draft): draft is SkillDraft => draft !== null);
+}
+
+export async function listWorkspaceSkillVersions(
+  sql: SqlClient,
+  workspaceId: string,
+): Promise<SkillVersion[]> {
+  const rows = await sql<{ manifest_json: unknown; state: string }[]>`
+    SELECT sv.manifest_json, sv.state
+    FROM skill_versions AS sv
+    JOIN skills AS s ON s.id = sv.skill_id
+    WHERE s.workspace_id = ${workspaceId}
+      AND sv.state = 'published'
+    ORDER BY sv.published_at DESC NULLS LAST, sv.created_at DESC
+  `;
+  return rows
+    .map((row) => (row.state === "published" ? parseManifestVersion(row.manifest_json) : null))
+    .filter((version): version is SkillVersion => version !== null);
+}
+
+export async function getSkillDraftBySkillId(
+  sql: SqlClient,
+  workspaceId: string,
+  skillId: string,
+): Promise<SkillDraft | null> {
+  const rows = await sql<{ manifest_json: unknown }[]>`
+    SELECT sv.manifest_json
+    FROM skill_versions AS sv
+    JOIN skills AS s ON s.id = sv.skill_id
+    WHERE s.workspace_id = ${workspaceId}
+      AND s.id = ${skillId}
+      AND sv.state = 'draft'
+    ORDER BY sv.version DESC
+    LIMIT 1
+  `;
+  const row = rows[0];
+  return row ? parseManifestDraft(row.manifest_json) : null;
+}
+
+export async function getPublishedSkillVersionBySkillId(
+  sql: SqlClient,
+  workspaceId: string,
+  skillId: string,
+): Promise<SkillVersion | null> {
+  const rows = await sql<{ manifest_json: unknown }[]>`
+    SELECT sv.manifest_json
+    FROM skill_versions AS sv
+    JOIN skills AS s ON s.id = sv.skill_id
+    WHERE s.workspace_id = ${workspaceId}
+      AND s.id = ${skillId}
+      AND sv.state = 'published'
+    ORDER BY sv.version DESC
+    LIMIT 1
+  `;
+  const row = rows[0];
+  return row ? parseManifestVersion(row.manifest_json) : null;
 }

@@ -22,6 +22,8 @@ import {
   runCancelCommandSchema,
   skillDraftCreateCommandSchema,
   skillDraftPublishCommandSchema,
+  skillBindingCreateCommandSchema,
+  skillBindingDeleteCommandSchema,
 } from "@forgeroom/contracts";
 import { randomOpaqueId } from "../auth/crypto";
 import type { AuthService } from "../auth/service";
@@ -1051,6 +1053,46 @@ export function mountWorkspaceRoutes(
     return okJson(c, { draft: result.value }, 200);
   });
 
+  app.get("/api/workspaces/:workspaceId/skills", async (c) => {
+    const authed = await requireSession(c, env, auth);
+    if (authed instanceof Response) {
+      return authed;
+    }
+    const workspaceId = requireParam(c, "workspaceId");
+    if (workspaceId instanceof Response) {
+      return workspaceId;
+    }
+    const result = await workspace.listWorkspaceSkills(authed.session, workspaceId);
+    if (!result.ok) {
+      return fail(c, result.error);
+    }
+    return okJson(c, result.value, 200);
+  });
+
+  app.get("/api/skills/:skillId", async (c) => {
+    const authed = await requireSession(c, env, auth);
+    if (authed instanceof Response) {
+      return authed;
+    }
+    const skillId = requireParam(c, "skillId");
+    if (skillId instanceof Response) {
+      return skillId;
+    }
+    const draftResult = await workspace.getSkillDraftBySkill(authed.session, skillId);
+    const versionResult = await workspace.getSkillVersionBySkill(authed.session, skillId);
+    if (!draftResult.ok && !versionResult.ok) {
+      return fail(c, { code: "not_found", message: "Skill not found." });
+    }
+    return okJson(
+      c,
+      {
+        draft: draftResult.ok ? draftResult.value : null,
+        version: versionResult.ok ? versionResult.value : null,
+      },
+      200,
+    );
+  });
+
   app.post("/api/skill-drafts/:draftId/publish", async (c) => {
     const authed = await requireMutationSession(c, env, auth);
     if (authed instanceof Response) {
@@ -1072,5 +1114,60 @@ export function mountWorkspaceRoutes(
       return fail(c, result.error);
     }
     return okJson(c, { version: result.value }, 200);
+  });
+
+  app.post("/api/coworkers/:coworkerId/skill-bindings", async (c) => {
+    const authed = await requireMutationSession(c, env, auth);
+    if (authed instanceof Response) {
+      return authed;
+    }
+    const coworkerId = requireParam(c, "coworkerId");
+    if (coworkerId instanceof Response) {
+      return coworkerId;
+    }
+    const parsed = skillBindingCreateCommandSchema.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) {
+      const failure = errorResponse("validation_failed", "Invalid skill binding create command.", {
+        status: 400,
+      });
+      return c.json(failure.body, failure.status);
+    }
+    const result = await workspace.createSkillBinding(authed.session, coworkerId, parsed.data);
+    if (!result.ok) {
+      return fail(c, result.error);
+    }
+    return okJson(c, { binding: result.value }, 201);
+  });
+
+  app.delete("/api/coworkers/:coworkerId/skill-bindings/:bindingId", async (c) => {
+    const authed = await requireMutationSession(c, env, auth);
+    if (authed instanceof Response) {
+      return authed;
+    }
+    const coworkerId = requireParam(c, "coworkerId");
+    if (coworkerId instanceof Response) {
+      return coworkerId;
+    }
+    const bindingId = requireParam(c, "bindingId");
+    if (bindingId instanceof Response) {
+      return bindingId;
+    }
+    const parsed = skillBindingDeleteCommandSchema.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) {
+      const failure = errorResponse("validation_failed", "Invalid skill binding delete command.", {
+        status: 400,
+      });
+      return c.json(failure.body, failure.status);
+    }
+    const result = await workspace.deleteSkillBinding(
+      authed.session,
+      coworkerId,
+      bindingId,
+      parsed.data,
+    );
+    if (!result.ok) {
+      return fail(c, result.error);
+    }
+    return okJson(c, { binding: result.value }, 200);
   });
 }

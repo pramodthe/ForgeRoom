@@ -52,16 +52,16 @@ Each task file is authoritative for its status and evidence. Keep this index and
 | [ ] | [P0-315](./tasks/P0-315-component-tool-interaction-gateway.md) | Component/interaction gateway | in_review | P0-201, P0-208, P0-211, P0-212, P0-314 |
 | [ ] | [P0-316](./tasks/P0-316-controlled-component-library.md) | Small controlled component library | in_review | P0-312, P0-314, P0-401 |
 | [ ] | [P0-317](./tasks/P0-317-data-function-time-limits.md) | Data-function time limit | in_review | P0-315 |
-| [ ] | [P0-318](./tasks/P0-318-save-run-as-skill.md) | Save successful Run as skill | in_progress | P0-104, P0-106, P0-206, P0-208, P0-403 |
+| [x] | [P0-318](./tasks/P0-318-save-run-as-skill.md) | Save successful Run as skill | done | P0-104, P0-106, P0-206, P0-208, P0-403 |
 | [x] | [P0-401](./tasks/P0-401-app-shell.md) | Authenticated three-pane shell | done | P0-102, P0-104 |
 | [x] | [P0-402](./tasks/P0-402-composer-roster.md) | Channel composer and roster | done | P0-106, P0-107, P0-205, P0-401 |
 | [x] | [P0-403](./tasks/P0-403-activity-cards.md) | Run/Task activity cards | done | P0-109, P0-203, P0-206, P0-401 |
 | [ ] | [P0-404](./tasks/P0-404-approval-run-drawer.md) | Approval/question UI and Run drawer | in_review | P0-307, P0-308, P0-403 |
 | [ ] | [P0-405](./tasks/P0-405-work-tabs.md) | Tasks, Work, Artifacts and Context | in_review | P0-108, P0-109, P0-312, P0-403 |
-| [ ] | [P0-406](./tasks/P0-406-settings-screens.md) | Coworker, Skills and Connections UI | blocked | P0-106, P0-304, P0-318, P0-401 |
+| [x] | [P0-406](./tasks/P0-406-settings-screens.md) | Coworker, Skills and Connections UI | done | P0-106, P0-304, P0-318, P0-401 |
 | [ ] | [P0-407](./tasks/P0-407-ux-accessibility.md) | Required states and accessibility | blocked | P0-402–P0-406, P0-316, P0-410 |
 | [ ] | [P0-408](./tasks/P0-408-agui-rich-timeline.md) | AG-UI reducers and controlled rich timeline | blocked | P0-212, P0-315, P0-316, P0-403 |
-| [ ] | [P0-410](./tasks/P0-410-coworker-task-skill-ui.md) | Coworker/Task/skill review flows | blocked | P0-109, P0-213, P0-318, P0-402, P0-406 |
+| [ ] | [P0-410](./tasks/P0-410-coworker-task-skill-ui.md) | Coworker/Task/skill review flows | in_progress | P0-109, P0-213, P0-318, P0-402, P0-406 |
 | [ ] | [P0-501](./tasks/P0-501-unit-suite.md) | Unit suite completion | blocked | P0-108, P0-109, P0-212, P0-213, P0-303, P0-306, P0-312, P0-314–P0-316, P0-318 |
 | [ ] | [P0-502](./tasks/P0-502-integration-suite.md) | Runtime/integration suite | blocked | P0-109, P0-204, P0-208, P0-212, P0-213, P0-305, P0-309, P0-312, P0-313, P0-315, P0-318 |
 | [ ] | [P0-503](./tasks/P0-503-security-suite.md) | Core security acceptance | blocked | P0-104, P0-109, P0-208, P0-213, P0-303, P0-306–P0-309, P0-311–P0-314, P0-318 |

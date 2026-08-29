@@ -16,9 +16,18 @@ import type {
   CoworkerProfile,
   CoworkerUpdateCommand,
   SkillDraft,
+  SkillDraftCreateCommand,
+  SkillDraftPublishCommand,
+  SkillBindingCreateCommand,
   SkillVersion,
   TaskRecordV1,
   TaskStatus,
+  ConnectionListItem,
+  ConnectionReconnectCommand,
+  ConnectionReconnectResult,
+  ConnectionStatusView,
+  ConnectionTestCommand,
+  ConnectionTestResult,
 } from "@forgeroom/contracts";
 import {
   channelRosterResponseSchema,
@@ -31,6 +40,11 @@ import {
   coworkerDraftSchema,
   coworkerProfileSchema,
   coworkerUpdateCommandSchema,
+  connectionListItemSchema,
+  connectionReconnectResultSchema,
+  connectionStatusViewSchema,
+  connectionTestResultSchema,
+  skillDraftSchema,
   skillVersionSchema,
   taskRecordV1Schema,
 } from "@forgeroom/contracts";
@@ -477,38 +491,49 @@ export async function updateFixtureTaskStatus(input: {
   status: TaskStatus;
   csrfToken?: string;
 }): Promise<TaskRecordV1> {
-  if (!useMockApi) {
+  const attempt = async (): Promise<TaskRecordV1> => {
+    if (!useMockApi) {
+      const current = await getTask(input.workspaceId, input.taskId);
+      if (!current) throw new Error("task_not_found");
+      const body = await apiFetch<{ task: unknown; request_id: string }>(
+        `/api/tasks/${encodeURIComponent(input.taskId)}`,
+        {
+          method: "PATCH",
+          csrfToken: input.csrfToken ?? "",
+          body: JSON.stringify({
+            schemaVersion: 1,
+            expected_revision: current.current_revision,
+            idempotency_key: newIdempotencyKey("task_update"),
+            status: input.status,
+          }),
+        },
+      );
+      return taskRecordV1Schema.parse(stripRequestId(body).task);
+    }
+    assertWorkspace(input.workspaceId);
     const current = await getTask(input.workspaceId, input.taskId);
     if (!current) throw new Error("task_not_found");
-    const body = await apiFetch<{ task: unknown; request_id: string }>(
-      `/api/tasks/${encodeURIComponent(input.taskId)}`,
-      {
-        method: "PATCH",
-        csrfToken: input.csrfToken ?? "",
-        body: JSON.stringify({
-          schemaVersion: 1,
-          expected_revision: current.current_revision,
-          idempotency_key: newIdempotencyKey("task_update"),
-          status: input.status,
-        }),
-      },
-    );
-    return taskRecordV1Schema.parse(stripRequestId(body).task);
+    if (!canTransitionTask(current.status, input.status)) {
+      throw new Error(`task_transition_not_allowed:${current.status}->${input.status}`);
+    }
+    const updated = taskRecordV1Schema.parse({
+      ...current,
+      status: input.status,
+      current_revision: current.current_revision + 1,
+      updated_at: new Date().toISOString(),
+    });
+    persistFixtureTask(updated);
+    return updated;
+  };
+
+  try {
+    return await attempt();
+  } catch (error) {
+    if (error instanceof ApiError && error.code === "stale_task_revision") {
+      return attempt();
+    }
+    throw error;
   }
-  assertWorkspace(input.workspaceId);
-  const current = await getTask(input.workspaceId, input.taskId);
-  if (!current) throw new Error("task_not_found");
-  if (!canTransitionTask(current.status, input.status)) {
-    throw new Error(`task_transition_not_allowed:${current.status}->${input.status}`);
-  }
-  const updated = taskRecordV1Schema.parse({
-    ...current,
-    status: input.status,
-    current_revision: current.current_revision + 1,
-    updated_at: new Date().toISOString(),
-  });
-  persistFixtureTask(updated);
-  return updated;
 }
 
 export async function listCoworkers(workspaceId: string): Promise<CoworkerProfile[]> {
@@ -520,6 +545,14 @@ export async function listCoworkers(workspaceId: string): Promise<CoworkerProfil
     `/api/workspaces/${encodeURIComponent(workspaceId)}/coworkers`,
   );
   return coworkerProfileSchema.array().parse(stripRequestId(body).coworkers);
+}
+
+export async function listCoworkerDirectory(workspaceId: string): Promise<CoworkerDetail[]> {
+  const profiles = await listCoworkers(workspaceId);
+  const details = await Promise.all(
+    profiles.map((profile) => getCoworker(workspaceId, profile.id)),
+  );
+  return details.filter((detail): detail is CoworkerDetail => detail !== null);
 }
 
 export async function getCoworker(
@@ -823,7 +856,11 @@ export async function listSkillDrafts(workspaceId: string): Promise<SkillDraft[]
     assertWorkspace(workspaceId);
     return MOCK_SKILL_DRAFTS;
   }
-  return [];
+  const body = await apiFetch<{ drafts: unknown[]; request_id: string }>(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/skills`,
+  );
+  const parsed = stripRequestId(body);
+  return (parsed.drafts as unknown[]).map((draft) => skillDraftSchema.parse(draft));
 }
 
 export async function listSkillVersions(workspaceId: string): Promise<SkillVersion[]> {
@@ -832,15 +869,35 @@ export async function listSkillVersions(workspaceId: string): Promise<SkillVersi
     const runSkill = storedFixtureRunSkill();
     return runSkill ? [...MOCK_SKILL_VERSIONS, runSkill] : MOCK_SKILL_VERSIONS;
   }
-  return [];
+  const body = await apiFetch<{ versions: unknown[]; request_id: string }>(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/skills`,
+  );
+  const parsed = stripRequestId(body);
+  return (parsed.versions as unknown[]).map((version) => skillVersionSchema.parse(version));
 }
 
-export async function getSkillDraft(workspaceId: string, skillId: string) {
+export async function getSkillDraft(workspaceId: string, skillOrDraftId: string) {
   if (useMockApi) {
     assertWorkspace(workspaceId);
-    return MOCK_SKILL_DRAFTS.find((skill) => skill.id === skillId) ?? null;
+    return MOCK_SKILL_DRAFTS.find((skill) => skill.id === skillOrDraftId) ?? null;
   }
-  return null;
+  try {
+    const body = await apiFetch<{ draft: unknown; request_id: string }>(
+      `/api/skill-drafts/${encodeURIComponent(skillOrDraftId)}`,
+    );
+    return skillDraftSchema.parse(stripRequestId(body).draft);
+  } catch (error) {
+    if (!(error instanceof ApiError) || error.status !== 404) {
+      throw error;
+    }
+  }
+  const body = await apiFetch<{
+    draft: unknown | null;
+    version: unknown | null;
+    request_id: string;
+  }>(`/api/skills/${encodeURIComponent(skillOrDraftId)}`);
+  const parsed = stripRequestId(body);
+  return parsed.draft ? skillDraftSchema.parse(parsed.draft) : null;
 }
 
 export async function getSkillVersion(workspaceId: string, skillId: string) {
@@ -850,7 +907,57 @@ export async function getSkillVersion(workspaceId: string, skillId: string) {
       (await listSkillVersions(workspaceId)).find((skill) => skill.skill_id === skillId) ?? null
     );
   }
-  return null;
+  const body = await apiFetch<{
+    draft: unknown | null;
+    version: unknown | null;
+    request_id: string;
+  }>(`/api/skills/${encodeURIComponent(skillId)}`);
+  const parsed = stripRequestId(body);
+  return parsed.version ? skillVersionSchema.parse(parsed.version) : null;
+}
+
+export async function createSkillDraftFromRun(input: {
+  runId: string;
+  command: SkillDraftCreateCommand;
+  csrfToken: string;
+}): Promise<SkillDraft> {
+  const body = await apiFetch<{ draft: unknown; request_id: string }>(
+    `/api/runs/${encodeURIComponent(input.runId)}/skill-drafts`,
+    {
+      method: "POST",
+      csrfToken: input.csrfToken,
+      body: JSON.stringify(input.command),
+    },
+  );
+  return skillDraftSchema.parse(stripRequestId(body).draft);
+}
+
+export async function publishSkillDraft(input: {
+  draftId: string;
+  command: SkillDraftPublishCommand;
+  csrfToken: string;
+}): Promise<SkillVersion> {
+  const body = await apiFetch<{ version: unknown; request_id: string }>(
+    `/api/skill-drafts/${encodeURIComponent(input.draftId)}/publish`,
+    {
+      method: "POST",
+      csrfToken: input.csrfToken,
+      body: JSON.stringify(input.command),
+    },
+  );
+  return skillVersionSchema.parse(stripRequestId(body).version);
+}
+
+export async function createSkillBinding(input: {
+  coworkerId: string;
+  command: SkillBindingCreateCommand;
+  csrfToken: string;
+}): Promise<void> {
+  await apiFetch(`/api/coworkers/${encodeURIComponent(input.coworkerId)}/skill-bindings`, {
+    method: "POST",
+    csrfToken: input.csrfToken,
+    body: JSON.stringify(input.command),
+  });
 }
 
 export async function publishFixtureRunSkill(workspaceId: string): Promise<SkillVersion> {
@@ -946,12 +1053,161 @@ export async function recordFixtureApprovalDecision(input: {
   return input.decision;
 }
 
-export async function listConnections(workspaceId: string): Promise<ConnectionFixture[]> {
+export type ConnectionCardData = ConnectionFixture & {
+  toolkit?: string;
+  tools?: string[];
+  scopes?: string[];
+  verified_at?: string | null;
+  account_suffix?: string;
+};
+
+export async function listConnections(workspaceId: string): Promise<ConnectionCardData[]> {
   if (useMockApi) {
     assertWorkspace(workspaceId);
     return MOCK_CONNECTIONS;
   }
-  return [];
+  const body = await apiFetch<{ connections: unknown[]; request_id: string }>(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/connections`,
+  );
+  const connections = connectionListItemSchema
+    .array()
+    .parse(stripRequestId(body).connections) as ConnectionListItem[];
+  return connections.map((connection) => ({
+    schemaVersion: 1 as const,
+    id: connection.id,
+    workspace_id: workspaceId,
+    provider: "composio",
+    label: connection.toolkit,
+    status: connection.status,
+    descriptor_hash: "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    toolkit: connection.toolkit,
+    verified_at: connection.verified_at,
+  }));
+}
+
+export async function getConnectionStatus(connectionId: string): Promise<ConnectionStatusView> {
+  if (useMockApi) {
+    const connection = MOCK_CONNECTIONS.find((item) => item.id === connectionId);
+    if (!connection) {
+      throw new Error("connection_not_found");
+    }
+    const tools =
+      connection.provider === "trueforge"
+        ? [
+            { tool_name: "sandbox.create", descriptor_hash: connection.descriptor_hash },
+            { tool_name: "sandbox.execute", descriptor_hash: connection.descriptor_hash },
+            { tool_name: "artifact.download", descriptor_hash: connection.descriptor_hash },
+          ]
+        : [
+            { tool_name: "GITHUB_GET_ISSUES", descriptor_hash: connection.descriptor_hash },
+            { tool_name: "INTERCOM_UPDATE_MACRO", descriptor_hash: connection.descriptor_hash },
+            { tool_name: "SUPPORT_SEARCH", descriptor_hash: connection.descriptor_hash },
+          ];
+    return connectionStatusViewSchema.parse({
+      schemaVersion: 1,
+      id: connection.id,
+      workspace_id: connection.workspace_id,
+      provider: "composio",
+      toolkit: connection.label,
+      trueforge_connector_name: "forgeroom_sandbox",
+      status: connection.status,
+      blocks_dispatch: connection.status !== "active",
+      run_step_state: connection.status === "active" ? null : "blocked_connection",
+      acting_identity: {
+        service: "composio",
+        account_display: "ForgeRoom workspace service account",
+        principal_type: "service_account",
+        principal_display: "ForgeRoom workspace service account",
+        principal_id_hash:
+          "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+      },
+      owner_class: "workspace_service",
+      scopes: connection.provider === "trueforge" ? ["sandbox"] : ["repo", "user"],
+      toolkit_health:
+        connection.status === "active"
+          ? "healthy"
+          : connection.status === "connecting"
+            ? "inactive"
+            : connection.status,
+      tools,
+      account_suffix: "…fixture",
+      verified_at: connection.status === "active" ? new Date().toISOString() : null,
+      catalog_browse_allowed: false,
+      account_selection_allowed: false,
+      capability_expansion_allowed: false,
+    });
+  }
+  const body = await apiFetch<{ connection: unknown; request_id: string }>(
+    `/api/connections/${encodeURIComponent(connectionId)}/status`,
+  );
+  return connectionStatusViewSchema.parse(stripRequestId(body).connection);
+}
+
+export async function testConnection(input: {
+  connectionId: string;
+  command: ConnectionTestCommand;
+  csrfToken: string;
+}): Promise<ConnectionTestResult> {
+  if (useMockApi) {
+    const connection = MOCK_CONNECTIONS.find((item) => item.id === input.connectionId);
+    if (!connection) {
+      throw new Error("connection_not_found");
+    }
+    return connectionTestResultSchema.parse({
+      schemaVersion: 1,
+      connection_id: connection.id,
+      ok: true,
+      status: "active",
+      blocks_dispatch: false,
+      run_step_state: null,
+      checked_tool: "GITHUB_GET_ISSUES",
+      checked_descriptor_hash: connection.descriptor_hash,
+      verified_at: new Date().toISOString(),
+      safe_summary: "Prototype verification completed against the fixture adapter.",
+      reason: null,
+    });
+  }
+  const body = await apiFetch<ConnectionTestResult & { request_id: string }>(
+    `/api/connections/${encodeURIComponent(input.connectionId)}/test`,
+    {
+      method: "POST",
+      csrfToken: input.csrfToken,
+      body: JSON.stringify(input.command),
+    },
+  );
+  return connectionTestResultSchema.parse(stripRequestId(body));
+}
+
+export async function reconnectConnection(input: {
+  connectionId: string;
+  command: ConnectionReconnectCommand;
+  csrfToken: string;
+}): Promise<ConnectionReconnectResult> {
+  if (useMockApi) {
+    const connection = MOCK_CONNECTIONS.find((item) => item.id === input.connectionId);
+    if (!connection) {
+      throw new Error("connection_not_found");
+    }
+    return connectionReconnectResultSchema.parse({
+      schemaVersion: 1,
+      connection_id: connection.id,
+      intent_id: "conn_intent_fixture_001",
+      status: "connecting",
+      redirect_url: "https://connect.composio.dev/link/fixture",
+      expires_at: new Date(Date.now() + 15 * 60_000).toISOString(),
+      workspace_bound: true,
+      expected_account_suffix: "…fixture",
+    });
+  }
+  const body = await apiFetch<ConnectionReconnectResult & { request_id: string }>(
+    `/api/connections/${encodeURIComponent(input.connectionId)}/reconnect`,
+    {
+      method: "POST",
+      csrfToken: input.csrfToken,
+      body: JSON.stringify(input.command),
+    },
+  );
+  return connectionReconnectResultSchema.parse(stripRequestId(body));
 }
 
 export async function resolveDefaultChannelId(workspaceId: string): Promise<string | null> {

@@ -4,8 +4,8 @@
 | --- | --- |
 | Overall | M0 Demo contract done; M1 Foundation done; P0-404/P0-405 in_review; P0-315 in_review; P0-301–P0-314 done |
 | Current phase | Phase 1 — Foundation / M4 Product UI |
-| Active task | P0-315 (in_review), P0-316 (in_review), P0-317 (in_review), P0-318 (in_progress), P0-404 (in_review), P0-405 (in_review) |
-| Next task | Critical path: P0-318 publish/attach slice; P0-404/405 review closeout |
+| Active task | P0-315 (in_review), P0-316 (in_review), P0-317 (in_review), P0-404 (in_review), P0-405 (in_review) |
+| Next task | P0-410 review flows or P0-407 accessibility; P0-404/405 review closeout |
 | P0 blockers | Run-limit hard enforcement (P0-204/OD-008 evidence) |
 | Last updated | 2026-08-29 (P0-316 merged #55; P0-317 time-limit closeout in review PR #56) |
 
