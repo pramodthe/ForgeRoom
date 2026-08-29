@@ -23,7 +23,7 @@ describe("handleUiComponentsMcpRequest", () => {
       { enabledToolNames: ["ui.dataTable"], callTool: vi.fn() },
     );
     const tools = (response.result as { tools: Array<{ name: string }> }).tools;
-    expect(tools.map((tool) => tool.name)).toEqual(["ui.dataTable"]);
+    expect(tools.map((tool) => tool.name)).toEqual(["ui_dataTable"]);
   });
 
   it("calls the broker for tools/call", async () => {
@@ -39,7 +39,7 @@ describe("handleUiComponentsMcpRequest", () => {
         jsonrpc: "2.0",
         id: 3,
         method: "tools/call",
-        params: { name: "ui.dataTable", arguments: { caption: "Results" } },
+        params: { name: "ui_dataTable", arguments: { caption: "Results" } },
       },
       { enabledToolNames: ["ui.dataTable"], callTool },
     );
@@ -75,13 +75,13 @@ describe("handleUiComponentsMcpRequest", () => {
     );
     expect(
       (listed.result as { tools: Array<{ name: string }> }).tools.map((tool) => tool.name),
-    ).toEqual(["ui.dataTable", "records.task.upsert.v1"]);
+    ).toEqual(["ui_dataTable", "records_task_upsert_v1"]);
     const called = await handleUiComponentsMcpRequest(
       {
         jsonrpc: "2.0",
         id: 5,
         method: "tools/call",
-        params: { name: "records.task.upsert.v1", arguments: { channel_id: "ch_1" } },
+        params: { name: "records_task_upsert_v1", arguments: { channel_id: "ch_1" } },
       },
       handlers,
     );
@@ -91,6 +91,26 @@ describe("handleUiComponentsMcpRequest", () => {
       requestId: 5,
     });
     expect(called.result).toMatchObject({ isError: false });
+  });
+
+  it("fails closed when canonical tools collide after provider-safe normalization", async () => {
+    const response = await handleUiComponentsMcpRequest(
+      { jsonrpc: "2.0", id: 6, method: "tools/list" },
+      {
+        enabledToolNames: ["ui.dataTable"],
+        additionalTools: [
+          {
+            name: "ui_dataTable",
+            description: "Ambiguous alias",
+            inputSchema: { type: "object", additionalProperties: false, properties: {} },
+          },
+        ],
+        callTool: vi.fn(),
+      },
+    );
+    expect(response).toMatchObject({
+      error: { code: -32000, message: "Component tool call failed" },
+    });
   });
 
   it("parses notifications without an id", () => {

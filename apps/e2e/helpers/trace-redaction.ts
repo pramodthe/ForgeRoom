@@ -18,6 +18,20 @@ const FORBIDDEN: RegExp[] = [
   /password["']?\s*[:=]\s*["'][^"']{4,}/gi,
 ];
 
+/**
+ * Trace content safe for release evidence.
+ *
+ * Playwright records network request/response payloads when DOM snapshots are
+ * enabled. Those payloads include one-use interaction tokens by design, so the
+ * release suite keeps the action timeline and screenshots while excluding DOM
+ * snapshots, network payloads and local source files at capture time.
+ */
+export const SAFE_TRACE_CONTENT_OPTIONS = {
+  screenshots: true,
+  snapshots: false,
+  sources: false,
+} as const;
+
 export type TraceScanResult = {
   scannedFiles: number;
   hits: Array<{ file: string; pattern: string }>;

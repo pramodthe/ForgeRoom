@@ -2,4 +2,4 @@
 export const TASK_RECORD_UPSERT_TOOL_NAME = "records.task.upsert.v1" as const;
 
 export const TASK_RECORD_TOOL_DESCRIPTOR_HASH =
-  "sha256:8f4c2d9a1b7e6f3054c8d1a92e7b44f6c0d5a3189f2e6d4b1a0c9e8f7d6c5b4a3" as const;
+  "sha256:9b852dbf34f2decf4309152a3f5bcb8ea53ba195ec5d3e2ddb926de1a7edf830" as const;

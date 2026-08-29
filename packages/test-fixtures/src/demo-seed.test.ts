@@ -128,6 +128,29 @@ describe("P0-105 demo fixtures", () => {
       expect(config?.tool_grants).toHaveLength(3);
       expect(config?.component_version_ids).toHaveLength(5);
 
+      const taskGrants = await sql<
+        Array<{
+          id: string;
+          allowed_operations_json: unknown;
+          revoked_at: string | null;
+        }>
+      >`
+        SELECT id, allowed_operations_json, revoked_at
+        FROM task_grants
+        WHERE subject_id = ${DEMO_FIXTURE_IDS.coworkerId}
+          AND channel_id = ${DEMO_FIXTURE_IDS.channelId}
+      `;
+      expect(taskGrants).toHaveLength(1);
+      expect(taskGrants[0]).toMatchObject({
+        id: DEMO_FIXTURE_IDS.taskGrantId,
+        revoked_at: null,
+      });
+      const taskOperations =
+        typeof taskGrants[0]?.allowed_operations_json === "string"
+          ? JSON.parse(taskGrants[0].allowed_operations_json)
+          : taskGrants[0]?.allowed_operations_json;
+      expect(taskOperations).toEqual(["create", "update_status"]);
+
       const grantedComponents = await sql<Array<{ stable_name: string }>>`
         SELECT c.stable_name
         FROM ui_component_grants AS g

@@ -3,6 +3,7 @@ import { dirname, join } from "node:path";
 import { loadEnvFile } from "node:process";
 import { fileURLToPath } from "node:url";
 import { defineConfig, devices } from "@playwright/test";
+import { SAFE_TRACE_CONTENT_OPTIONS } from "./helpers/trace-redaction";
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "../..");
 const envFile = join(repoRoot, ".env");
@@ -51,7 +52,7 @@ export default defineConfig({
   expect: { timeout: liveProviders ? 30_000 : 15_000 },
   use: {
     baseURL,
-    trace: "on",
+    trace: { mode: "on", ...SAFE_TRACE_CONTENT_OPTIONS },
     screenshot: "only-on-failure",
     video: "off",
     viewport: { width: 1440, height: 900 },

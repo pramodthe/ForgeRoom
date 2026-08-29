@@ -69,6 +69,8 @@ export type StoredInteractionResult = {
   resultRef: string | null;
   renderRevision: number;
   stateRevision: number | null;
+  /** Internal dispatch hint; never serialized into the public interaction result. */
+  continuationQueueItemId?: string;
 };
 
 export type UiInteractionCommitCasInput = {
@@ -1117,6 +1119,7 @@ export async function commitUiInteraction(
     const payloadInput = parseJson(row.payload_redacted_json) as SafeJsonValue;
     let result: SafeJsonValue;
     let resultRef: string | null = null;
+    let continuationQueueItemId: string | undefined;
     let nextStateRevision = row.current_state_revision;
 
     if (row.action_mode === "local_state") {
@@ -1271,6 +1274,7 @@ export async function commitUiInteraction(
       }
       result = payloadInput;
       resultRef = continuation.queueItemId;
+      continuationQueueItemId = continuation.queueItemId;
     }
 
     await tx`
@@ -1296,6 +1300,7 @@ export async function commitUiInteraction(
         resultRef,
         renderRevision: row.render_revision,
         stateRevision: nextStateRevision,
+        ...(continuationQueueItemId ? { continuationQueueItemId } : {}),
       },
     };
   });

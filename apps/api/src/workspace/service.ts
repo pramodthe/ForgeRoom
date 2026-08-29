@@ -2008,7 +2008,7 @@ export function createWorkspaceService(options?: {
     },
 
     async executeTaskRecordTool(coworkerId, args, generationGuard) {
-      if (!args.task_id) {
+      if (args.operation === "create") {
         return this.createTaskForCoworker(
           coworkerId,
           args.channel_id,
@@ -2026,6 +2026,16 @@ export function createWorkspaceService(options?: {
           },
           generationGuard,
         );
+      }
+
+      if (!args.task_id) {
+        return {
+          ok: false,
+          error: {
+            code: "validation_failed",
+            message: "task_id is required for task updates.",
+          },
+        };
       }
 
       const update: TaskUpdateCommand = {

@@ -10,6 +10,15 @@ export type UiComponentsMcpTool = {
   inputSchema: Record<string, unknown>;
 };
 
+/**
+ * TrueForge exposes MCP tools through OpenAI function tools, whose names cannot
+ * contain dots. Keep canonical ForgeRoom names internally and adapt only at the
+ * provider-facing MCP boundary.
+ */
+export function providerSafeMcpToolName(toolName: string): string {
+  return toolName.replace(/[^a-zA-Z0-9_-]/g, "_");
+}
+
 export function listControlledComponentMcpTools(
   enabledToolNames?: readonly string[],
 ): UiComponentsMcpTool[] {

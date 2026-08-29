@@ -6,7 +6,10 @@ import {
   type TrueForgeAgentSpec,
   type TrueForgeMcpServerRef,
 } from "@forgeroom/trueforge";
-import { isUiComponentsMcpConnectorName } from "@forgeroom/ui-components-mcp";
+import {
+  isUiComponentsMcpConnectorName,
+  providerSafeMcpToolName,
+} from "@forgeroom/ui-components-mcp";
 
 export type SessionRevisionSnapshotInput = {
   coworker: {
@@ -83,9 +86,17 @@ function withPrivateApplicationToolsMcpServer(
   if (toolNames.length === 0) {
     return spec;
   }
+  const providerToolNames = toolNames.map(providerSafeMcpToolName);
+  if (new Set(providerToolNames).size !== providerToolNames.length) {
+    throw new Error("Private MCP tool names collide after provider-safe normalization");
+  }
   const componentServer: TrueForgeMcpServerRef = {
     name: connectorName,
-    enable_tools: [...toolNames],
+    enable_tools: providerToolNames,
+    // Private application/component gateways are intentionally small and their
+    // tools are required for the live workflow. Selective eager loading avoids
+    // routing these calls through TrueForge's deferred-tools indirection.
+    preload_tools: providerToolNames,
     require_approval_for_tools: ["@write", "@destructive"],
     preload: false,
   };

@@ -7,7 +7,7 @@ import {
   publishWorkspaceRegistry,
   setComponentGrant,
 } from "@forgeroom/db";
-import { P0_CONTROLLED_REGISTRY } from "@forgeroom/domain";
+import { materializeTaskGrantFromOperations, P0_CONTROLLED_REGISTRY } from "@forgeroom/domain";
 import { P0_COMPOSIO_ENABLED_TOOLS } from "@forgeroom/composio";
 import type postgres from "postgres";
 import { assertP0FeatureProfileFrozen, readProviderFixtureJson } from "./index";
@@ -27,6 +27,7 @@ export const DEMO_FIXTURE_IDS = {
   channelName: "general",
   coworkerId: "cw_demo_operator",
   coworkerVersionId: "av_demo_operator_v1",
+  taskGrantId: "tgrant_demo_operator_general",
   channelCreatedEventId: "cevt_demo_channel_created",
 } as const;
 
@@ -328,6 +329,8 @@ async function upsertOperatorCoworker(
   componentVersionIds: string[],
   now: string,
 ): Promise<void> {
+  const taskGrantOperations = ["create", "update_status"] as const;
+  const taskGrant = materializeTaskGrantFromOperations(taskGrantOperations);
   const config = {
     standing_instructions: operator.coworker.standing_instructions,
     model_provider: operator.coworker.model_provider,
@@ -338,7 +341,7 @@ async function upsertOperatorCoworker(
     task_record_grants: [
       {
         channel_id: DEMO_FIXTURE_IDS.channelId,
-        operations: ["create", "update_status"],
+        operations: taskGrantOperations,
       },
     ],
     tool_grants: [...P0_COMPOSIO_ENABLED_TOOLS],
@@ -388,6 +391,29 @@ async function upsertOperatorCoworker(
       UPDATE agent_profiles
       SET current_version_id = ${DEMO_FIXTURE_IDS.coworkerVersionId}, updated_at = ${now}
       WHERE id = ${DEMO_FIXTURE_IDS.coworkerId}
+    `;
+    await tx`
+      INSERT INTO task_grants (
+        id, task_id, channel_id, subject_type, subject_id,
+        allowed_operations_json, allowed_fields_json, allowed_transitions_json,
+        policy_revision, granted_by, created_at, revoked_at
+      ) VALUES (
+        ${DEMO_FIXTURE_IDS.taskGrantId}, NULL, ${DEMO_FIXTURE_IDS.channelId}, 'coworker',
+        ${DEMO_FIXTURE_IDS.coworkerId}, ${tx.json(taskGrant.allowedOperations)},
+        ${tx.json(taskGrant.allowedFields)}, ${tx.json(taskGrant.allowedTransitions)},
+        1, ${env.ownerUserId}, ${now}, NULL
+      )
+      ON CONFLICT (id) DO UPDATE SET
+        task_id = NULL,
+        channel_id = EXCLUDED.channel_id,
+        subject_type = 'coworker',
+        subject_id = EXCLUDED.subject_id,
+        allowed_operations_json = EXCLUDED.allowed_operations_json,
+        allowed_fields_json = EXCLUDED.allowed_fields_json,
+        allowed_transitions_json = EXCLUDED.allowed_transitions_json,
+        policy_revision = EXCLUDED.policy_revision,
+        granted_by = EXCLUDED.granted_by,
+        revoked_at = NULL
     `;
   });
 

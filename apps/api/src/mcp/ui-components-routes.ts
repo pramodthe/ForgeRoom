@@ -32,24 +32,43 @@ export function prepareTaskToolArguments(input: {
   if (input.rawArgs.channel_id !== input.channelId) {
     return { ok: false, message: "Task channel does not match the session channel." };
   }
-  if (typeof input.rawArgs.task_id === "string") {
+  if (input.rawArgs.operation === "update") {
     return { ok: true, args: input.rawArgs };
+  }
+  if (input.rawArgs.operation !== "create") {
+    return { ok: false, message: "Task operation must be create or update." };
+  }
+  if (
+    input.rawArgs.task_id !== undefined &&
+    input.rawArgs.task_id !== null &&
+    input.rawArgs.task_id !== ""
+  ) {
+    return { ok: false, message: "Task creation must not include a task ID." };
   }
   if (!input.provenance) {
     return { ok: false, message: "No active run provenance for Task creation." };
   }
   if (
     (input.rawArgs.source_run_id !== undefined &&
+      input.rawArgs.source_run_id !== null &&
       input.rawArgs.source_run_id !== input.provenance.runId) ||
     (input.rawArgs.source_message_id !== undefined &&
+      input.rawArgs.source_message_id !== null &&
       input.rawArgs.source_message_id !== input.provenance.sourceMessageId)
   ) {
     return { ok: false, message: "Task provenance does not match the active run." };
   }
+  const {
+    task_id: _taskId,
+    expected_revision: _expectedRevision,
+    source_run_id: _sourceRunId,
+    source_message_id: _sourceMessageId,
+    ...createArgs
+  } = input.rawArgs;
   return {
     ok: true,
     args: {
-      ...input.rawArgs,
+      ...createArgs,
       source_run_id: input.provenance.runId,
       source_message_id: input.provenance.sourceMessageId,
     },
@@ -167,7 +186,7 @@ export function mountUiComponentsMcpRoutes(
             isError: true,
           };
         }
-        const isCreate = typeof rawArgs.task_id !== "string";
+        const isCreate = rawArgs.operation === "create";
         const prepared = prepareTaskToolArguments({
           channelId: context.channelId,
           rawArgs,

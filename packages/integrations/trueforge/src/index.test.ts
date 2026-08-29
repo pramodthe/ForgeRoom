@@ -38,6 +38,7 @@ describe("compileP0AgentSpec", () => {
     expect(spec.model.name).toBe("openai/gpt-5-4-mini");
     expect(spec.config.dynamic_sub_agents).toEqual({ enabled: false });
     expect(spec.config.generative_ui).toEqual({ enabled: false });
+    expect(spec.config.ask_user_questions).toEqual({ enabled: false });
     expect(spec.config.sandbox.enabled).toBe(true);
     expect(spec.mcp_servers?.[0]).toMatchObject({
       name: "github",

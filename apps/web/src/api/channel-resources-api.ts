@@ -145,7 +145,7 @@ export async function getRunReceipt(runId: string): Promise<{
 
 export async function getUiInstanceReplay(instanceId: string): Promise<UiInstanceReplayResponse> {
   const body = await apiFetch<unknown>(`/api/ui-instances/${encodeURIComponent(instanceId)}`);
-  return uiInstanceReplayResponseSchema.parse(stripRequestId(body as { request_id: string }));
+  return uiInstanceReplayResponseSchema.parse(body);
 }
 
 export async function postUiInstanceDataFunction(input: {
@@ -182,9 +182,7 @@ export async function postUiInstanceInteractionToken(input: {
       body: JSON.stringify(input.request),
     },
   );
-  const parsed = uiInteractionTokenResponseSchema.parse(
-    stripRequestId(body as { request_id: string }),
-  );
+  const parsed = uiInteractionTokenResponseSchema.parse(body);
   return {
     interactionId: parsed.interactionId,
     interactionToken: parsed.interactionToken,
@@ -205,7 +203,7 @@ export async function postUiInstanceInteraction(input: {
       body: JSON.stringify(input.command),
     },
   );
-  return uiInteractionResultSchema.parse(stripRequestId(body as { request_id: string }));
+  return uiInteractionResultSchema.parse(body);
 }
 
 export async function getArtifact(artifactId: string) {

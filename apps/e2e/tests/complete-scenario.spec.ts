@@ -54,6 +54,7 @@ test.describe("P0-504 complete browser scenario (live)", () => {
   });
 
   test("providers: full 15-step demo narrative", async ({ page }, testInfo) => {
+    test.setTimeout(15 * 60_000);
     test.skip(liveMode() !== "providers", "Set FORGEROOM_E2E_LIVE=1|providers");
     assertProvidersConfigured();
 
@@ -70,8 +71,19 @@ test.describe("P0-504 complete browser scenario (live)", () => {
 
     // 4 task fan-out
     const runId = await sendTeamTask(page);
+    await expect
+      .poll(
+        async () => {
+          const response = await page.request.get(`/api/channels/${DEMO.channelId}/tasks`);
+          if (!response.ok()) return false;
+          const body = (await response.json()) as { tasks?: Array<{ title?: string }> };
+          return (body.tasks ?? []).some((task) => task.title === DEMO.taskTitle);
+        },
+        { timeout: 180_000 },
+      )
+      .toBe(true);
     await gotoDemoTasks(page);
-    await expect(page.getByText(DEMO.taskTitle).first()).toBeVisible({ timeout: 60_000 });
+    await expect(page.getByText(DEMO.taskTitle).first()).toBeVisible();
 
     // 5–15 GenUI → deny → refresh → approve → skill → receipt
     await runProviderBackedNarrative(page, runId);

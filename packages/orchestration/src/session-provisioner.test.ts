@@ -91,7 +91,9 @@ describe("compileSessionRevision", () => {
     expect(revision.agentSpec.mcp_servers).toEqual([
       expect.objectContaining({
         name: "ui_components_v1__casg_1",
-        enable_tools: ["ui.dataTable", "records.task.upsert.v1"],
+        enable_tools: ["ui_dataTable", "records_task_upsert_v1"],
+        preload_tools: ["ui_dataTable", "records_task_upsert_v1"],
+        preload: false,
       }),
     ]);
     expect(revision.effectiveConfigRedacted.application_tool_names).toEqual([

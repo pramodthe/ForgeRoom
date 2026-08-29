@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { buildGrantScopePreimage, getRegistryDefinition, hashGrantScope } from "@forgeroom/domain";
 import {
+  buildBrokerActionInputSchema,
   brokerComponentToolMcpCall,
   finalizeOrQuarantineUiInstance,
   loadComponentOfferContext,
@@ -69,6 +70,37 @@ async function waitForLockWaiter(probe: ReturnType<typeof createSql>): Promise<v
 }
 
 describe("component tool gateway", () => {
+  it("derives a closed ChoiceForm submission schema from validated fields", () => {
+    expect(
+      buildBrokerActionInputSchema("ChoiceForm", {
+        title: "Filter",
+        submit_label: "Apply",
+        cancel_label: "Reset",
+        fields: [
+          {
+            id: "status_filter",
+            label: "Status",
+            kind: "single_choice",
+            required: true,
+            options: [
+              { id: "all", label: "All" },
+              { id: "done", label: "Done" },
+            ],
+          },
+          { id: "include_owner", label: "Owner", kind: "checkbox", required: false },
+        ],
+      }),
+    ).toEqual({
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        status_filter: { type: "string", enum: ["all", "done"] },
+        include_owner: { type: "boolean" },
+      },
+      required: ["status_filter"],
+    });
+  });
+
   it("loads offer context and finalizes a building instance", async () => {
     await withMigratedDatabase(async (sql) => {
       await seedRuntime(sql);

@@ -689,6 +689,10 @@ export type WorkspaceCatalogStore = {
   }): Promise<AppendChannelEventResult & { pin: PinRecord }>;
 
   insertCoworkerDraft(draft: CoworkerDraftRecord): Promise<void>;
+  insertCoworkerDraftWithSupersede(input: {
+    draft: CoworkerDraftRecord;
+    supersededBefore: string;
+  }): Promise<CoworkerDraftRecord>;
   getCoworkerDraft(id: string): Promise<CoworkerDraftRecord | null>;
   listCoworkerDrafts(workspaceId: string): Promise<CoworkerDraftRecord[]>;
   supersedeCoworkerDrafts(input: {
@@ -730,6 +734,7 @@ export function createMemoryWorkspaceStore(): WorkspaceCatalogStore {
   const taskGrants = new Map<string, TaskGrantRecord>();
   const receipts = new Map<string, CommandReceipt>();
   const coworkerDrafts = new Map<string, CoworkerDraftRecord>();
+  const coworkerDraftLocks = new Map<string, Promise<void>>();
   let draftProvisionLock: Promise<void> = Promise.resolve();
   const events = new Map<string, ChannelEventRecord>();
   const messages = new Map<string, MessageRecord>();
@@ -788,6 +793,28 @@ export function createMemoryWorkspaceStore(): WorkspaceCatalogStore {
       release();
       if (channelLocks.get(channelId) === chained) {
         channelLocks.delete(channelId);
+      }
+    }
+  }
+
+  async function withCoworkerDraftLock<T>(
+    workspaceId: string,
+    fn: () => T | Promise<T>,
+  ): Promise<T> {
+    const previous = coworkerDraftLocks.get(workspaceId) ?? Promise.resolve();
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const chained = previous.catch(() => undefined).then(() => gate);
+    coworkerDraftLocks.set(workspaceId, chained);
+    await previous.catch(() => undefined);
+    try {
+      return await fn();
+    } finally {
+      release();
+      if (coworkerDraftLocks.get(workspaceId) === chained) {
+        coworkerDraftLocks.delete(workspaceId);
       }
     }
   }
@@ -1524,6 +1551,47 @@ export function createMemoryWorkspaceStore(): WorkspaceCatalogStore {
     },
     async insertCoworkerDraft(draft) {
       coworkerDrafts.set(draft.id, structuredClone(draft));
+    },
+    async insertCoworkerDraftWithSupersede(input) {
+      return withCoworkerDraftLock(input.draft.workspaceId, () => {
+        const existing = [...coworkerDrafts.values()].find(
+          (row) =>
+            row.workspaceId === input.draft.workspaceId &&
+            row.draftHash === input.draft.draftHash &&
+            row.revision === input.draft.revision &&
+            (row.state === "draft" || row.state === "awaiting_review"),
+        );
+        if (existing) return structuredClone(existing);
+        const priorEquivalentRevision = Math.max(
+          0,
+          ...[...coworkerDrafts.values()]
+            .filter(
+              (row) =>
+                row.workspaceId === input.draft.workspaceId &&
+                row.draftHash === input.draft.draftHash,
+            )
+            .map((row) => row.revision),
+        );
+        const draftToInsert = {
+          ...input.draft,
+          revision: Math.max(input.draft.revision, priorEquivalentRevision + 1),
+        };
+        for (const draft of coworkerDrafts.values()) {
+          if (
+            draft.workspaceId === input.draft.workspaceId &&
+            draft.id !== draftToInsert.id &&
+            (draft.state === "draft" || draft.state === "awaiting_review")
+          ) {
+            coworkerDrafts.set(draft.id, {
+              ...draft,
+              state: "superseded",
+              decidedAt: input.supersededBefore,
+            });
+          }
+        }
+        coworkerDrafts.set(draftToInsert.id, structuredClone(draftToInsert));
+        return structuredClone(draftToInsert);
+      });
     },
     async getCoworkerDraft(id) {
       const draft = coworkerDrafts.get(id);

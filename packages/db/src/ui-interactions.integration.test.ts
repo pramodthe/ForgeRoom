@@ -591,6 +591,7 @@ describe("UI interaction gateway", () => {
           state: "succeeded",
           result: {},
           resultRef: expect.any(String),
+          continuationQueueItemId: expect.any(String),
         },
       });
 

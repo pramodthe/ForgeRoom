@@ -10,6 +10,87 @@ import {
 } from "./coworker-drafts.test-helpers";
 
 describe("coworker drafts PostgreSQL integration", () => {
+  it("atomically reuses concurrent equivalent drafts without superseding the winner", async () => {
+    await withMigratedDatabase(async (sql) => {
+      await seedRuntime(sql);
+      await sql`UPDATE agent_profiles SET handle = 'seeded_research' WHERE id = 'cw_1'`;
+      const store = createPostgresWorkspaceStore(sql);
+      const { app, env } = await createCoworkerDraftTestApp(store, {
+        workspaceId: "ws_1",
+        ownerUserId: "user_1",
+      });
+      const { cookie, csrf } = await loginCoworkerDraftTestApp(app, env);
+      const create = (idempotencyKey: string) =>
+        app.request(`/api/workspaces/${env.workspaceId}/coworker-drafts`, {
+          method: "POST",
+          headers: coworkerDraftMutationHeaders(env, cookie, csrf),
+          body: JSON.stringify({
+            schemaVersion: 1,
+            request: GOLDEN_RESEARCH_PROMPT,
+            idempotency_key: idempotencyKey,
+          }),
+        });
+
+      const [first, second] = await Promise.all([
+        create("idem_equivalent_pg_a"),
+        create("idem_equivalent_pg_b"),
+      ]);
+      expect(first.status).toBe(201);
+      expect(second.status).toBe(201);
+      const firstDraft = coworkerDraftSchema.parse(
+        ((await first.json()) as { draft: unknown }).draft,
+      );
+      const secondDraft = coworkerDraftSchema.parse(
+        ((await second.json()) as { draft: unknown }).draft,
+      );
+      expect(secondDraft.id).toBe(firstDraft.id);
+      const rows = await sql<Array<{ id: string; state: string }>>`
+        SELECT id, state FROM coworker_drafts WHERE workspace_id = 'ws_1'
+      `;
+      expect(rows).toEqual([{ id: firstDraft.id, state: "awaiting_review" }]);
+    });
+  }, 60_000);
+
+  it("increments an equivalent terminal draft instead of violating its natural key", async () => {
+    await withMigratedDatabase(async (sql) => {
+      await seedRuntime(sql);
+      await sql`UPDATE agent_profiles SET handle = 'seeded_research' WHERE id = 'cw_1'`;
+      const store = createPostgresWorkspaceStore(sql);
+      const { app, env } = await createCoworkerDraftTestApp(store, {
+        workspaceId: "ws_1",
+        ownerUserId: "user_1",
+      });
+      const { cookie, csrf } = await loginCoworkerDraftTestApp(app, env);
+      const create = (idempotencyKey: string) =>
+        app.request(`/api/workspaces/${env.workspaceId}/coworker-drafts`, {
+          method: "POST",
+          headers: coworkerDraftMutationHeaders(env, cookie, csrf),
+          body: JSON.stringify({
+            schemaVersion: 1,
+            request: GOLDEN_RESEARCH_PROMPT,
+            idempotency_key: idempotencyKey,
+          }),
+        });
+
+      const first = coworkerDraftSchema.parse(
+        ((await (await create("idem_equivalent_terminal_pg_a")).json()) as { draft: unknown })
+          .draft,
+      );
+      await sql`
+        UPDATE coworker_drafts
+        SET state = 'superseded', decided_at = now()
+        WHERE id = ${first.id}
+      `;
+      const secondResponse = await create("idem_equivalent_terminal_pg_b");
+      expect(secondResponse.status).toBe(201);
+      const second = coworkerDraftSchema.parse(
+        ((await secondResponse.json()) as { draft: unknown }).draft,
+      );
+      expect(second).toMatchObject({ state: "awaiting_review", revision: 2 });
+      expect(second.id).not.toBe(first.id);
+    });
+  }, 60_000);
+
   it("persists idempotent confirm through postgres", async () => {
     await withMigratedDatabase(async (sql) => {
       await seedRuntime(sql);

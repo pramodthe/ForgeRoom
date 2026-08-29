@@ -49,15 +49,50 @@ describe("prepareTaskToolArguments", () => {
     expect(
       prepareTaskToolArguments({
         channelId: "ch_1",
-        rawArgs: { channel_id: "ch_1", title: "Task", idempotency_key: "key" },
+        rawArgs: {
+          operation: "create",
+          channel_id: "ch_1",
+          title: "Task",
+          idempotency_key: "key",
+        },
         provenance: { runId: "run_1", sourceMessageId: "msg_1" },
       }),
     ).toEqual({
       ok: true,
       args: {
+        operation: "create",
         channel_id: "ch_1",
         title: "Task",
         idempotency_key: "key",
+        source_run_id: "run_1",
+        source_message_id: "msg_1",
+      },
+    });
+  });
+
+  it("normalizes provider placeholders before injecting create provenance", () => {
+    expect(
+      prepareTaskToolArguments({
+        channelId: "ch_1",
+        rawArgs: {
+          operation: "create",
+          channel_id: "ch_1",
+          task_id: "",
+          expected_revision: 1,
+          idempotency_key: "key",
+          title: "Task",
+          source_run_id: null,
+          source_message_id: null,
+        },
+        provenance: { runId: "run_1", sourceMessageId: "msg_1" },
+      }),
+    ).toEqual({
+      ok: true,
+      args: {
+        operation: "create",
+        channel_id: "ch_1",
+        idempotency_key: "key",
+        title: "Task",
         source_run_id: "run_1",
         source_message_id: "msg_1",
       },
@@ -68,7 +103,7 @@ describe("prepareTaskToolArguments", () => {
     expect(
       prepareTaskToolArguments({
         channelId: "ch_1",
-        rawArgs: { channel_id: "ch_2", idempotency_key: "key" },
+        rawArgs: { operation: "create", channel_id: "ch_2", idempotency_key: "key" },
         provenance: null,
       }),
     ).toMatchObject({ ok: false });
@@ -76,6 +111,7 @@ describe("prepareTaskToolArguments", () => {
       prepareTaskToolArguments({
         channelId: "ch_1",
         rawArgs: {
+          operation: "create",
           channel_id: "ch_1",
           idempotency_key: "key",
           source_run_id: "forged",

@@ -3,6 +3,8 @@ import type { ApiEnv } from "./env";
 import { createAuthService, type AuthService } from "./auth/service";
 import { mountAuthRoutes } from "./auth/routes";
 import { mountAgUiRoutes } from "./ag-ui/routes";
+import { createAgUiRunService } from "./ag-ui/run-service";
+import { createComponentContinuationRunner } from "./ag-ui/component-continuation-runner";
 import { errorResponse } from "./http";
 import { createWorkspaceService, type WorkspaceService } from "./workspace/service";
 import { mountWorkspaceRoutes } from "./workspace/routes";
@@ -94,6 +96,24 @@ export function createApiApp(options?: {
           ...(options?.sql ? { sql: options.sql } : {}),
         })
       : undefined);
+  const continuationAgUi =
+    workspace && options?.sql && options.trueforgeClient
+      ? createAgUiRunService({
+          workspace,
+          sql: options.sql,
+          trueforgeClient: options.trueforgeClient,
+          ...(artifacts ? { artifacts } : {}),
+          ...(env ? { pausePayloadEncryptionSecret: env.pausePayloadEncryptionSecret } : {}),
+        })
+      : undefined;
+  const continuationRunner =
+    options?.sql && options.trueforgeClient && continuationAgUi
+      ? createComponentContinuationRunner({
+          sql: options.sql,
+          trueforgeClient: options.trueforgeClient,
+          streamPreparedRun: continuationAgUi.streamPreparedRun,
+        })
+      : undefined;
   const uiInstances =
     options?.uiInstances ??
     (workspace && auth && env
@@ -102,6 +122,19 @@ export function createApiApp(options?: {
           auth,
           interactionTokenSecret: env.pausePayloadEncryptionSecret,
           ...(options?.sql ? { sql: options.sql } : {}),
+          ...(continuationRunner
+            ? {
+                onContinuationQueued: async (queueItemId: string) => {
+                  const result = await continuationRunner.run(queueItemId);
+                  if (!result.ok && result.reason !== "not_queued") {
+                    console.error("ui_component_continuation_failed", {
+                      queueItemId,
+                      reason: result.reason,
+                    });
+                  }
+                },
+              }
+            : {}),
         })
       : undefined);
 

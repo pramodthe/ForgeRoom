@@ -116,10 +116,18 @@ function mapCoworkerDraft(row: {
 }
 
 function asConfig(value: unknown): CoworkerEditableConfig {
-  if (!value || typeof value !== "object") {
+  let decoded = value;
+  if (typeof decoded === "string") {
+    try {
+      decoded = JSON.parse(decoded) as unknown;
+    } catch {
+      return emptyEditableConfig();
+    }
+  }
+  if (!decoded || typeof decoded !== "object" || Array.isArray(decoded)) {
     return emptyEditableConfig();
   }
-  const raw = value as Partial<CoworkerEditableConfig>;
+  const raw = decoded as Partial<CoworkerEditableConfig>;
   return {
     ...emptyEditableConfig(),
     ...raw,
@@ -2277,6 +2285,97 @@ export function createPostgresWorkspaceStore(sql: SqlClient): WorkspaceCatalogSt
           ${draft.decidedAt}
         )
       `;
+    },
+
+    async insertCoworkerDraftWithSupersede(input) {
+      return sql.begin(async (tx) => {
+        const locked = await tx<{ id: string }[]>`
+          SELECT id FROM workspaces WHERE id = ${input.draft.workspaceId} FOR UPDATE
+        `;
+        if (!locked[0]) {
+          throw new Error("workspace_not_found");
+        }
+        const existingRows = await tx<
+          Array<{
+            id: string;
+            workspace_id: string;
+            source_text_encrypted: string;
+            proposal_json: unknown;
+            effective_preview_json: unknown;
+            draft_hash: string;
+            revision: number;
+            policy_revision: number;
+            catalog_revision: number;
+            state: string;
+            created_by: string;
+            expires_at: string | Date;
+            created_at: string | Date;
+            decided_at: string | Date | null;
+          }>
+        >`
+          SELECT *
+          FROM coworker_drafts
+          WHERE workspace_id = ${input.draft.workspaceId}
+            AND draft_hash = ${input.draft.draftHash}
+            AND revision = ${input.draft.revision}
+            AND state IN ('draft', 'awaiting_review')
+          LIMIT 1
+          FOR UPDATE
+        `;
+        if (existingRows[0]) {
+          return mapCoworkerDraft(existingRows[0]);
+        }
+        const priorEquivalentRows = await tx<Array<{ max_revision: number | null }>>`
+          SELECT max(revision)::int AS max_revision
+          FROM coworker_drafts
+          WHERE workspace_id = ${input.draft.workspaceId}
+            AND draft_hash = ${input.draft.draftHash}
+        `;
+        const insertRevision = Math.max(
+          input.draft.revision,
+          (priorEquivalentRows[0]?.max_revision ?? 0) + 1,
+        );
+        await tx`
+          UPDATE coworker_drafts
+          SET state = 'superseded', decided_at = ${input.supersededBefore}
+          WHERE workspace_id = ${input.draft.workspaceId}
+            AND id <> ${input.draft.id}
+            AND state IN ('draft', 'awaiting_review')
+        `;
+        const inserted = await tx<
+          Array<{
+            id: string;
+            workspace_id: string;
+            source_text_encrypted: string;
+            proposal_json: unknown;
+            effective_preview_json: unknown;
+            draft_hash: string;
+            revision: number;
+            policy_revision: number;
+            catalog_revision: number;
+            state: string;
+            created_by: string;
+            expires_at: string | Date;
+            created_at: string | Date;
+            decided_at: string | Date | null;
+          }>
+        >`
+          INSERT INTO coworker_drafts (
+            id, workspace_id, source_text_encrypted, proposal_json, effective_preview_json,
+            draft_hash, revision, policy_revision, catalog_revision, state, created_by,
+            expires_at, created_at, decided_at
+          ) VALUES (
+            ${input.draft.id}, ${input.draft.workspaceId}, ${input.draft.sourceTextEncrypted},
+            ${JSON.stringify(input.draft.proposal)}::jsonb,
+            ${JSON.stringify(input.draft.effectivePreview)}::jsonb,
+            ${input.draft.draftHash}, ${insertRevision}, ${input.draft.policyRevision},
+            ${input.draft.catalogRevision}, ${input.draft.state}, ${input.draft.createdBy},
+            ${input.draft.expiresAt}, ${input.draft.createdAt}, ${input.draft.decidedAt}
+          )
+          RETURNING *
+        `;
+        return mapCoworkerDraft(inserted[0]!);
+      });
     },
 
     async getCoworkerDraft(id) {

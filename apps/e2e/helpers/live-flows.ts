@@ -313,6 +313,7 @@ export async function runProviderBackedNarrative(page: Page, runId: string): Pro
   await expect(page.getByRole("heading", { name: /Filter synthetic records/i })).toBeVisible({
     timeout: 60_000,
   });
+  await page.getByRole("radio", { name: "All" }).check();
   await page.getByRole("button", { name: "Apply filter" }).click();
 
   // 7 — ArtifactCard

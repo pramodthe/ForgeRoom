@@ -1,6 +1,7 @@
 import { z } from "zod";
 import {
   listControlledComponentMcpTools,
+  providerSafeMcpToolName,
   resolveStableNameForMcpTool,
   type UiComponentsMcpTool,
 } from "./tools";
@@ -102,10 +103,11 @@ export async function handleUiComponentsMcpRequest(
         ...listControlledComponentMcpTools(handlers.enabledToolNames),
         ...(handlers.additionalTools ?? []),
       ];
+      const providerTools = indexProviderTools(tools);
       return {
         jsonrpc: "2.0",
         id,
-        result: { tools: tools.map(toMcpToolShape) },
+        result: { tools: [...providerTools.values()].map(toMcpToolShape) },
       };
     }
     if (request.method === "tools/call") {
@@ -113,7 +115,15 @@ export async function handleUiComponentsMcpRequest(
         request.params && typeof request.params === "object"
           ? (request.params as Record<string, unknown>)
           : {};
-      const toolName = typeof params.name === "string" ? params.name : "";
+      const advertisedToolName = typeof params.name === "string" ? params.name : "";
+      const offeredTools = [
+        ...listControlledComponentMcpTools(handlers.enabledToolNames),
+        ...(handlers.additionalTools ?? []),
+      ];
+      const toolName = indexProviderTools(offeredTools).get(advertisedToolName)?.name;
+      if (!toolName) {
+        return rpcError(id, -32602, `Unknown application tool ${advertisedToolName}`);
+      }
       const stableName = resolveStableNameForMcpTool(toolName);
       if (!stableName) {
         const additional = handlers.additionalTools?.find((tool) => tool.name === toolName);
@@ -179,10 +189,25 @@ export async function handleUiComponentsMcpRequest(
 
 function toMcpToolShape(tool: UiComponentsMcpTool) {
   return {
-    name: tool.name,
+    name: providerSafeMcpToolName(tool.name),
     description: tool.description,
     inputSchema: tool.inputSchema,
   };
+}
+
+function indexProviderTools(tools: UiComponentsMcpTool[]): Map<string, UiComponentsMcpTool> {
+  const indexed = new Map<string, UiComponentsMcpTool>();
+  for (const tool of tools) {
+    const providerName = providerSafeMcpToolName(tool.name);
+    const existing = indexed.get(providerName);
+    if (existing && existing.name !== tool.name) {
+      throw new Error(
+        `Ambiguous provider-safe MCP tool name ${providerName}: ${existing.name}, ${tool.name}`,
+      );
+    }
+    indexed.set(providerName, tool);
+  }
+  return indexed;
 }
 
 function rpcError(

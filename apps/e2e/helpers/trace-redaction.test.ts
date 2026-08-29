@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { execFileSync } from "node:child_process";
+import { createServer } from "node:http";
 import { readFileSync, writeFileSync, mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { scanPlaywrightArtifacts } from "./trace-redaction";
+import { chromium, type Browser, type BrowserContext } from "@playwright/test";
+import { SAFE_TRACE_CONTENT_OPTIONS, scanPlaywrightArtifacts } from "./trace-redaction";
 
 describe("scanPlaywrightArtifacts", () => {
   it("flags forbidden secret-like patterns and passes clean traces", () => {
@@ -75,6 +77,79 @@ describe("scanPlaywrightArtifacts", () => {
         hits: [{ file: archive, pattern: "/FORGEROOM_TRACE_ARCHIVE_UNREADABLE/g" }],
       });
     } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("does not capture a browser interaction token round-trip in a safe trace", async () => {
+    const root = join(tmpdir(), `forgeroom-e2e-safe-trace-${Date.now()}`);
+    const archive = join(root, "trace.zip");
+    const interactionToken = "interaction-token-canary-abcdefghijklmnopqrstuvwxyz";
+    mkdirSync(root, { recursive: true });
+
+    const server = createServer((request, response) => {
+      if (request.url === "/") {
+        response.setHeader("content-type", "text/html");
+        response.end(`
+          <button id="submit">Apply filter</button>
+          <output id="status"></output>
+          <script>
+            document.querySelector("#submit").addEventListener("click", async () => {
+              const tokenResponse = await fetch("/interaction-token", { method: "POST" });
+              const token = await tokenResponse.json();
+              await fetch("/commit", {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify(token),
+              });
+              document.querySelector("#status").textContent = "done";
+            });
+          </script>
+        `);
+        return;
+      }
+      if (request.url === "/interaction-token") {
+        response.setHeader("content-type", "application/json");
+        response.end(JSON.stringify({ interaction_token: interactionToken }));
+        return;
+      }
+      response.statusCode = 204;
+      response.end();
+    });
+
+    await new Promise<void>((resolve, reject) => {
+      server.once("error", reject);
+      server.listen(0, "127.0.0.1", resolve);
+    });
+    const address = server.address();
+    if (!address || typeof address === "string") {
+      server.close();
+      throw new Error("safe trace test server did not bind to a TCP port");
+    }
+
+    let browser: Browser | undefined;
+    let context: BrowserContext | undefined;
+    try {
+      browser = await chromium.launch({ headless: true });
+      context = await browser.newContext();
+      await context.tracing.start(SAFE_TRACE_CONTENT_OPTIONS);
+      const page = await context.newPage();
+      await page.goto(`http://127.0.0.1:${address.port}`);
+      await page.getByRole("button", { name: "Apply filter" }).click();
+      await page.getByText("done").waitFor();
+      await context.tracing.stop({ path: archive });
+
+      expect(scanPlaywrightArtifacts([root])).toMatchObject({
+        scannedFiles: 1,
+        hits: [],
+      });
+      expect(execFileSync("unzip", ["-p", archive], { encoding: "latin1" })).not.toContain(
+        interactionToken,
+      );
+    } finally {
+      await context?.close();
+      await browser?.close();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
       rmSync(root, { recursive: true, force: true });
     }
   });

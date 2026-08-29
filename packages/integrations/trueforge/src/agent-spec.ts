@@ -79,7 +79,7 @@ export function compileP0AgentSpec(input: CompileP0AgentSpecInput): TrueForgeAge
       },
       dynamic_sub_agents: { enabled: false },
       generative_ui: { enabled: false },
-      ask_user_questions: { enabled: true },
+      ask_user_questions: { enabled: false },
     },
   };
 

@@ -8,6 +8,70 @@ import {
 } from "./coworker-drafts.test-helpers";
 
 describe("coworker drafts API", () => {
+  it("reuses the same reviewable draft for equivalent requests with different command keys", async () => {
+    const { app, env, store } = await createTestApp();
+    const { cookie, csrf } = await login(app, env);
+    const create = (idempotencyKey: string) =>
+      app.request(`/api/workspaces/${env.workspaceId}/coworker-drafts`, {
+        method: "POST",
+        headers: mutationHeaders(env, cookie, csrf),
+        body: JSON.stringify({
+          schemaVersion: 1,
+          request: GOLDEN_RESEARCH_PROMPT,
+          idempotency_key: idempotencyKey,
+        }),
+      });
+
+    const [first, second] = await Promise.all([
+      create("idem_equivalent_memory_a"),
+      create("idem_equivalent_memory_b"),
+    ]);
+    expect(first.status).toBe(201);
+    expect(second.status).toBe(201);
+    const firstDraft = coworkerDraftSchema.parse(
+      ((await first.json()) as { draft: unknown }).draft,
+    );
+    const secondDraft = coworkerDraftSchema.parse(
+      ((await second.json()) as { draft: unknown }).draft,
+    );
+    expect(secondDraft.id).toBe(firstDraft.id);
+    expect(await store.listCoworkerDrafts(env.workspaceId)).toHaveLength(1);
+  });
+
+  it("creates a new revision when an equivalent prior draft is no longer reviewable", async () => {
+    const { app, env, store } = await createTestApp();
+    const { cookie, csrf } = await login(app, env);
+    const create = (idempotencyKey: string) =>
+      app.request(`/api/workspaces/${env.workspaceId}/coworker-drafts`, {
+        method: "POST",
+        headers: mutationHeaders(env, cookie, csrf),
+        body: JSON.stringify({
+          schemaVersion: 1,
+          request: GOLDEN_RESEARCH_PROMPT,
+          idempotency_key: idempotencyKey,
+        }),
+      });
+
+    const first = await create("idem_equivalent_terminal_a");
+    const firstDraft = coworkerDraftSchema.parse(
+      ((await first.json()) as { draft: unknown }).draft,
+    );
+    await store.updateCoworkerDraftState({
+      draftId: firstDraft.id,
+      expectedRevision: firstDraft.revision,
+      nextState: "superseded",
+      decidedAt: new Date().toISOString(),
+    });
+
+    const second = await create("idem_equivalent_terminal_b");
+    expect(second.status).toBe(201);
+    const secondDraft = coworkerDraftSchema.parse(
+      ((await second.json()) as { draft: unknown }).draft,
+    );
+    expect(secondDraft).toMatchObject({ state: "awaiting_review", revision: 2 });
+    expect(secondDraft.id).not.toBe(firstDraft.id);
+  });
+
   it("creates a read-only research draft for the golden prompt without mutating coworkers", async () => {
     const { app, env, store } = await createTestApp();
     const beforeCoworkers = (await store.listCoworkers(env.workspaceId)).length;

@@ -14,6 +14,7 @@ describe("TaskRecord internal tool", () => {
   it("parses create and update argument shapes", () => {
     expect(
       taskRecordUpsertToolArgsSchema.parse({
+        operation: "create",
         channel_id: "ch_1",
         idempotency_key: "cmd_1",
         title: "Inspect",
@@ -29,6 +30,7 @@ describe("TaskRecord internal tool", () => {
 
     expect(() =>
       taskRecordUpsertToolArgsSchema.parse({
+        operation: "update",
         channel_id: "ch_1",
         task_id: "task_1",
         idempotency_key: "cmd_2",
@@ -47,6 +49,7 @@ describe("TaskRecord internal tool", () => {
     ]) {
       expect(
         taskRecordUpsertToolArgsSchema.safeParse({
+          operation: "create",
           channel_id: "ch_1",
           idempotency_key: "cmd_invalid",
           title: "Inspect",
@@ -58,6 +61,7 @@ describe("TaskRecord internal tool", () => {
 
   it("rejects create-only provenance fields on updates", () => {
     const parsed = taskRecordUpsertToolArgsSchema.safeParse({
+      operation: "update",
       channel_id: "ch_1",
       task_id: "task_1",
       expected_revision: 1,
@@ -65,6 +69,49 @@ describe("TaskRecord internal tool", () => {
       source_run_id: "run_other",
     });
     expect(parsed.success).toBe(false);
+  });
+
+  it("requires the explicit operation discriminator", () => {
+    expect(
+      taskRecordUpsertToolArgsSchema.safeParse({
+        channel_id: "ch_1",
+        idempotency_key: "cmd_ambiguous",
+        title: "Inspect",
+      }).success,
+    ).toBe(false);
+    expect(
+      taskRecordUpsertToolArgsSchema.safeParse({
+        operation: "create",
+        channel_id: "ch_1",
+        task_id: "invented_task_id",
+        idempotency_key: "cmd_create_with_id",
+        title: "Inspect",
+      }).success,
+    ).toBe(false);
+    expect(
+      taskRecordUpsertToolArgsSchema.safeParse({
+        operation: "update",
+        channel_id: "ch_1",
+        expected_revision: 1,
+        idempotency_key: "cmd_update_without_id",
+        status: "in_progress",
+      }).success,
+    ).toBe(false);
+  });
+
+  it("ignores null create-only provenance placeholders on updates", () => {
+    expect(
+      taskRecordUpsertToolArgsSchema.safeParse({
+        operation: "update",
+        channel_id: "ch_1",
+        task_id: "task_1",
+        expected_revision: 1,
+        idempotency_key: "cmd_update_null_provenance",
+        status: "in_progress",
+        source_message_id: null,
+        source_run_id: null,
+      }).success,
+    ).toBe(true);
   });
 
   it("exposes a reviewed descriptor and ToolPolicyDefinition", () => {
@@ -121,6 +168,7 @@ describe("TaskRecord internal tool", () => {
     void channel;
 
     const denied = await executeTaskRecordUpsertTool(workspace, coworker.id, {
+      operation: "create",
       channel_id: "channel_task_tool",
       idempotency_key: "denied_create",
       title: "Blocked",
@@ -161,6 +209,7 @@ describe("TaskRecord internal tool", () => {
     );
 
     const created = await executeTaskRecordUpsertTool(workspace, coworker.id, {
+      operation: "create",
       channel_id: "channel_task_tool",
       idempotency_key: "create_1",
       title: "Inspect connector",
@@ -176,6 +225,7 @@ describe("TaskRecord internal tool", () => {
     if (!created.ok) return;
 
     const updated = await executeTaskRecordUpsertTool(workspace, coworker.id, {
+      operation: "update",
       channel_id: "channel_task_tool",
       task_id: created.value.id,
       expected_revision: 1,
@@ -250,6 +300,7 @@ describe("TaskRecord internal tool", () => {
       workspace,
       coworker.id,
       {
+        operation: "update",
         channel_id: "channel_task_tool",
         task_id: created.value.id,
         expected_revision: 2,
@@ -265,6 +316,7 @@ describe("TaskRecord internal tool", () => {
       workspace,
       coworker.id,
       {
+        operation: "update",
         channel_id: "channel_task_tool",
         task_id: created.value.id,
         expected_revision: 3,
@@ -283,6 +335,7 @@ describe("TaskRecord internal tool", () => {
       workspace,
       coworker.id,
       {
+        operation: "update",
         channel_id: "channel_task_tool",
         task_id: created.value.id,
         expected_revision: 3,
