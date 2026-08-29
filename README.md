@@ -31,6 +31,21 @@ Provider-backed demonstrations require the appropriate local credentials and ser
 
 ## Architecture
 
+### Platform overview
+
+```mermaid
+flowchart TB
+  Human[Human collaborator] --> Web[Web workroom\nReact + Vite]
+  Web <--> API[ForgeRoom API\nHono]
+  API <--> DB[(PostgreSQL)]
+  API --> Worker[Worker\nqueues and run lifecycle]
+  Worker <--> DB
+  Worker <--> TrueForge[TrueForge\npersistent coworker sessions]
+  Worker <--> Composio[Composio\nconnected accounts and tools]
+  Worker <--> Daytona[Daytona\nsandbox artifacts]
+  API --> Web
+```
+
 ```text
 React + Vite web app
         │
@@ -43,6 +58,68 @@ Hono API ───── PostgreSQL
         │
         ▼
 Worker: queues, run lifecycle, approval resume, artifact publishing
+```
+
+### Governed work and approval flow
+
+```mermaid
+sequenceDiagram
+  actor Human
+  participant Web as Web workroom
+  participant API as ForgeRoom API
+  participant DB as PostgreSQL
+  participant Worker as Worker
+  participant Provider as Connected provider
+
+  Human->>Web: Request work
+  Web->>API: Create turn
+  API->>DB: Persist run and queue state
+  API->>Worker: Start queued work
+  Worker->>Provider: Run permitted coworker/tool operation
+  Provider-->>Worker: Events, result, or action proposal
+  Worker->>DB: Persist replayable activity and state
+  API-->>Web: Present live work, results, and artifacts
+
+  alt Consequential action requires approval
+    API->>DB: Persist encrypted pause and exact proposal
+    API-->>Web: Show trusted approval card
+    Human->>Web: Allow or deny
+    Web->>API: Submit decision
+    API->>DB: Record decision with compare-and-set guard
+    API->>Worker: Resume only when allowed
+    Worker->>Provider: Execute approved bounded action
+    Provider-->>Worker: Verified result
+    Worker->>DB: Store receipt and reconciled outcome
+  else Action is denied
+    API->>DB: Record denial; no provider mutation
+  end
+```
+
+### Codebase layers
+
+```mermaid
+flowchart LR
+  Contracts[packages/contracts\nshared types and event contracts]
+  Domain[packages/domain\nbusiness rules and state transitions]
+  Database[packages/db\nmigrations and persistence]
+  Orchestration[packages/orchestration\nturns, pauses, tools, artifacts]
+  Integrations[packages/integrations\nTrueForge, Composio, AG-UI, artifacts]
+  APIApp[apps/api]
+  WorkerApp[apps/worker]
+  WebApp[apps/web]
+
+  Contracts --> Domain
+  Contracts --> Database
+  Contracts --> Orchestration
+  Domain --> APIApp
+  Database --> APIApp
+  Database --> WorkerApp
+  Orchestration --> APIApp
+  Orchestration --> WorkerApp
+  Integrations --> APIApp
+  Integrations --> WorkerApp
+  Contracts --> WebApp
+  Domain --> WebApp
 ```
 
 The repository is a TypeScript/pnpm workspace:
