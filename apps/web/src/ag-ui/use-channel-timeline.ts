@@ -125,7 +125,8 @@ export function useChannelTimeline(input: {
     messages: useMemo(() => orderedTimelineMessages(state), [state]),
     items: useMemo(() => orderedTimelineItems(state), [state]),
     runs: state.runs,
-    activityState: state.activityState,
+    threadActivityStates: state.threadActivityStates,
+    threadToolCallStates: state.threadToolCallStates,
     uiState: state.uiState,
     mergeMessages,
   };

@@ -384,6 +384,27 @@ const NATIVE_SUBAGENT_EVENTS: ReadonlySet<string> = new Set([
   "subagent.failed",
 ]);
 
+export function presentToolCall(input: {
+  toolName: string;
+  status: "running" | "complete";
+}): ActivityPresentation {
+  return input.status === "complete"
+    ? {
+        eyebrow: "Tool",
+        title: input.toolName,
+        detail: "Tool execution completed",
+        status: "Completed",
+        tone: "success",
+      }
+    : {
+        eyebrow: "Tool",
+        title: input.toolName,
+        detail: "External tool execution in progress",
+        status: "Running",
+        tone: "violet",
+      };
+}
+
 export function presentCustomEvent(
   name: ApplicationSourceName,
   payload?: { lifecycle?: RunLifecycle; activity?: RunActivityCounters },

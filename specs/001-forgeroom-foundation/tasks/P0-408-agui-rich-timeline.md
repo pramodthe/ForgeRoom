@@ -18,10 +18,10 @@ The merged channel timeline renders concurrent AG-UI coworker streams and rich U
 
 ## Acceptance criteria
 
-- [ ] Mount one browser reducer per coworker thread, merge by channel sequence, and consume the single channel/system state lane without allowing a coworker reducer to overwrite it. *(slice 1: merged reducer folds `reduceUiPresentationState`; per-thread mounts deferred)*
-- [ ] Render one channel-owned human sourceMessageId once even when its request fans out to several coworker RunAgentInputs.
+- [ ] Mount one browser reducer per coworker thread, merge by channel sequence, and consume the single channel/system state lane without allowing a coworker reducer to overwrite it. *(slice 2: per-thread activity and tool-call reducers; channel lane via `__channel__` key)*
+- [x] Render one channel-owned human sourceMessageId once even when its request fans out to several coworker RunAgentInputs. *(slice 2: `projectedSourceMessageIds` dedup on REST merge)*
 - [ ] One credentialed official AG-UI client and stable application renderer registry serve all mounted coworker threads without browser provider keys; optional CopilotKitProvider parity applies only when P0-210 enables it.
-- [ ] Correlate messages, tools, activities and results by logical thread plus immutable IDs.
+- [ ] Correlate messages, tools, activities and results by logical thread plus immutable IDs. *(slice 2: TOOL_CALL_* correlation + per-thread activity/tool maps)*
 - [ ] Logical-turn busy state survives frontend-tool/HITL wire-run gaps. *(slice 1: `RUN_FINISHED` success respects thread/channel lifecycle)*
 - [ ] Controlled UI renders inline as a primary response with provenance and text fallback; `iframe_v1` and unknown open-UI activities stay inert.
 - [ ] Reviewed backend tools use named renderers and every unknown tool/component has an inert default renderer.
@@ -36,3 +36,4 @@ Run interleaved coworker/tool fixtures, reconnect at every cursor, multi-run com
 ## Work log
 
 - 2026-08-29 — Slice 1: wire `reduceUiPresentationState` into `channelTimelineReducer`, expose `uiState` from `useChannelTimeline`, keep runs busy across wire-run gaps when thread phase or channel run lifecycle is still active.
+- 2026-08-29 — Slice 2: per-thread `threadActivityStates` / `threadToolCallStates`, persisted `TOOL_CALL_*` schemas + projection, timeline tool items via `ToolCallActivityCard`, `projectedSourceMessageIds` dedup for fan-out human messages.

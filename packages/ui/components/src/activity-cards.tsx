@@ -5,6 +5,7 @@ import {
   activityIconForEyebrow,
   presentCustomEvent,
   presentForgeRoomActivity,
+  presentToolCall,
   presentUnsupportedCapability,
   presentUnknownActivity,
   type ApplicationSourceName,
@@ -93,6 +94,27 @@ export function CustomEventActivityCard({
   );
 }
 
+export type ToolCallActivityCardProps = {
+  toolName: string;
+  status: "running" | "complete";
+  ownerLabel?: string;
+};
+
+export function ToolCallActivityCard({ toolName, status, ownerLabel }: ToolCallActivityCardProps) {
+  const presentation = presentToolCall({ toolName, status });
+  return (
+    <ActivityCardShell
+      icon={activityIconForEyebrow(presentation.eyebrow)}
+      eyebrow={presentation.eyebrow}
+      title={presentation.title}
+      detail={presentation.detail}
+      status={presentation.status}
+      tone={presentation.tone}
+      ownerLabel={ownerLabel}
+    />
+  );
+}
+
 export function RunCountersFooter({ counters }: { counters: RunActivityCounters }) {
   const chips = [
     ["running", counters.running],
@@ -124,6 +146,7 @@ export {
   formatRunActivityCounters,
   presentCustomEvent,
   presentForgeRoomActivity,
+  presentToolCall,
   presentUnsupportedCapability,
   presentUnknownActivity,
   type ApplicationSourceName,

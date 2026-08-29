@@ -6,6 +6,7 @@ import {
   initialChannelTimelineState,
   orderedTimelineItems,
   orderedTimelineMessages,
+  resolveActivityEntry,
 } from "./channel-timeline-reducer";
 
 function restMessage(
@@ -295,7 +296,7 @@ describe("channelTimelineReducer", () => {
 
     const items = orderedTimelineItems(state);
     expect(items.map((item) => item.kind)).toEqual(["custom", "activity"]);
-    expect(state.activityState.activities.act_task_1?.content).toMatchObject({
+    expect(resolveActivityEntry(state.threadActivityStates, "act_task_1")?.content).toMatchObject({
       title: "Inspect connector",
     });
   });
@@ -490,5 +491,147 @@ describe("channelTimelineReducer", () => {
     expect(orderedTimelineItems(state)).toEqual([
       expect.objectContaining({ kind: "inert", key: "inert:act_unsup" }),
     ]);
+  });
+
+  it("projects TOOL_CALL_* events into per-thread tool timeline items", () => {
+    let state = initialChannelTimelineState("channel_demo");
+    state = channelTimelineReducer(state, {
+      type: "event",
+      envelope: coworkerEnvelope(30, {
+        type: "TOOL_CALL_START",
+        toolCallId: "tc_ui_1",
+        toolCallName: "DataTable",
+        parentMessageId: "assistant_message",
+      }),
+    });
+    state = channelTimelineReducer(state, {
+      type: "event",
+      envelope: coworkerEnvelope(31, {
+        type: "TOOL_CALL_ARGS",
+        toolCallId: "tc_ui_1",
+        delta: '{"title":"Open issues"}',
+      }),
+    });
+    state = channelTimelineReducer(state, {
+      type: "event",
+      envelope: coworkerEnvelope(32, {
+        type: "TOOL_CALL_END",
+        toolCallId: "tc_ui_1",
+      }),
+    });
+
+    const items = orderedTimelineItems(state);
+    expect(items).toEqual([expect.objectContaining({ kind: "tool", toolCallId: "tc_ui_1" })]);
+    expect(state.threadToolCallStates.thread_coworker_research?.toolCalls.tc_ui_1).toMatchObject({
+      toolName: "DataTable",
+      status: "complete",
+    });
+  });
+
+  it("isolates per-thread activity reducers across coworkers", () => {
+    let state = initialChannelTimelineState("channel_demo");
+    state = channelTimelineReducer(state, {
+      type: "event",
+      envelope: coworkerEnvelope(40, {
+        type: "ACTIVITY_SNAPSHOT",
+        messageId: "act_research",
+        activityType: "forgeroom.task_record.v1",
+        replace: true,
+        content: {
+          schemaVersion: 1,
+          activityRevision: 1,
+          activityType: "forgeroom.task_record.v1",
+          taskId: "task_research",
+          revision: 1,
+          status: "todo",
+          title: "Research task",
+        },
+      }),
+    });
+    state = channelTimelineReducer(state, {
+      type: "event",
+      envelope: coworkerEnvelope(
+        41,
+        {
+          type: "ACTIVITY_SNAPSHOT",
+          messageId: "act_operator",
+          activityType: "forgeroom.task_record.v1",
+          replace: true,
+          content: {
+            schemaVersion: 1,
+            activityRevision: 1,
+            activityType: "forgeroom.task_record.v1",
+            taskId: "task_operator",
+            revision: 1,
+            status: "in_progress",
+            title: "Operator task",
+          },
+        },
+        "coworker_operator",
+      ),
+    });
+
+    expect(
+      state.threadActivityStates.thread_coworker_research?.activities.act_research?.content,
+    ).toMatchObject({ title: "Research task" });
+    expect(
+      state.threadActivityStates.thread_coworker_operator?.activities.act_operator?.content,
+    ).toMatchObject({ title: "Operator task" });
+  });
+
+  it("renders one human sourceMessageId once across fan-out merges", () => {
+    let state = initialChannelTimelineState("channel_demo");
+    state = channelTimelineReducer(state, {
+      type: "merge_messages",
+      messages: [
+        restMessage({
+          id: "msg_fanout",
+          channel_sequence: 1,
+          author_type: "human",
+          body: "Check both repos",
+        }),
+      ],
+    });
+    state = channelTimelineReducer(state, {
+      type: "merge_messages",
+      messages: [
+        restMessage({
+          id: "msg_fanout",
+          channel_sequence: 1,
+          author_type: "human",
+          body: "Check both repos",
+        }),
+      ],
+    });
+    state = channelTimelineReducer(state, {
+      type: "event",
+      envelope: {
+        ...coworkerEnvelope(2, {
+          type: "RUN_STARTED",
+          threadId: "thread_coworker_research",
+          runId: "agui_step_1",
+        }),
+        sourceMessageId: "msg_fanout",
+      },
+    });
+    state = channelTimelineReducer(state, {
+      type: "event",
+      envelope: {
+        ...coworkerEnvelope(
+          3,
+          {
+            type: "RUN_STARTED",
+            threadId: "thread_coworker_operator",
+            runId: "agui_step_2",
+          },
+          "coworker_operator",
+        ),
+        sourceMessageId: "msg_fanout",
+      },
+    });
+
+    expect(orderedTimelineMessages(state)).toHaveLength(1);
+    expect(state.projectedSourceMessageIds.msg_fanout).toBe(true);
+    expect(Object.keys(state.runs)).toHaveLength(2);
   });
 });
