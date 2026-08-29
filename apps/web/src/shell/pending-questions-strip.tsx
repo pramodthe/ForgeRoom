@@ -1,5 +1,6 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { listChannelPendingQuestions } from "../api/channel-resources-api";
+import { isFixtureMode } from "../api/mode";
 import { TrustedQuestionCard } from "./trusted-question-card";
 
 export function PendingQuestionsStrip(props: { channelId: string; archived: boolean }) {
@@ -7,8 +8,8 @@ export function PendingQuestionsStrip(props: { channelId: string; archived: bool
   const pendingQuery = useQuery({
     queryKey: ["channel-pending-questions", props.channelId],
     queryFn: () => listChannelPendingQuestions(props.channelId),
-    enabled: !props.archived,
-    refetchInterval: props.archived ? false : 10_000,
+    enabled: !props.archived && !isFixtureMode,
+    refetchInterval: props.archived || isFixtureMode ? false : 10_000,
   });
 
   const questionIds = pendingQuery.data?.question_ids ?? [];

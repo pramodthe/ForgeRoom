@@ -65,7 +65,7 @@ test.describe("P0-504 prototype smoke (fixture mode)", () => {
 
     // Demo receipt + save-as-skill entry (fixture work panel)
     await gotoChannel(page);
-    await page.getByRole("button", { name: "Open demo run receipt" }).click();
+    await page.getByRole("button", { name: "Inspect run receipt" }).click();
     await expect(
       page.getByRole("dialog", { name: /Weekly support operations review/i }),
     ).toBeVisible();

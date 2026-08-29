@@ -105,36 +105,40 @@ export function ChannelHeader({
           ))
         )}
 
-        <label className="ml-auto inline-flex items-center gap-1 text-sm text-zinc-700">
-          <span className="sr-only">Add coworker to channel</span>
-          <select
-            className="rounded-lg border border-zinc-200 bg-white px-2 py-1.5 text-xs shadow-sm disabled:opacity-50"
-            defaultValue=""
-            disabled={membershipControlsDisabled || addable.length === 0}
-            onChange={(event) => {
-              const value = event.target.value;
-              if (value) {
-                onAddCoworker(value);
-                event.target.value = "";
-              }
-            }}
-          >
-            <option value="" disabled>
-              Add coworker…
-            </option>
-            {addable.map((coworker) => (
-              <option key={coworker.id} value={coworker.id}>
-                {coworker.name} (@{coworker.handle})
+        {addable.length > 0 ? (
+          <label className="ml-auto inline-flex items-center gap-1 text-sm text-zinc-700">
+            <span className="sr-only">Add coworker to channel</span>
+            <select
+              className="rounded-lg border border-zinc-200 bg-white px-2 py-1.5 text-xs shadow-sm disabled:opacity-50"
+              defaultValue=""
+              disabled={membershipControlsDisabled}
+              onChange={(event) => {
+                const value = event.target.value;
+                if (value) {
+                  onAddCoworker(value);
+                  event.target.value = "";
+                }
+              }}
+            >
+              <option value="" disabled>
+                Add coworker…
               </option>
-            ))}
-          </select>
-        </label>
+              {addable.map((coworker) => (
+                <option key={coworker.id} value={coworker.id}>
+                  {coworker.name} (@{coworker.handle})
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : (
+          <span className="ml-auto" />
+        )}
 
         <Link
           to={workspaceCoworkersPath(workspaceId)}
           className="rounded-lg bg-zinc-950 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-zinc-800"
         >
-          New coworker
+          Manage team
         </Link>
       </div>
 

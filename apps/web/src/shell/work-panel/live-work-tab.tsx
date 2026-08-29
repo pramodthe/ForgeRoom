@@ -56,12 +56,10 @@ export function LiveWorkTab(props: {
       <div className="grid grid-cols-3 gap-2">
         <Counter value={String(activeRuns.length)} label="Running" tone="text-violet-700" />
         <Counter value={String(needsYou.length)} label="Needs you" tone="text-amber-700" />
-        <Counter
-          value={String(activeRuns.filter((run) => run.status === "running").length)}
-          label="Queued"
-          tone="text-zinc-700"
-        />
+        <Counter value={String(openTasks.length)} label="Open tasks" tone="text-zinc-700" />
       </div>
+
+      {activeRuns.length === 0 && openTasks.length === 0 ? <WorkGuide /> : null}
 
       {activeRuns.length > 0 ? (
         <p className="rounded-xl border border-zinc-200 bg-white px-3 py-2 text-xs text-zinc-500">
@@ -175,6 +173,55 @@ function Counter({ value, label, tone }: { value: string; label: string; tone: s
       <div className={`text-lg font-semibold ${tone}`}>{value}</div>
       <div className="text-[10px] text-zinc-500">{label}</div>
     </div>
+  );
+}
+
+function WorkGuide() {
+  return (
+    <section className="overflow-hidden rounded-xl border border-violet-200 bg-white shadow-sm">
+      <div className="border-b border-violet-100 bg-violet-50/70 px-3 py-3">
+        <div className="flex items-center gap-2">
+          <span className="h-2 w-2 rounded-full bg-emerald-500" />
+          <h3 className="text-xs font-semibold text-zinc-900">Ready for the first run</h3>
+        </div>
+        <p className="mt-1 text-[11px] leading-4 text-zinc-600">
+          Start from the composer. Active work, approvals, and tasks will collect here.
+        </p>
+      </div>
+      <ol className="space-y-0 px-3 py-2 text-[11px]">
+        <GuideStep number="1" title="Ask for an outcome" detail="Use a workflow starter" active />
+        <GuideStep number="2" title="Inspect the work" detail="Runs and tools stay visible" />
+        <GuideStep number="3" title="Approve changes" detail="Sensitive writes wait for you" />
+      </ol>
+    </section>
+  );
+}
+
+function GuideStep({
+  number,
+  title,
+  detail,
+  active = false,
+}: {
+  number: string;
+  title: string;
+  detail: string;
+  active?: boolean;
+}) {
+  return (
+    <li className="flex items-center gap-2.5 border-b border-zinc-100 py-2.5 last:border-0">
+      <span
+        className={`grid h-5 w-5 shrink-0 place-items-center rounded-full text-[10px] font-semibold ${
+          active ? "bg-violet-600 text-white" : "bg-zinc-100 text-zinc-500"
+        }`}
+      >
+        {number}
+      </span>
+      <div className="min-w-0">
+        <div className="font-medium text-zinc-800">{title}</div>
+        <div className="text-zinc-500">{detail}</div>
+      </div>
+    </li>
   );
 }
 

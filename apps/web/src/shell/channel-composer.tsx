@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import type { ChannelRosterCoworker } from "@forgeroom/contracts";
 import { postChannelMessage, type PostedChannelMessage } from "../api/workspace-api";
 import {
@@ -7,6 +7,7 @@ import {
   composerSendBlocked,
   previewComposerRecipients,
 } from "./composer-routing";
+import { buildWorkflowStarters } from "./workflow-starters";
 
 type ChannelComposerProps = {
   channelId: string;
@@ -27,6 +28,8 @@ export function ChannelComposer({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [sendIdempotencyKey, setSendIdempotencyKey] = useState<string | null>(null);
+  const composerRef = useRef<HTMLTextAreaElement>(null);
+  const workflowStarters = useMemo(() => buildWorkflowStarters(roster), [roster]);
 
   const preview = useMemo(
     () => previewComposerRecipients({ body: body.trim(), roster }),
@@ -75,6 +78,7 @@ export function ChannelComposer({
           Message
         </label>
         <textarea
+          ref={composerRef}
           id="channel-composer"
           className="min-h-[58px] w-full resize-none rounded-xl border border-zinc-200 bg-zinc-50/60 px-3 py-2.5 text-sm text-zinc-900 shadow-sm outline-none transition focus:border-violet-300 focus:bg-white focus:ring-2 focus:ring-violet-100"
           placeholder="Write a message… Use @coworker or @team when multiple coworkers are in the channel."
@@ -93,7 +97,27 @@ export function ChannelComposer({
           }}
         />
 
-        <RecipientPreview preview={preview} blockReason={body.trim() ? blockReason : null} />
+        {!disabled && body.trim().length === 0 && workflowStarters.length > 0 ? (
+          <div className="flex flex-wrap items-center gap-1.5" aria-label="Workflow starters">
+            <span className="mr-1 text-[11px] font-medium text-zinc-500">Start a workflow</span>
+            {workflowStarters.map((starter) => (
+              <button
+                key={starter.label}
+                type="button"
+                className="rounded-full border border-violet-200 bg-violet-50 px-2.5 py-1 text-[11px] font-medium text-violet-700 transition hover:border-violet-300 hover:bg-violet-100"
+                onClick={() => {
+                  setBody(starter.prompt);
+                  setSendIdempotencyKey(null);
+                  window.requestAnimationFrame(() => composerRef.current?.focus());
+                }}
+              >
+                {starter.label}
+              </button>
+            ))}
+          </div>
+        ) : null}
+
+        {body.trim() ? <RecipientPreview preview={preview} blockReason={blockReason} /> : null}
 
         {error ? <p className="text-sm text-red-700">{error}</p> : null}
 

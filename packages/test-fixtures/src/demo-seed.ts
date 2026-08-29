@@ -275,7 +275,7 @@ async function upsertDemoChannel(sql: SqlClient, env: DemoSeedEnv, now: string):
       SET
         workspace_id = ${env.workspaceId},
         name = ${DEMO_FIXTURE_IDS.channelName},
-        mission_brief = ${"Demo channel for ForgeRoom P0 fixtures"},
+        mission_brief = ${"Coordinate launch work with governed AI coworkers and visible approvals."},
         status = 'active',
         updated_at = ${now}
       WHERE id = ${DEMO_FIXTURE_IDS.channelId}
@@ -288,7 +288,7 @@ async function upsertDemoChannel(sql: SqlClient, env: DemoSeedEnv, now: string):
           next_sequence, status, created_by, created_at, updated_at
         ) VALUES (
           ${DEMO_FIXTURE_IDS.channelId}, ${env.workspaceId}, ${DEMO_FIXTURE_IDS.channelName},
-          ${"Demo channel for ForgeRoom P0 fixtures"}, NULL, '{}'::jsonb,
+          ${"Coordinate launch work with governed AI coworkers and visible approvals."}, NULL, '{}'::jsonb,
           0, 'active', ${env.ownerUserId}, ${now}, ${now}
         )
       `;

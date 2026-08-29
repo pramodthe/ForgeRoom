@@ -21,6 +21,7 @@ import { useSession } from "../auth/session-context";
 import { workspaceCoworkerDetailPath, workspaceCoworkersPath } from "../routes/paths";
 import { Avatar } from "../ui/avatar";
 import { useDialogFocus } from "../ui/use-dialog-focus";
+import { toolLabels } from "../ui/tool-labels";
 import {
   buildFixtureCoworkerDraft,
   clearCoworkerDraftReview,
@@ -34,6 +35,7 @@ import {
   summarizeToolEffects,
 } from "./review-flow-helpers";
 import { approvalPolicyLines, summarizeCoworkerGrants } from "./settings-helpers";
+import { coworkerDisplaySummary } from "./coworker-display";
 
 export function CoworkersPage() {
   const { workspaceId } = useParams({ from: "/w/$workspaceId/coworkers" });
@@ -65,17 +67,13 @@ export function CoworkersPage() {
             + New coworker
           </button>
         </div>
-        <div className="mt-6 grid grid-cols-2 gap-4">
+        <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
           {(coworkersQuery.data ?? []).map((coworker) => {
             const analyst = coworker.handle === "analyst";
             const researcher = coworker.handle === "researcher";
             const readOnlySpecialist = analyst || researcher;
             const grants = summarizeCoworkerGrants(coworker);
-            const toolLabels = isFixtureMode
-              ? readOnlySpecialist
-                ? ["GitHub read", "Support data", "Charts", "Tables"]
-                : ["Intercom", "Sandbox", "Tasks", "Artifacts"]
-              : grants.tools.map((tool) => tool.replaceAll("_", " "));
+            const visibleToolLabels = toolLabels(coworker.config.tool_grants);
             return (
               <Link
                 key={coworker.id}
@@ -103,16 +101,13 @@ export function CoworkersPage() {
                   <span className="text-zinc-300 group-hover:text-zinc-600">→</span>
                 </div>
                 <p className="mt-4 text-sm leading-6 text-zinc-600">
-                  {isFixtureMode
-                    ? analyst
-                      ? "Finds patterns across support data and turns evidence into clear visual briefings."
-                      : researcher
-                        ? "Researches support and GitHub evidence with read-only tools and sourced briefings."
-                        : "Turns decisions into governed tasks, artifacts, and approved external actions."
-                    : coworker.config.standing_instructions}
+                  {coworkerDisplaySummary({
+                    handle: coworker.handle,
+                    toolGrants: coworker.config.tool_grants,
+                  })}
                 </p>
                 <div className="mt-4 flex flex-wrap gap-1.5">
-                  {toolLabels.map((tool) => (
+                  {visibleToolLabels.map((tool) => (
                     <span
                       key={tool}
                       className="rounded-md bg-zinc-100 px-2 py-1 text-[10px] font-medium text-zinc-600"
@@ -927,7 +922,7 @@ function CoworkerEditor({
         ) : null}
         <div className="mt-5 grid grid-cols-[1fr_280px] gap-4">
           <section className="space-y-4">
-            <EditorSection title="Identity & instructions">
+            <EditorSection title="Identity">
               <div className="grid grid-cols-2 gap-3">
                 <Field label="Name" value={name} onChange={setName} />
                 <Field label="Handle" value={handle} onChange={setHandle} />
@@ -941,15 +936,27 @@ function CoworkerEditor({
                   className="mt-1.5 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2.5 text-sm text-zinc-700"
                 />
               </label>
-              <label className="mt-3 block text-xs text-zinc-500">
-                Standing instructions
-                <textarea
-                  value={instructions}
-                  onChange={(event) => setInstructions(event.target.value)}
-                  rows={4}
-                  className="mt-1.5 w-full rounded-xl border border-zinc-200 p-3 text-sm leading-6 text-zinc-700"
-                />
-              </label>
+              <details className="mt-4 rounded-xl border border-zinc-200 bg-zinc-50/70">
+                <summary className="cursor-pointer px-3 py-2.5 text-xs font-medium text-zinc-700">
+                  Advanced behavior instructions
+                  <span className="ml-2 font-normal text-zinc-400">Expand to review or edit</span>
+                </summary>
+                <div className="border-t border-zinc-200 p-3">
+                  <label className="block text-xs text-zinc-500">
+                    Standing instructions
+                    <textarea
+                      value={instructions}
+                      onChange={(event) => setInstructions(event.target.value)}
+                      rows={6}
+                      className="mt-1.5 w-full rounded-xl border border-zinc-200 bg-white p-3 text-sm leading-6 text-zinc-700"
+                    />
+                  </label>
+                  <p className="mt-2 text-[11px] leading-4 text-zinc-500">
+                    Runtime guidance is private configuration. The coworker directory shows a safe
+                    capability summary instead.
+                  </p>
+                </div>
+              </details>
             </EditorSection>
             <EditorSection title="Exact tool grants">
               <div className="flex flex-wrap gap-2">

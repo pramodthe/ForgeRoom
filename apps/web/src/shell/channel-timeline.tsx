@@ -189,6 +189,49 @@ function fixtureRichResponse(input: {
   return null;
 }
 
+function RoomWelcomeCard({ coworkerCount }: { coworkerCount: number }) {
+  return (
+    <section className="overflow-hidden rounded-2xl border border-violet-200 bg-white shadow-sm">
+      <div className="bg-gradient-to-br from-violet-50 via-white to-sky-50 px-5 py-5">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-violet-700">
+              Your room is ready
+            </p>
+            <h2 className="mt-1 text-lg font-semibold tracking-tight text-zinc-950">
+              Give your AI team a real outcome
+            </h2>
+            <p className="mt-1 max-w-xl text-sm leading-5 text-zinc-600">
+              Choose a workflow starter below or mention a coworker. Work, tools, and approvals stay
+              visible in this timeline.
+            </p>
+          </div>
+          <span className="shrink-0 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[11px] font-medium text-emerald-700">
+            {coworkerCount} {coworkerCount === 1 ? "coworker" : "coworkers"} available
+          </span>
+        </div>
+        <ol className="mt-5 grid grid-cols-3 gap-2" aria-label="How ForgeRoom works">
+          {[
+            ["1", "Ask", "Describe the outcome"],
+            ["2", "Watch", "Inspect work and tools"],
+            ["3", "Approve", "Control sensitive changes"],
+          ].map(([step, title, detail]) => (
+            <li key={step} className="rounded-xl border border-white/80 bg-white/80 p-3 shadow-sm">
+              <div className="flex items-center gap-2">
+                <span className="grid h-5 w-5 place-items-center rounded-full bg-zinc-950 text-[10px] font-semibold text-white">
+                  {step}
+                </span>
+                <span className="text-xs font-semibold text-zinc-900">{title}</span>
+              </div>
+              <p className="mt-1.5 text-[11px] leading-4 text-zinc-500">{detail}</p>
+            </li>
+          ))}
+        </ol>
+      </div>
+    </section>
+  );
+}
+
 export function ChannelTimeline(props: {
   workspaceId: string;
   channelId: string;
@@ -215,6 +258,10 @@ export function ChannelTimeline(props: {
   const needsInputCount = visibleRunCards.filter((run) => run.status === "needs_input").length;
   const connectionLabel = CONNECTION_LABEL[props.connection];
   const connectionLive = props.connection === "live";
+  const hasConversation = props.items.some((item) => item.kind === "message");
+  const availableCoworkerCount = props.roster.filter(
+    (coworker) => coworker.availability === "available",
+  ).length;
   const liveAnnouncement = timelineLiveAnnouncement({
     connection: props.connection,
     activeRunCount: activeRuns.length,
@@ -266,124 +313,137 @@ export function ChannelTimeline(props: {
           </span>
         </div>
 
-        {props.items.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-zinc-300 bg-white px-6 py-10 text-center">
-            <p className="font-medium text-zinc-900">Start the room</p>
-            <p className="mt-1 text-sm text-zinc-500">
-              Message a coworker or use @team. Their streamed work will appear here.
-            </p>
-          </div>
-        ) : (
-          props.items.map((item) => {
-            if (item.kind === "message") {
-              return (
-                <MessageBubble
-                  key={item.key}
-                  message={item.message}
-                  roster={props.roster}
-                  currentHumanId={props.currentHumanId}
-                  currentHumanName={props.currentHumanName}
-                  channelId={props.channelId}
-                  archived={props.archived}
-                  richResponse={fixtureRichResponse({
-                    workspaceId: props.workspaceId,
-                    channelId: props.channelId,
-                    message: item.message,
-                  })}
-                />
-              );
-            }
+        {!hasConversation && !props.archived ? (
+          <RoomWelcomeCard coworkerCount={availableCoworkerCount} />
+        ) : null}
 
-            if (item.kind === "activity") {
-              const entry = resolveActivityEntry(props.threadActivityStates, item.messageId);
-              if (!entry) return null;
-              const ownerLabel =
-                entry.owner.coworkerId !== undefined
-                  ? coworkerById.get(entry.owner.coworkerId)?.name
-                  : entry.owner.actorKind === "system"
-                    ? "System"
-                    : undefined;
-              if (entry.content.activityType === "forgeroom.controlled_ui.v1") {
-                return (
-                  <ControlledUiPrimaryChrome
-                    key={item.key}
-                    content={entry.content}
-                    roster={props.roster}
-                    ownerCoworkerId={entry.owner.coworkerId}
-                  >
-                    <AgUiActivitySlot slotId={item.messageId}>
-                      <ControlledUiActivity content={entry.content} />
-                    </AgUiActivitySlot>
-                  </ControlledUiPrimaryChrome>
-                );
-              }
-              return (
-                <div key={item.key} className="ml-9">
-                  <AgUiActivitySlot slotId={item.messageId}>
-                    <ForgeRoomActivityCard content={entry.content} ownerLabel={ownerLabel} />
-                  </AgUiActivitySlot>
-                </div>
-              );
-            }
-
-            if (item.kind === "tool") {
-              const entry = resolveToolCallEntry(props.threadToolCallStates, item.toolCallId);
-              if (!entry) return null;
-              const ownerLabel =
-                entry.owner.coworkerId !== undefined
-                  ? coworkerById.get(entry.owner.coworkerId)?.name
-                  : undefined;
-              const resolved = resolveBackendToolRenderer({
-                toolName: entry.toolName,
-                status: entry.status,
-              });
-              return (
-                <div key={item.key} className="ml-9">
-                  <AgUiActivitySlot slotId={item.toolCallId}>
-                    <ToolCallActivityCard
-                      toolName={entry.toolName}
-                      status={entry.status}
-                      ownerLabel={ownerLabel}
-                      presentation={resolved.presentation}
-                    />
-                  </AgUiActivitySlot>
-                </div>
-              );
-            }
-
-            if (item.kind === "inert") {
-              return (
-                <div key={item.key} className="ml-9">
-                  <AgUiActivitySlot slotId={item.inert.messageId}>
-                    {item.inert.reason === "unsupported_capability" ? (
-                      <InertUnsupportedActivityCard summary={item.inert.summary} />
-                    ) : (
-                      <InertUnknownActivityCard />
-                    )}
-                  </AgUiActivitySlot>
-                </div>
-              );
-            }
-
-            const ownerLabel = ownerLabelForItem(
-              item,
-              props.roster,
-              props.currentHumanName,
-              props.threadActivityStates,
-              props.threadToolCallStates,
+        {props.items.map((item) => {
+          if (item.kind === "message") {
+            return (
+              <MessageBubble
+                key={item.key}
+                message={item.message}
+                roster={props.roster}
+                currentHumanId={props.currentHumanId}
+                currentHumanName={props.currentHumanName}
+                channelId={props.channelId}
+                archived={props.archived}
+                richResponse={fixtureRichResponse({
+                  workspaceId: props.workspaceId,
+                  channelId: props.channelId,
+                  message: item.message,
+                })}
+              />
             );
+          }
+
+          if (item.kind === "activity") {
+            const entry = resolveActivityEntry(props.threadActivityStates, item.messageId);
+            if (!entry) return null;
+            const ownerLabel =
+              entry.owner.coworkerId !== undefined
+                ? coworkerById.get(entry.owner.coworkerId)?.name
+                : entry.owner.actorKind === "system"
+                  ? "System"
+                  : undefined;
+            if (entry.content.activityType === "forgeroom.controlled_ui.v1") {
+              return (
+                <ControlledUiPrimaryChrome
+                  key={item.key}
+                  content={entry.content}
+                  roster={props.roster}
+                  ownerCoworkerId={entry.owner.coworkerId}
+                >
+                  <AgUiActivitySlot slotId={item.messageId}>
+                    <ControlledUiActivity content={entry.content} />
+                  </AgUiActivitySlot>
+                </ControlledUiPrimaryChrome>
+              );
+            }
             return (
               <div key={item.key} className="ml-9">
-                <CustomEventActivityCard
-                  name={item.custom.name}
-                  lifecycle={item.custom.lifecycle}
-                  activity={item.custom.activity}
-                  ownerLabel={ownerLabel}
-                />
+                <AgUiActivitySlot slotId={item.messageId}>
+                  <ForgeRoomActivityCard content={entry.content} ownerLabel={ownerLabel} />
+                </AgUiActivitySlot>
               </div>
             );
-          })
-        )}
+          }
+
+          if (item.kind === "tool") {
+            const entry = resolveToolCallEntry(props.threadToolCallStates, item.toolCallId);
+            if (!entry) return null;
+            const ownerLabel =
+              entry.owner.coworkerId !== undefined
+                ? coworkerById.get(entry.owner.coworkerId)?.name
+                : undefined;
+            const resolved = resolveBackendToolRenderer({
+              toolName: entry.toolName,
+              status: entry.status,
+            });
+            return (
+              <div key={item.key} className="ml-9">
+                <AgUiActivitySlot slotId={item.toolCallId}>
+                  <ToolCallActivityCard
+                    toolName={entry.toolName}
+                    status={entry.status}
+                    ownerLabel={ownerLabel}
+                    presentation={resolved.presentation}
+                  />
+                </AgUiActivitySlot>
+              </div>
+            );
+          }
+
+          if (item.kind === "inert") {
+            return (
+              <div key={item.key} className="ml-9">
+                <AgUiActivitySlot slotId={item.inert.messageId}>
+                  {item.inert.reason === "unsupported_capability" ? (
+                    <InertUnsupportedActivityCard summary={item.inert.summary} />
+                  ) : (
+                    <InertUnknownActivityCard />
+                  )}
+                </AgUiActivitySlot>
+              </div>
+            );
+          }
+
+          if (
+            item.kind === "custom" &&
+            ["channel.created", "channel created"].includes(item.custom.name.toLowerCase())
+          ) {
+            return (
+              <div
+                key={item.key}
+                className="mx-auto flex w-fit items-center gap-2 rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-[11px] text-zinc-500 shadow-sm"
+                role="status"
+              >
+                <span className="grid h-4 w-4 place-items-center rounded-full bg-emerald-100 text-[10px] font-semibold text-emerald-700">
+                  ✓
+                </span>
+                Room created · Ready for coworker work
+              </div>
+            );
+          }
+
+          const ownerLabel = ownerLabelForItem(
+            item,
+            props.roster,
+            props.currentHumanName,
+            props.threadActivityStates,
+            props.threadToolCallStates,
+          );
+          return (
+            <div key={item.key} className="ml-9">
+              <CustomEventActivityCard
+                name={item.custom.name}
+                lifecycle={item.custom.lifecycle}
+                activity={item.custom.activity}
+                ownerLabel={ownerLabel}
+              />
+            </div>
+          );
+        })}
 
         {visibleRunCards.map((run) => {
           const coworker = coworkerById.get(run.coworkerId);

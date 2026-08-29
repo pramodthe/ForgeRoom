@@ -59,12 +59,18 @@ describe("previewComposerRecipients", () => {
     expect(composerBlockReason(preview.resolution)).toMatch(/explicit/i);
   });
 
-  it("blocks rotating coworkers", () => {
-    const rotating = [rosterRow("analyst"), rosterRow("builder", { availability: "cancelling" })];
-    const preview = previewComposerRecipients({ body: "@builder fix", roster: rotating });
-    expect(composerSendBlocked(preview.resolution)).toBe(true);
-    expect(composerBlockReason(preview.resolution)).toMatch(/unavailable/i);
-  });
+  it.each(["busy", "queued", "needs_you", "cancelling", "disabled", "offline"] as const)(
+    "blocks coworkers who are %s",
+    (availability) => {
+      const rosterWithUnavailable = [rosterRow("analyst"), rosterRow("builder", { availability })];
+      const preview = previewComposerRecipients({
+        body: "@builder fix",
+        roster: rosterWithUnavailable,
+      });
+      expect(composerSendBlocked(preview.resolution)).toBe(true);
+      expect(composerBlockReason(preview.resolution)).toMatch(/unavailable|disabled/i);
+    },
+  );
 
   it("auto-routes single-member channels", () => {
     const preview = previewComposerRecipients({

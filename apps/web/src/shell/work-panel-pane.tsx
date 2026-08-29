@@ -58,11 +58,8 @@ export function WorkPanelPane(props: { workspaceId: string; channelId: string; c
         id={tabPanelIds[activeTab]}
         aria-labelledby={`${tabListId}-${activeTab.toLowerCase()}`}
       >
-        {showFixture ? (
-          <FixtureWorkPanel
-            tab={activeTab}
-            onOpenDemoReceipt={() => workroomUi.openRunDrawer("run_4A91")}
-          />
+        {showFixture && activeTab === "Work" ? (
+          <FixtureWorkPanel onOpenDemoReceipt={() => workroomUi.openRunDrawer("run_4A91")} />
         ) : activeTab === "Work" ? (
           <LiveWorkTab
             workspaceId={props.workspaceId}
@@ -95,41 +92,31 @@ export function WorkPanelPane(props: { workspaceId: string; channelId: string; c
   );
 }
 
-function FixtureWorkPanel({
-  tab,
-  onOpenDemoReceipt,
-}: {
-  tab: WorkTab;
-  onOpenDemoReceipt: () => void;
-}) {
-  if (tab !== "Work") {
-    return <EmptyPanel tab={tab} detail="Fixture demo content remains in prototype mode only." />;
-  }
+function FixtureWorkPanel({ onOpenDemoReceipt }: { onOpenDemoReceipt: () => void }) {
   return (
     <div className="space-y-3">
-      <div className="rounded-xl border border-dashed border-zinc-300 bg-white px-4 py-4">
-        <p className="font-medium text-zinc-800">Fixture demo run</p>
-        <p className="mt-1 text-xs text-zinc-500">
-          Prototype mode exposes the save-as-skill and receipt drawer for browser E2E without live
-          providers.
-        </p>
-        <button
-          type="button"
-          className="mt-3 rounded-lg bg-zinc-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-zinc-800"
-          onClick={onOpenDemoReceipt}
-        >
-          Open demo run receipt
-        </button>
+      <div className="overflow-hidden rounded-xl border border-violet-200 bg-white shadow-sm">
+        <div className="border-b border-violet-100 bg-violet-50/70 px-4 py-3">
+          <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-emerald-700">
+            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+            Review ready
+          </span>
+          <p className="mt-1 font-medium text-zinc-900">Support operations review</p>
+        </div>
+        <div className="px-4 py-3">
+          <p className="mt-1 text-xs text-zinc-500">
+            Analyst and Operator completed a coordinated review. Inspect the receipt to see the
+            governed work trail and reusable skill controls.
+          </p>
+          <button
+            type="button"
+            className="mt-3 rounded-lg bg-zinc-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-zinc-800"
+            onClick={onOpenDemoReceipt}
+          >
+            Inspect run receipt
+          </button>
+        </div>
       </div>
-    </div>
-  );
-}
-
-function EmptyPanel({ tab, detail }: { tab: WorkTab; detail: string }) {
-  return (
-    <div className="rounded-xl border border-dashed border-zinc-300 bg-white px-4 py-8 text-center">
-      <p className="font-medium text-zinc-800">No {tab.toLowerCase()} yet</p>
-      <p className="mt-1 text-xs text-zinc-500">{detail}</p>
     </div>
   );
 }

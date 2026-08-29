@@ -41,22 +41,13 @@ export function ChannelListPane({
         })}
       </nav>
       <aside className="hidden h-full w-60 shrink-0 flex-col border-r border-zinc-200 bg-zinc-50/80 lg:flex">
-        <div className="flex items-center justify-between border-b border-zinc-200 px-3 py-3">
+        <div className="border-b border-zinc-200 px-3 py-3">
           <div>
             <h2 className="text-xs font-semibold text-zinc-800">Channels</h2>
             <p className="mt-0.5 text-[10px] text-zinc-400">
               {channels.length} {channels.length === 1 ? "room" : "rooms"}
             </p>
           </div>
-          <button
-            type="button"
-            disabled
-            title="Channel creation is not connected yet"
-            className="grid h-7 w-7 cursor-not-allowed place-items-center rounded-lg border border-zinc-200 bg-zinc-100 text-base text-zinc-400"
-            aria-label="Channel creation pending"
-          >
-            +
-          </button>
         </div>
         <ul className="flex-1 space-y-1 overflow-y-auto p-2">
           {channels.map((channel) => {
@@ -74,10 +65,10 @@ export function ChannelListPane({
                 >
                   <span className={`text-zinc-400 ${selected ? "text-zinc-700" : ""}`}>#</span>
                   <span className="min-w-0 flex-1 truncate">{channel.name}</span>
-                  {channel.name === "General" ? (
+                  {selected ? (
                     <span
                       className="h-2 w-2 rounded-full bg-violet-500 ring-2 ring-violet-100"
-                      aria-label="Active run"
+                      aria-label="Selected channel"
                     />
                   ) : null}
                 </Link>
