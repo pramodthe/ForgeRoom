@@ -114,7 +114,10 @@ function inspectZipContent(content: Buffer): "safe" | "sensitive" | "invalid" {
       if (nameEnd > content.length || (flags & 0x1) !== 0) return "invalid";
       const name = content.subarray(offset + 46, nameEnd).toString("utf8");
       if (isSensitiveArtifactPath(name)) return "sensitive";
-      const entryCommentStart = nameEnd + extraLength;
+      const centralExtraEnd = nameEnd + extraLength;
+      if (centralExtraEnd > content.length) return "invalid";
+      if (containsSensitiveText(content.subarray(nameEnd, centralExtraEnd))) return "sensitive";
+      const entryCommentStart = centralExtraEnd;
       const entryCommentEnd = entryCommentStart + commentLength;
       if (entryCommentEnd > content.length) return "invalid";
       if (containsSensitiveText(content.subarray(entryCommentStart, entryCommentEnd))) {
@@ -125,7 +128,14 @@ function inspectZipContent(content: Buffer): "safe" | "sensitive" | "invalid" {
       }
       const localNameLength = content.readUInt16LE(localOffset + 26);
       const localExtraLength = content.readUInt16LE(localOffset + 28);
-      const dataStart = localOffset + 30 + localNameLength + localExtraLength;
+      const localNameStart = localOffset + 30;
+      const localNameEnd = localNameStart + localNameLength;
+      const localExtraEnd = localNameEnd + localExtraLength;
+      if (localExtraEnd > content.length) return "invalid";
+      const localName = content.subarray(localNameStart, localNameEnd).toString("utf8");
+      if (isSensitiveArtifactPath(localName)) return "sensitive";
+      if (containsSensitiveText(content.subarray(localNameEnd, localExtraEnd))) return "sensitive";
+      const dataStart = localExtraEnd;
       const dataEnd = dataStart + compressedSize;
       if (dataEnd > content.length) return "invalid";
       inspectedBytes += uncompressedSize;
