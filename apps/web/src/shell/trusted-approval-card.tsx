@@ -6,6 +6,7 @@ import { ApiError } from "../api/http-client";
 import { useSession } from "../auth/session-context";
 import { formatPauseGroupLifecycleMessage } from "./pause-group-lifecycle";
 import { PoliteStatus } from "./polite-status";
+import { trustedHitlCardElementId } from "./trusted-hitl-host";
 
 type TrustedApprovalCardProps = {
   proposalId: string;
@@ -107,6 +108,7 @@ export function TrustedApprovalCard({ proposalId, onDecided }: TrustedApprovalCa
 
   return (
     <section
+      id={trustedHitlCardElementId({ kind: "approval", id: proposalId })}
       className="rounded-2xl border border-amber-300 bg-amber-50/80 p-4 shadow-sm"
       aria-label="Trusted approval card"
       aria-busy={busy}

@@ -33,6 +33,7 @@ export type ControlledInstanceProps = {
   data?: ControlledInstanceData;
   interactionEnabled?: boolean;
   onSubmitChoice?: (values: Record<string, unknown>) => void;
+  onRequestOpenHitlCard?: (input: { kind: "approval" | "question"; id: string }) => void;
 };
 
 function readRows(data?: ControlledInstanceData): Array<Record<string, string | number>> {
@@ -162,6 +163,7 @@ export function ControlledInstance({
   data,
   interactionEnabled = false,
   onSubmitChoice,
+  onRequestOpenHitlCard: _onRequestOpenHitlCard,
 }: ControlledInstanceProps) {
   if (status === "building" || validatedProps === null) {
     return <PreparingControlledState textAlternative={textAlternative} />;

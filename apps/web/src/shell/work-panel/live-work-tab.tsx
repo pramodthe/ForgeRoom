@@ -1,10 +1,12 @@
 import { Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import type { ChannelRosterCoworker, TaskRecordV1 } from "@forgeroom/contracts";
+import type { ChannelRosterCoworker, RunLifecycle, TaskRecordV1 } from "@forgeroom/contracts";
 import { listChannelTasks } from "../../api/workspace-api";
 import { workspaceTaskDetailPath } from "../../routes/paths";
 import { Avatar } from "../../ui/avatar";
 import type { TimelineRun } from "../../ag-ui/channel-timeline-reducer";
+import { useCancelChannelRun } from "../use-cancel-channel-run";
+import { PoliteStatus } from "../polite-status";
 
 const STATUS_STYLE: Record<TaskRecordV1["status"], string> = {
   todo: "bg-zinc-100 text-zinc-700",
@@ -20,12 +22,14 @@ export function LiveWorkTab(props: {
   channelId: string;
   roster: readonly ChannelRosterCoworker[];
   runs: Record<string, TimelineRun>;
+  archived?: boolean;
   onOpenRun?: (runId: string) => void;
 }) {
   const tasksQuery = useQuery({
     queryKey: ["channel-tasks", props.channelId],
     queryFn: () => listChannelTasks(props.channelId),
   });
+  const cancelRunMutation = useCancelChannelRun(props.channelId);
   const activeRuns = Object.values(props.runs).filter(
     (run) => run.status === "running" || run.status === "needs_input",
   );
@@ -37,9 +41,18 @@ export function LiveWorkTab(props: {
 
   const tasks = tasksQuery.data ?? [];
   const openTasks = tasks.filter((task) => !["done", "cancelled"].includes(task.status));
+  const cancelError =
+    cancelRunMutation.error instanceof Error ? cancelRunMutation.error.message : null;
 
   return (
     <div className="space-y-3">
+      <PoliteStatus
+        message={
+          cancelRunMutation.isSuccess
+            ? "Stop requested. Remaining work is cancelling."
+            : cancelError
+        }
+      />
       <div className="grid grid-cols-3 gap-2">
         <Counter value={String(activeRuns.length)} label="Running" tone="text-violet-700" />
         <Counter value={String(needsYou.length)} label="Needs you" tone="text-amber-700" />
@@ -59,6 +72,14 @@ export function LiveWorkTab(props: {
       {activeRuns.map((run) => {
         const coworker = props.roster.find((entry) => entry.coworker_id === run.coworkerId);
         const canOpenReceipt = Boolean(run.applicationRunId && props.onOpenRun);
+        const canStop = Boolean(
+          !props.archived &&
+          run.applicationRunId &&
+          (run.status === "running" || run.status === "needs_input"),
+        );
+        const stopping =
+          cancelRunMutation.isPending &&
+          cancelRunMutation.variables?.runId === run.applicationRunId;
         return (
           <section
             key={run.runStepId}
@@ -83,6 +104,22 @@ export function LiveWorkTab(props: {
                   className="rounded-lg border border-violet-200 px-2 py-1 text-[11px] font-medium text-violet-700 hover:bg-violet-50"
                 >
                   Receipt
+                </button>
+              ) : null}
+              {canStop ? (
+                <button
+                  type="button"
+                  disabled={stopping}
+                  aria-busy={stopping}
+                  onClick={() =>
+                    cancelRunMutation.mutate({
+                      runId: run.applicationRunId!,
+                      expectedLifecycle: (run.lifecycle ?? "active") as RunLifecycle,
+                    })
+                  }
+                  className="rounded-lg border border-red-200 px-2 py-1 text-[11px] font-medium text-red-700 hover:bg-red-50 disabled:opacity-50"
+                >
+                  {stopping ? "Stopping…" : "Stop"}
                 </button>
               ) : null}
             </div>
