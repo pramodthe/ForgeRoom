@@ -36,7 +36,7 @@ export async function loadSkillRunEvidence(
     JOIN agent_turns AS at ON at.id = re.agent_turn_id
     JOIN run_steps AS rs ON rs.id = at.run_step_id
     WHERE rs.run_id = ${input.runId}
-      AND rs.id = ANY(${sql.array(input.sourceStepIds)})
+      AND rs.id IN ${sql(input.sourceStepIds)}
     ORDER BY re.first_seen_at ASC, re.id ASC
   `;
 

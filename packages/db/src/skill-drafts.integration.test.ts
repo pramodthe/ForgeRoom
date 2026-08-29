@@ -93,7 +93,9 @@ describe("skill drafts persistence", () => {
       const parsed = skillDraftSchema.parse(draft);
       expect(parsed.source_run_id).toBe("run_1");
       expect(parsed.source_step_ids).toEqual(["step_1"]);
-      expect(parsed.required_tools).toContain("GITHUB_GET_AN_ISSUE");
+      expect(parsed.required_tools).toEqual(
+        expect.arrayContaining(["GITHUB_GET_AN_ISSUE", "GITHUB_ADD_LABELS_TO_AN_ISSUE"]),
+      );
 
       const reloaded = await getSkillDraftById(sql, "skd_1");
       expect(reloaded?.draft.id).toBe("skd_1");
