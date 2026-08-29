@@ -2,9 +2,10 @@ import {
   coworkerDraftSchema,
   type CoworkerDraft,
   type CoworkerDraftState,
+  type SkillDraft,
   type TaskRevision,
 } from "@forgeroom/contracts";
-import { getCoworkerDraft } from "../api/workspace-api";
+import { getCoworkerDraft, getSkillDraft } from "../api/workspace-api";
 import { ApiError } from "../api/http-client";
 
 const COWORKER_DRAFT_STORAGE_PREFIX = "forgeroom:review:coworker-draft:";
@@ -72,8 +73,31 @@ export function friendlyApiError(error: unknown): string {
       return error.message;
     case "expired_proposal":
       return "This draft expired. Start a new coworker request.";
+    case "validation_failed":
+      return "The skill draft changed on the server. Review the updated revision.";
     default:
       return error.message;
+  }
+}
+
+const DENIAL_LABELS: Record<string, string> = {
+  write_tools: "Write tools (blocked unless explicitly granted and reviewed)",
+  native_subagents: "Native child agents",
+  knowledge_memory_workflow_unsupported_in_p0: "Knowledge, memory, and cross-channel workflows",
+};
+
+export function formatDenialReason(denial: string): string {
+  return DENIAL_LABELS[denial] ?? denial.replaceAll("_", " ");
+}
+
+export async function refreshSkillDraftReview(
+  workspaceId: string,
+  draftId: string,
+): Promise<SkillDraft | null> {
+  try {
+    return await getSkillDraft(workspaceId, draftId);
+  } catch {
+    return null;
   }
 }
 

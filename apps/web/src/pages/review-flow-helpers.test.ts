@@ -5,6 +5,7 @@ import {
   buildFixtureCoworkerDraft,
   clearCoworkerDraftReview,
   formatTaskRecordGrant,
+  formatDenialReason,
   formatTaskRevisionSummary,
   friendlyApiError,
   isStaleTaskRevision,
@@ -113,5 +114,10 @@ describe("review flow helpers", () => {
   it("recognizes terminal coworker draft states", () => {
     expect(isTerminalCoworkerDraftState("ready")).toBe(true);
     expect(isTerminalCoworkerDraftState("provisioning")).toBe(false);
+  });
+
+  it("formats P0 denial reasons for permission review", () => {
+    expect(formatDenialReason("native_subagents")).toContain("child agents");
+    expect(formatDenialReason("custom_denial_code")).toBe("custom denial code");
   });
 });
