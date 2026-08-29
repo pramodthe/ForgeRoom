@@ -21,7 +21,7 @@ Validated TrueForge sandbox files become durable, source-linked artifacts with n
 ## Acceptance criteria
 
 - [x] Artifact metadata is read from expected assistant event and sandbox turn.
-- [x] Path, size and allowed MIME are validated before download.
+- [x] Path, size and allowed MIME are validated before download; nominated filenames, downloaded bytes and bounded ZIP entries are screened for credentials and raw tool payloads before storage.
 - [x] File is hashed and copied into immutable storage revision.
 - [x] Artifact remains after sandbox teardown.
 - [x] HTML/script cannot execute in preview.

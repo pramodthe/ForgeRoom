@@ -111,6 +111,21 @@ describe("P0-312 download validation", () => {
         content: oversized,
       }),
     ).toMatchObject({ ok: false, reason: "size_exceeded" });
+
+    expect(
+      validateDiscoveredArtifactMetadata({
+        ...allowed,
+        sandboxPath: "/home/daytona/.env",
+        relativePath: ".env",
+      }),
+    ).toMatchObject({ ok: false, reason: "sensitive_path" });
+    const rawToolPayload = Buffer.from('{"access_token":"provider-secret-value"}', "utf8");
+    expect(
+      validateDiscoveredArtifactDownload({
+        discovery: { ...allowed, declaredByteSize: rawToolPayload.byteLength },
+        content: rawToolPayload,
+      }),
+    ).toMatchObject({ ok: false, reason: "sensitive_content" });
   });
 });
 
