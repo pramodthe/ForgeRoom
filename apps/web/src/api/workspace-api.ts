@@ -22,6 +22,12 @@ import type {
   SkillVersion,
   TaskRecordV1,
   TaskStatus,
+  ConnectionListItem,
+  ConnectionReconnectCommand,
+  ConnectionReconnectResult,
+  ConnectionStatusView,
+  ConnectionTestCommand,
+  ConnectionTestResult,
 } from "@forgeroom/contracts";
 import {
   channelRosterResponseSchema,
@@ -34,6 +40,10 @@ import {
   coworkerDraftSchema,
   coworkerProfileSchema,
   coworkerUpdateCommandSchema,
+  connectionListItemSchema,
+  connectionReconnectResultSchema,
+  connectionStatusViewSchema,
+  connectionTestResultSchema,
   skillDraftSchema,
   skillVersionSchema,
   taskRecordV1Schema,
@@ -524,6 +534,14 @@ export async function listCoworkers(workspaceId: string): Promise<CoworkerProfil
     `/api/workspaces/${encodeURIComponent(workspaceId)}/coworkers`,
   );
   return coworkerProfileSchema.array().parse(stripRequestId(body).coworkers);
+}
+
+export async function listCoworkerDirectory(workspaceId: string): Promise<CoworkerDetail[]> {
+  const profiles = await listCoworkers(workspaceId);
+  const details = await Promise.all(
+    profiles.map((profile) => getCoworker(workspaceId, profile.id)),
+  );
+  return details.filter((detail): detail is CoworkerDetail => detail !== null);
 }
 
 export async function getCoworker(
@@ -1024,12 +1042,161 @@ export async function recordFixtureApprovalDecision(input: {
   return input.decision;
 }
 
-export async function listConnections(workspaceId: string): Promise<ConnectionFixture[]> {
+export type ConnectionCardData = ConnectionFixture & {
+  toolkit?: string;
+  tools?: string[];
+  scopes?: string[];
+  verified_at?: string | null;
+  account_suffix?: string;
+};
+
+export async function listConnections(workspaceId: string): Promise<ConnectionCardData[]> {
   if (useMockApi) {
     assertWorkspace(workspaceId);
     return MOCK_CONNECTIONS;
   }
-  return [];
+  const body = await apiFetch<{ connections: unknown[]; request_id: string }>(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/connections`,
+  );
+  const connections = connectionListItemSchema
+    .array()
+    .parse(stripRequestId(body).connections) as ConnectionListItem[];
+  return connections.map((connection) => ({
+    schemaVersion: 1 as const,
+    id: connection.id,
+    workspace_id: workspaceId,
+    provider: "composio",
+    label: connection.toolkit,
+    status: connection.status,
+    descriptor_hash: "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    toolkit: connection.toolkit,
+    verified_at: connection.verified_at,
+  }));
+}
+
+export async function getConnectionStatus(connectionId: string): Promise<ConnectionStatusView> {
+  if (useMockApi) {
+    const connection = MOCK_CONNECTIONS.find((item) => item.id === connectionId);
+    if (!connection) {
+      throw new Error("connection_not_found");
+    }
+    const tools =
+      connection.provider === "trueforge"
+        ? [
+            { tool_name: "sandbox.create", descriptor_hash: connection.descriptor_hash },
+            { tool_name: "sandbox.execute", descriptor_hash: connection.descriptor_hash },
+            { tool_name: "artifact.download", descriptor_hash: connection.descriptor_hash },
+          ]
+        : [
+            { tool_name: "GITHUB_GET_ISSUES", descriptor_hash: connection.descriptor_hash },
+            { tool_name: "INTERCOM_UPDATE_MACRO", descriptor_hash: connection.descriptor_hash },
+            { tool_name: "SUPPORT_SEARCH", descriptor_hash: connection.descriptor_hash },
+          ];
+    return connectionStatusViewSchema.parse({
+      schemaVersion: 1,
+      id: connection.id,
+      workspace_id: connection.workspace_id,
+      provider: "composio",
+      toolkit: connection.label,
+      trueforge_connector_name: "forgeroom_sandbox",
+      status: connection.status,
+      blocks_dispatch: connection.status !== "active",
+      run_step_state: connection.status === "active" ? null : "blocked_connection",
+      acting_identity: {
+        service: "composio",
+        account_display: "ForgeRoom workspace service account",
+        principal_type: "service_account",
+        principal_display: "ForgeRoom workspace service account",
+        principal_id_hash:
+          "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+      },
+      owner_class: "workspace_service",
+      scopes: connection.provider === "trueforge" ? ["sandbox"] : ["repo", "user"],
+      toolkit_health:
+        connection.status === "active"
+          ? "healthy"
+          : connection.status === "connecting"
+            ? "inactive"
+            : connection.status,
+      tools,
+      account_suffix: "…fixture",
+      verified_at: connection.status === "active" ? new Date().toISOString() : null,
+      catalog_browse_allowed: false,
+      account_selection_allowed: false,
+      capability_expansion_allowed: false,
+    });
+  }
+  const body = await apiFetch<{ connection: unknown; request_id: string }>(
+    `/api/connections/${encodeURIComponent(connectionId)}/status`,
+  );
+  return connectionStatusViewSchema.parse(stripRequestId(body).connection);
+}
+
+export async function testConnection(input: {
+  connectionId: string;
+  command: ConnectionTestCommand;
+  csrfToken: string;
+}): Promise<ConnectionTestResult> {
+  if (useMockApi) {
+    const connection = MOCK_CONNECTIONS.find((item) => item.id === input.connectionId);
+    if (!connection) {
+      throw new Error("connection_not_found");
+    }
+    return connectionTestResultSchema.parse({
+      schemaVersion: 1,
+      connection_id: connection.id,
+      ok: true,
+      status: "active",
+      blocks_dispatch: false,
+      run_step_state: null,
+      checked_tool: "GITHUB_GET_ISSUES",
+      checked_descriptor_hash: connection.descriptor_hash,
+      verified_at: new Date().toISOString(),
+      safe_summary: "Prototype verification completed against the fixture adapter.",
+      reason: null,
+    });
+  }
+  const body = await apiFetch<ConnectionTestResult & { request_id: string }>(
+    `/api/connections/${encodeURIComponent(input.connectionId)}/test`,
+    {
+      method: "POST",
+      csrfToken: input.csrfToken,
+      body: JSON.stringify(input.command),
+    },
+  );
+  return connectionTestResultSchema.parse(stripRequestId(body));
+}
+
+export async function reconnectConnection(input: {
+  connectionId: string;
+  command: ConnectionReconnectCommand;
+  csrfToken: string;
+}): Promise<ConnectionReconnectResult> {
+  if (useMockApi) {
+    const connection = MOCK_CONNECTIONS.find((item) => item.id === input.connectionId);
+    if (!connection) {
+      throw new Error("connection_not_found");
+    }
+    return connectionReconnectResultSchema.parse({
+      schemaVersion: 1,
+      connection_id: connection.id,
+      intent_id: "conn_intent_fixture_001",
+      status: "connecting",
+      redirect_url: "https://connect.composio.dev/link/fixture",
+      expires_at: new Date(Date.now() + 15 * 60_000).toISOString(),
+      workspace_bound: true,
+      expected_account_suffix: "…fixture",
+    });
+  }
+  const body = await apiFetch<ConnectionReconnectResult & { request_id: string }>(
+    `/api/connections/${encodeURIComponent(input.connectionId)}/reconnect`,
+    {
+      method: "POST",
+      csrfToken: input.csrfToken,
+      body: JSON.stringify(input.command),
+    },
+  );
+  return connectionReconnectResultSchema.parse(stripRequestId(body));
 }
 
 export async function resolveDefaultChannelId(workspaceId: string): Promise<string | null> {
