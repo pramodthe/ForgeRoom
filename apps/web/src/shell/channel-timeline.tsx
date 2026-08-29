@@ -92,11 +92,9 @@ function MessageBubble(props: {
     <Fragment>
       <article
         id={props.message.messageId ? `timeline-message-${props.message.messageId}` : undefined}
-        className={`flex ${props.message.kind === "human" ? "justify-end" : "justify-start"}`}
+        className="group flex justify-start"
       >
-        <div
-          className={`flex max-w-[88%] items-start gap-2.5 ${props.message.kind === "human" ? "flex-row-reverse" : ""}`}
-        >
+        <div className="flex w-full max-w-[760px] items-start gap-3">
           <Avatar
             name={props.message.kind === "human" ? humanName : (coworker?.name ?? "Coworker")}
             tone={
@@ -108,23 +106,18 @@ function MessageBubble(props: {
             }
             size="sm"
           />
-          <div
-            className={`max-w-[85%] rounded-2xl px-4 py-3 shadow-sm ${
-              props.message.kind === "human"
-                ? "rounded-br-md bg-zinc-900 text-white"
-                : "rounded-bl-md border border-zinc-200 bg-white text-zinc-900"
-            }`}
-          >
-            <div
-              className={`mb-1 text-xs font-medium ${props.message.kind === "human" ? "text-zinc-300" : "text-zinc-500"}`}
-            >
+          <div className="min-w-0 max-w-[680px] flex-1 pt-0.5 text-zinc-200">
+            <div className="mb-1 flex items-center gap-2 text-xs font-semibold text-zinc-200">
               {props.message.kind === "human" ? humanLabel : (coworker?.name ?? "Coworker")}
+              <span className="text-[10px] font-normal text-zinc-600">
+                {props.message.kind === "human" ? "workspace member" : "AI coworker"}
+              </span>
             </div>
-            <p className="min-h-[1.25rem] whitespace-pre-wrap text-sm leading-6">
+            <p className="min-h-[1.25rem] whitespace-pre-wrap text-[13px] leading-6 text-zinc-300">
               {props.message.content || (props.message.status === "streaming" ? "Working…" : "")}
             </p>
             {props.message.messageId && props.message.status !== "streaming" ? (
-              <div className="mt-2 flex justify-end">
+              <div className="mt-1 flex justify-start opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
                 <PinSourceButton
                   channelId={props.channelId}
                   archived={props.archived}
@@ -146,7 +139,7 @@ function MessageBubble(props: {
           </div>
         </div>
       </article>
-      {props.richResponse ? <div className="ml-9">{props.richResponse}</div> : null}
+      {props.richResponse ? <div className="ml-11 max-w-[720px]">{props.richResponse}</div> : null}
     </Fragment>
   );
 }
@@ -191,17 +184,17 @@ function fixtureRichResponse(input: {
 
 function RoomWelcomeCard({ coworkerCount }: { coworkerCount: number }) {
   return (
-    <section className="overflow-hidden rounded-2xl border border-violet-200 bg-white shadow-sm">
-      <div className="bg-gradient-to-br from-violet-50 via-white to-sky-50 px-5 py-5">
+    <section className="overflow-hidden rounded-2xl border border-white/10 bg-[#292929] shadow-xl">
+      <div className="bg-gradient-to-br from-violet-500/10 via-[#292929] to-sky-500/5 px-5 py-5">
         <div className="flex items-start justify-between gap-4">
           <div>
             <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-violet-700">
               Your room is ready
             </p>
-            <h2 className="mt-1 text-lg font-semibold tracking-tight text-zinc-950">
+            <h2 className="mt-1 text-lg font-semibold tracking-tight text-zinc-100">
               Give your AI team a real outcome
             </h2>
-            <p className="mt-1 max-w-xl text-sm leading-5 text-zinc-600">
+            <p className="mt-1 max-w-xl text-sm leading-5 text-zinc-400">
               Choose a workflow starter below or mention a coworker. Work, tools, and approvals stay
               visible in this timeline.
             </p>
@@ -216,12 +209,12 @@ function RoomWelcomeCard({ coworkerCount }: { coworkerCount: number }) {
             ["2", "Watch", "Inspect work and tools"],
             ["3", "Approve", "Control sensitive changes"],
           ].map(([step, title, detail]) => (
-            <li key={step} className="rounded-xl border border-white/80 bg-white/80 p-3 shadow-sm">
+            <li key={step} className="rounded-xl border border-white/5 bg-white/[0.03] p-3">
               <div className="flex items-center gap-2">
-                <span className="grid h-5 w-5 place-items-center rounded-full bg-zinc-950 text-[10px] font-semibold text-white">
+                <span className="grid h-5 w-5 place-items-center rounded-full bg-violet-500 text-[10px] font-semibold text-white">
                   {step}
                 </span>
-                <span className="text-xs font-semibold text-zinc-900">{title}</span>
+                <span className="text-xs font-semibold text-zinc-200">{title}</span>
               </div>
               <p className="mt-1.5 text-[11px] leading-4 text-zinc-500">{detail}</p>
             </li>
@@ -281,15 +274,15 @@ export function ChannelTimeline(props: {
   return (
     <div
       ref={scrollRef}
-      className="flex-1 overflow-y-auto bg-zinc-50/60 px-4 py-5"
+      className="flex-1 overflow-y-auto bg-[#222222] px-5 py-5"
       onScroll={(event) => {
         const node = event.currentTarget;
         stickToBottomRef.current = isNearBottom(node);
         savedScrollTopRef.current = node.scrollTop;
       }}
     >
-      <div className="mx-auto max-w-3xl space-y-4">
-        <div className="flex items-center justify-between gap-3 text-xs text-zinc-500">
+      <div className="mx-auto max-w-[800px] space-y-5">
+        <div className="flex items-center justify-between gap-3 text-[10px] text-zinc-600">
           <span>{props.archived ? "Archived channel" : "Shared channel timeline"}</span>
           <span
             className={`inline-flex items-center gap-1.5 ${connectionLive ? "text-zinc-500" : "text-amber-700"}`}
@@ -415,7 +408,7 @@ export function ChannelTimeline(props: {
             return (
               <div
                 key={item.key}
-                className="mx-auto flex w-fit items-center gap-2 rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-[11px] text-zinc-500 shadow-sm"
+                className="mx-auto flex w-fit items-center gap-2 rounded-full border border-white/10 bg-[#292929] px-3 py-1.5 text-[11px] text-zinc-500"
                 role="status"
               >
                 <span className="grid h-4 w-4 place-items-center rounded-full bg-emerald-100 text-[10px] font-semibold text-emerald-700">

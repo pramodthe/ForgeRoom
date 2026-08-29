@@ -14,10 +14,14 @@ export function WorkspaceLayout() {
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <div className="forgeroom-shell flex h-full min-h-0 bg-[#1b1b1b] text-zinc-100 lg:flex-row">
       <SkipLink />
       <AppHeader workspaceId={workspaceId} />
-      <main id="main-content" className="flex min-h-0 flex-1 flex-col" tabIndex={-1}>
+      <main
+        id="main-content"
+        className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
+        tabIndex={-1}
+      >
         <Outlet />
       </main>
     </div>

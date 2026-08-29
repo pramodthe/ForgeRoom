@@ -117,7 +117,7 @@ export function ChannelTimelinePane({
   }
 
   return (
-    <section className="flex h-full min-w-0 flex-1 flex-col bg-white" key={channel.id}>
+    <section className="flex h-full min-w-0 flex-1 flex-col bg-[#222222]" key={channel.id}>
       <ChannelHeader
         workspaceId={workspaceId}
         channelName={channel.name}
@@ -151,7 +151,7 @@ export function ChannelTimelinePane({
       />
       {launchError ? (
         <div
-          className="border-t border-red-200 bg-red-50 px-4 py-2 text-sm text-red-800"
+          className="border-t border-red-500/20 bg-red-500/10 px-4 py-2 text-sm text-red-300"
           role="alert"
         >
           {launchError}

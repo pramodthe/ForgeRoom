@@ -53,26 +53,33 @@ export function ChannelHeader({
   const connectionsHealthy = connections.length > 0 && activeConnections === connections.length;
 
   return (
-    <header className="border-b border-zinc-200 bg-white px-5 py-3.5">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            <h1 className="text-lg font-semibold tracking-tight text-zinc-950"># {channelName}</h1>
-            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-700">
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-              Live
-            </span>
+    <header className="shrink-0 border-b border-[#343434] bg-[#222222]">
+      <div className="flex h-14 items-center justify-between gap-4 px-5">
+        <div className="flex min-w-0 items-center gap-3">
+          <span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-emerald-400/15 text-xs font-semibold text-emerald-300">
+            #
+          </span>
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <h1 className="truncate text-sm font-semibold tracking-tight text-zinc-100">
+                # {channelName}
+              </h1>
+              <span className="inline-flex items-center gap-1 text-[10px] font-medium text-emerald-400">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+                Live
+              </span>
+            </div>
+            <p className="mt-0.5 max-w-xl truncate text-[11px] text-zinc-500">{missionBrief}</p>
           </div>
-          <p className="mt-1 max-w-xl truncate text-xs text-zinc-500">{missionBrief}</p>
         </div>
-        <div className="flex items-center gap-2 text-[11px]">
+        <div className="flex shrink-0 items-center gap-2 text-[10px]">
           {attentionCount > 0 ? (
-            <span className="rounded-full bg-amber-50 px-2 py-1 font-medium text-amber-700">
+            <span className="rounded-full bg-amber-400/10 px-2 py-1 font-medium text-amber-300">
               {attentionCount} needs you
             </span>
           ) : null}
           <span
-            className="inline-flex items-center gap-1.5 rounded-full border border-zinc-200 bg-zinc-50 px-2 py-1 text-zinc-600"
+            className="inline-flex items-center gap-1.5 rounded-full border border-[#3c3c3c] bg-[#292929] px-2 py-1 text-zinc-400"
             aria-label="Connector health"
           >
             <span
@@ -82,18 +89,18 @@ export function ChannelHeader({
               ? "Connection status unavailable"
               : `${activeConnections} of ${connections.length} connections healthy`}
           </span>
-          <span
-            className="shrink-0 rounded-full border border-zinc-200 bg-white px-2 py-1 text-zinc-500"
-            aria-label="Service account badge"
-          >
+          <span className="hidden text-zinc-500 xl:inline" aria-label="Service account badge">
             {roster.service_account_label}
+          </span>
+          <span className="text-zinc-600" aria-hidden="true">
+            ···
           </span>
         </div>
       </div>
 
-      <div className="mt-3 flex flex-wrap items-center gap-2.5">
+      <div className="flex min-h-11 flex-wrap items-center gap-2 border-t border-[#2d2d2d] px-5 py-1.5">
         {roster.coworkers.length === 0 ? (
-          <span className="text-sm text-zinc-500">No coworkers in this channel yet.</span>
+          <span className="text-xs text-zinc-500">No coworkers in this room yet.</span>
         ) : (
           roster.coworkers.map((row) => (
             <RosterChip
@@ -106,10 +113,10 @@ export function ChannelHeader({
         )}
 
         {addable.length > 0 ? (
-          <label className="ml-auto inline-flex items-center gap-1 text-sm text-zinc-700">
+          <label className="ml-auto inline-flex items-center gap-1 text-sm text-zinc-300">
             <span className="sr-only">Add coworker to channel</span>
             <select
-              className="rounded-lg border border-zinc-200 bg-white px-2 py-1.5 text-xs shadow-sm disabled:opacity-50"
+              className="rounded-lg border border-[#3c3c3c] bg-[#292929] px-2 py-1.5 text-[11px] text-zinc-300 shadow-sm disabled:opacity-50"
               defaultValue=""
               disabled={membershipControlsDisabled}
               onChange={(event) => {
@@ -136,20 +143,20 @@ export function ChannelHeader({
 
         <Link
           to={workspaceCoworkersPath(workspaceId)}
-          className="rounded-lg bg-zinc-950 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-zinc-800"
+          className="rounded-lg border border-[#3c3c3c] bg-[#292929] px-2.5 py-1.5 text-[11px] font-medium text-zinc-300 hover:bg-[#343434] hover:text-white"
         >
           Manage team
         </Link>
       </div>
 
       {archived ? (
-        <p className="mt-2 text-sm text-amber-800" role="status">
+        <p className="px-5 pb-2 text-xs text-amber-300" role="status">
           Membership changes are disabled while this channel is archived.
         </p>
       ) : null}
 
       {membershipError ? (
-        <p className="mt-2 text-sm text-red-700" role="alert">
+        <p className="px-5 pb-2 text-xs text-red-300" role="alert">
           {membershipError}
         </p>
       ) : null}
@@ -167,23 +174,23 @@ function RosterChip({
   disabled: boolean;
 }) {
   return (
-    <div className="group flex items-center gap-2 rounded-xl border border-zinc-200 bg-zinc-50/70 px-2.5 py-2 text-sm">
+    <div className="group flex items-center gap-2 rounded-lg px-1.5 py-1 text-sm hover:bg-[#2b2b2b]">
       <Avatar name={row.name} tone={row.handle === "analyst" ? "violet" : "blue"} size="sm" />
       <div className="min-w-0 max-w-44">
         <div className="flex items-center gap-1.5">
-          <span className="font-medium text-zinc-900">{row.name}</span>
+          <span className="text-[11px] font-medium text-zinc-200">{row.name}</span>
           <span
             className={`h-1.5 w-1.5 rounded-full ${row.availability === "needs_you" ? "bg-amber-500" : "bg-emerald-500"}`}
           />
-          <span className="text-[10px] text-zinc-500">{AVAILABILITY_LABEL[row.availability]}</span>
+          <span className="text-[9px] text-zinc-500">{AVAILABILITY_LABEL[row.availability]}</span>
         </div>
-        <div className="truncate text-[11px] text-zinc-500">
+        <div className="hidden truncate text-[10px] text-zinc-500 xl:block">
           {row.assignment_summary ?? row.title}
         </div>
       </div>
       <button
         type="button"
-        className="ml-1 hidden h-5 w-5 rounded text-xs text-zinc-400 hover:bg-zinc-200 hover:text-zinc-800 disabled:opacity-50 group-hover:block"
+        className="ml-1 hidden h-5 w-5 rounded text-xs text-zinc-500 hover:bg-[#3a3a3a] hover:text-zinc-100 disabled:opacity-50 group-hover:block"
         aria-label={`Remove ${row.name} from channel`}
         disabled={disabled}
         onClick={onRemove}

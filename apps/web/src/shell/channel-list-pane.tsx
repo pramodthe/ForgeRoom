@@ -23,7 +23,7 @@ export function ChannelListPane({
   return (
     <>
       <nav
-        className="flex shrink-0 gap-2 overflow-x-auto border-b border-zinc-200 bg-zinc-50 p-2 lg:hidden"
+        className="flex shrink-0 gap-2 overflow-x-auto border-b border-[#343434] bg-[#202020] p-2 lg:hidden"
         aria-label="Channel switcher"
       >
         {channels.map((channel) => {
@@ -33,41 +33,50 @@ export function ChannelListPane({
               key={channel.id}
               to={workspaceChannelPath(workspaceId, channel.id)}
               aria-current={selected ? "page" : undefined}
-              className={`shrink-0 rounded-lg px-3 py-2 text-sm ${selected ? "bg-zinc-950 font-medium text-white" : "bg-white text-zinc-700"}`}
+              className={`shrink-0 rounded-lg px-3 py-2 text-sm ${selected ? "bg-violet-500 font-medium text-white" : "bg-[#292929] text-zinc-300"}`}
             >
               # {channel.name}
             </Link>
           );
         })}
       </nav>
-      <aside className="hidden h-full w-60 shrink-0 flex-col border-r border-zinc-200 bg-zinc-50/80 lg:flex">
-        <div className="border-b border-zinc-200 px-3 py-3">
+      <aside className="hidden h-full w-[272px] shrink-0 flex-col border-r border-[#343434] bg-[#202020] lg:flex">
+        <div className="flex h-14 items-center justify-between border-b border-[#343434] px-4">
           <div>
-            <h2 className="text-xs font-semibold text-zinc-800">Channels</h2>
-            <p className="mt-0.5 text-[10px] text-zinc-400">
-              {channels.length} {channels.length === 1 ? "room" : "rooms"}
+            <h2 className="text-sm font-semibold text-zinc-100">Rooms</h2>
+            <p className="mt-0.5 text-[10px] text-zinc-500">
+              {channels.length} active {channels.length === 1 ? "room" : "rooms"}
             </p>
           </div>
+          <span className="text-lg text-zinc-500" aria-hidden="true">
+            ···
+          </span>
         </div>
-        <ul className="flex-1 space-y-1 overflow-y-auto p-2">
+        <ul className="flex-1 space-y-1 overflow-y-auto p-2.5">
           {channels.map((channel) => {
             const selected = channel.id === selectedChannelId;
             return (
               <li key={channel.id}>
                 <Link
                   to={workspaceChannelPath(workspaceId, channel.id)}
-                  className={`group flex items-center gap-2 rounded-xl px-3 py-2.5 text-sm ${
+                  className={`group flex items-center gap-2.5 rounded-lg px-3 py-2.5 text-sm transition ${
                     selected
-                      ? "bg-white font-medium text-zinc-950 shadow-sm ring-1 ring-zinc-200/70"
-                      : "text-zinc-600 hover:bg-white/70 hover:text-zinc-900"
+                      ? "bg-[#303030] font-medium text-white shadow-sm ring-1 ring-white/5"
+                      : "text-zinc-400 hover:bg-[#292929] hover:text-zinc-100"
                   }`}
                   aria-current={selected ? "page" : undefined}
                 >
-                  <span className={`text-zinc-400 ${selected ? "text-zinc-700" : ""}`}>#</span>
+                  <span
+                    className={`grid h-6 w-6 shrink-0 place-items-center rounded-lg text-[11px] font-semibold ${
+                      selected ? "bg-violet-500/20 text-violet-300" : "bg-[#303030] text-zinc-500"
+                    }`}
+                  >
+                    #
+                  </span>
                   <span className="min-w-0 flex-1 truncate">{channel.name}</span>
                   {selected ? (
                     <span
-                      className="h-2 w-2 rounded-full bg-violet-500 ring-2 ring-violet-100"
+                      className="h-1.5 w-1.5 rounded-full bg-violet-400 ring-2 ring-violet-400/10"
                       aria-label="Selected channel"
                     />
                   ) : null}
@@ -76,9 +85,9 @@ export function ChannelListPane({
             );
           })}
         </ul>
-        <div className="border-t border-zinc-200 p-3">
-          <div className="rounded-xl bg-white p-3 shadow-sm ring-1 ring-zinc-200/70">
-            <div className="flex items-center gap-2 text-xs font-medium text-zinc-800">
+        <div className="border-t border-[#343434] p-3">
+          <div className="rounded-xl bg-[#272727] p-3 ring-1 ring-white/5">
+            <div className="flex items-center gap-2 text-xs font-medium text-zinc-200">
               <span
                 className={`h-2 w-2 rounded-full ${systemHealthy ? "bg-emerald-500" : "bg-amber-500"}`}
               />

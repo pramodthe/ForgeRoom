@@ -29,9 +29,14 @@ export function WorkPanelPane(props: { workspaceId: string; channelId: string; c
   const showFixture = isFixtureMode && props.channelId === "ch_general_001";
 
   return (
-    <aside className="hidden h-full w-80 shrink-0 flex-col border-l border-zinc-200 bg-white xl:flex">
-      <div className="border-b border-zinc-200 px-3 py-3">
-        <div className="flex gap-1" role="tablist" aria-label="Work panel" id={tabListId}>
+    <aside className="hidden h-full w-[304px] shrink-0 flex-col border-l border-[#343434] bg-[#202020] xl:flex">
+      <div className="flex h-14 items-center border-b border-[#343434] px-3">
+        <div
+          className="flex w-full gap-1 rounded-xl bg-[#292929] p-1"
+          role="tablist"
+          aria-label="Work panel"
+          id={tabListId}
+        >
           {TABS.map((tab) => (
             <button
               key={tab}
@@ -42,8 +47,8 @@ export function WorkPanelPane(props: { workspaceId: string; channelId: string; c
               aria-selected={activeTab === tab}
               className={`flex-1 rounded-lg px-2 py-1.5 text-xs ${
                 activeTab === tab
-                  ? "bg-white font-medium text-zinc-900 shadow-sm"
-                  : "text-zinc-600 hover:bg-white/70"
+                  ? "bg-[#3a3a3a] font-medium text-zinc-100 shadow-sm"
+                  : "text-zinc-500 hover:bg-[#323232] hover:text-zinc-300"
               }`}
               onClick={() => setActiveTab(tab)}
             >
@@ -53,7 +58,7 @@ export function WorkPanelPane(props: { workspaceId: string; channelId: string; c
         </div>
       </div>
       <div
-        className="flex-1 overflow-y-auto bg-zinc-50/60 p-3 text-sm text-zinc-600"
+        className="flex-1 overflow-y-auto bg-[#202020] p-3 text-sm text-zinc-400"
         role="tabpanel"
         id={tabPanelIds[activeTab]}
         aria-labelledby={`${tabListId}-${activeTab.toLowerCase()}`}
@@ -95,13 +100,13 @@ export function WorkPanelPane(props: { workspaceId: string; channelId: string; c
 function FixtureWorkPanel({ onOpenDemoReceipt }: { onOpenDemoReceipt: () => void }) {
   return (
     <div className="space-y-3">
-      <div className="overflow-hidden rounded-xl border border-violet-200 bg-white shadow-sm">
-        <div className="border-b border-violet-100 bg-violet-50/70 px-4 py-3">
+      <div className="overflow-hidden rounded-xl border border-white/10 bg-[#292929] shadow-sm">
+        <div className="border-b border-white/5 bg-violet-500/10 px-4 py-3">
           <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-emerald-700">
             <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
             Review ready
           </span>
-          <p className="mt-1 font-medium text-zinc-900">Support operations review</p>
+          <p className="mt-1 font-medium text-zinc-100">Support operations review</p>
         </div>
         <div className="px-4 py-3">
           <p className="mt-1 text-xs text-zinc-500">
@@ -110,7 +115,7 @@ function FixtureWorkPanel({ onOpenDemoReceipt }: { onOpenDemoReceipt: () => void
           </p>
           <button
             type="button"
-            className="mt-3 rounded-lg bg-zinc-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-zinc-800"
+            className="mt-3 rounded-lg bg-violet-500 px-3 py-1.5 text-xs font-medium text-white hover:bg-violet-400"
             onClick={onOpenDemoReceipt}
           >
             Inspect run receipt
