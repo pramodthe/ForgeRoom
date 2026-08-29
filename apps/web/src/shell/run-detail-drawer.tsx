@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { Run, RunStep, SkillDraft } from "@forgeroom/contracts";
-import { useRef, useState, useId } from "react";
+import { useEffect, useRef, useState, useId } from "react";
 import { cancelRun, getRun, getRunReceipt } from "../api/channel-resources-api";
 import { apiUrl } from "../api/http-client";
 import { newIdempotencyKey } from "../api/http-client";
@@ -9,10 +9,16 @@ import {
   createSkillDraftFromRun,
   createSkillBinding,
   getCoworker,
+  getSkillDraft,
   listChannelRoster,
   publishFixtureRunSkill,
   publishSkillDraft,
 } from "../api/workspace-api";
+import {
+  clearSkillDraftReview,
+  persistSkillDraftReview,
+  readSkillDraftReview,
+} from "../pages/review-flow-helpers";
 import { useSession } from "../auth/session-context";
 import { Avatar } from "../ui/avatar";
 import { useDialogFocus } from "../ui/use-dialog-focus";
@@ -154,6 +160,25 @@ function LiveRunDetailDrawer({
     (run.steps.length === 0 || run.steps.every((step) => step.state === "completed"));
   const attachCoworkerId =
     run?.steps.find((step) => step.state === "completed")?.assigned_coworker_id ?? null;
+
+  useEffect(() => {
+    if (isFixtureMode || !session) return;
+    const draftId = readSkillDraftReview(runId);
+    if (!draftId) return;
+    void getSkillDraft(workspaceId, draftId)
+      .then((restored) => {
+        if (!restored) {
+          clearSkillDraftReview(runId);
+          return;
+        }
+        setSkillDraft(restored);
+        setSkillReviewOpen(true);
+      })
+      .catch(() => {
+        clearSkillDraftReview(runId);
+      });
+  }, [runId, session, workspaceId]);
+
   const createSkillDraftMutation = useMutation({
     mutationFn: async () => {
       if (!session || !run) {
@@ -178,6 +203,7 @@ function LiveRunDetailDrawer({
     onSuccess: (draft) => {
       setSaveSkillError(null);
       setSkillDraft(draft);
+      persistSkillDraftReview(runId, draft.id);
       setSkillReviewOpen(true);
     },
     onError: (error) => {
@@ -520,11 +546,13 @@ function LiveRunDetailDrawer({
       {skillReviewOpen && skillDraft && attachCoworkerId ? (
         <SaveAsSkillReview
           workspaceId={workspaceId}
+          runId={runId}
           draft={skillDraft}
           coworkerId={attachCoworkerId}
           onClose={() => {
             setSkillReviewOpen(false);
             setSkillDraft(null);
+            clearSkillDraftReview(runId);
           }}
         />
       ) : null}
@@ -799,12 +827,14 @@ function RunDrawerSummary(props: {
 
 function SaveAsSkillReview({
   workspaceId,
+  runId,
   onClose,
   draft,
   coworkerId,
   fixture = false,
 }: {
   workspaceId: string;
+  runId?: string;
   onClose: () => void;
   draft?: SkillDraft;
   coworkerId?: string;
@@ -856,9 +886,12 @@ function SaveAsSkillReview({
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["skill-versions", workspaceId] }),
         queryClient.invalidateQueries({ queryKey: ["skill-drafts", workspaceId] }),
-        queryClient.invalidateQueries({ queryKey: ["coworkers", workspaceId] }),
+        queryClient.invalidateQueries({ queryKey: ["coworker-directory", workspaceId] }),
         queryClient.invalidateQueries({ queryKey: ["coworker", workspaceId, coworkerId ?? ""] }),
       ]);
+      if (runId) {
+        clearSkillDraftReview(runId);
+      }
       setStage("attached");
     } catch (publishError) {
       setError(publishError instanceof Error ? publishError.message : "Unable to publish skill.");
@@ -867,26 +900,10 @@ function SaveAsSkillReview({
   }
 
   const title = draft?.when_to_use ?? "Save support operations plan";
-  const methodSteps = draft?.method ?? [
-    "Read bounded support evidence",
-    "Validate trends and sources",
-    "Create TaskRecord and artifact",
-    "Request approval for external changes",
-    "Return the safe final receipt",
-  ];
-  const requiredTools = draft?.required_tools ?? [
-    "support.read",
-    "sandbox.publish_summary",
-    "TaskRecord.create",
-    "INTERCOM_UPDATE_MACRO",
-  ];
-  const requiredComponents = draft?.required_components ?? [
-    "component_bar_line_chart_v1",
-    "component_data_table_v1",
-    "component_task_card_v1",
-    "component_artifact_card_v1",
-  ];
-  const requiredApprovals = draft?.required_approvals ?? ["external_write"];
+  const methodSteps = draft?.method ?? [];
+  const requiredTools = draft?.required_tools ?? [];
+  const requiredComponents = draft?.required_components ?? [];
+  const requiredApprovals = draft?.required_approvals ?? [];
 
   return (
     <div
