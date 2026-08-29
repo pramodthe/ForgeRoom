@@ -29,16 +29,20 @@ export async function loadSkillRunEvidence(
   }
 
   const eventRows = await sql<
-    { normalized_type: string; normalized_payload_redacted_json: unknown }[]
+    {
+      normalized_type: string;
+      normalized_payload_redacted_json: unknown;
+      run_step_id: string;
+    }[]
   >`
-    SELECT re.normalized_type, re.normalized_payload_redacted_json
+    SELECT re.normalized_type, re.normalized_payload_redacted_json, rs.id AS run_step_id
     FROM run_events AS re
     JOIN agent_turns AS at ON at.id = re.agent_turn_id
     JOIN run_steps AS rs ON rs.id = at.run_step_id
     WHERE rs.run_id = ${input.runId}
-      AND rs.id IN ${sql(input.sourceStepIds)}
     ORDER BY re.first_seen_at ASC, re.id ASC
   `;
+  const selectedStepIds = new Set(input.sourceStepIds);
 
   const approvalRows = await sql<{ tool_name: string; state: string }[]>`
     SELECT tool_name, state
@@ -65,10 +69,12 @@ export async function loadSkillRunEvidence(
       lifecycle: detail.run.lifecycle,
       sourceStepIds: input.sourceStepIds,
       steps: detail.run.steps,
-      events: eventRows.map((row) => ({
-        normalizedType: row.normalized_type,
-        payloadRedacted: row.normalized_payload_redacted_json as SafeJsonValue,
-      })),
+      events: eventRows
+        .filter((row) => selectedStepIds.has(row.run_step_id))
+        .map((row) => ({
+          normalizedType: row.normalized_type,
+          payloadRedacted: row.normalized_payload_redacted_json as SafeJsonValue,
+        })),
       approvals: approvalRows.map((row) => ({
         toolName: row.tool_name,
         state: row.state,
