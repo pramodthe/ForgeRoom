@@ -5,7 +5,9 @@ import { assertMockFixturesValid, MOCK_WORKSPACE_ID } from "./api/mock-fixtures"
 import { fixtureModeFor } from "./api/mode";
 import {
   createFixtureResearcher,
+  createTask,
   disableCoworker,
+  getTask,
   getCoworker,
   getFixtureApprovalDecision,
   getSkillVersion,
@@ -194,6 +196,28 @@ describe("mock fixtures", () => {
         status: "done",
       }),
     ).rejects.toThrow("task_transition_not_allowed:todo->done");
+  });
+
+  it("creates fixture tasks through the API adapter", async () => {
+    const task = await createTask({
+      workspaceId: MOCK_WORKSPACE_ID,
+      channelId: "ch_general_001",
+      csrfToken: "fixture",
+      command: {
+        schemaVersion: 1,
+        title: "Follow up on support review",
+        description: "Created from the tasks screen.",
+        status: "todo",
+        assignee_type: null,
+        assignee_id: null,
+        source_message_id: null,
+        source_run_id: null,
+        due_at: null,
+        idempotency_key: "task_create_fixture",
+      },
+    });
+    expect(task.title).toBe("Follow up on support review");
+    expect((await getTask(MOCK_WORKSPACE_ID, task.id))?.current_revision).toBe(1);
   });
 
   it("persists fixture approval decisions through the API adapter", async () => {

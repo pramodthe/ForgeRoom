@@ -16,6 +16,7 @@ import {
 } from "../api/workspace-api";
 import {
   clearSkillDraftReview,
+  friendlyApiError,
   persistSkillDraftReview,
   readSkillDraftReview,
 } from "../pages/review-flow-helpers";
@@ -894,16 +895,20 @@ function SaveAsSkillReview({
       }
       setStage("attached");
     } catch (publishError) {
-      setError(publishError instanceof Error ? publishError.message : "Unable to publish skill.");
+      setError(friendlyApiError(publishError));
       setStage("review");
     }
   }
 
-  const title = draft?.when_to_use ?? "Save support operations plan";
+  const title = draft?.when_to_use ?? (fixture ? "Save support operations plan" : "Skill draft");
   const methodSteps = draft?.method ?? [];
   const requiredTools = draft?.required_tools ?? [];
   const requiredComponents = draft?.required_components ?? [];
   const requiredApprovals = draft?.required_approvals ?? [];
+  const inputs = draft?.inputs ?? [];
+  const packageDiff = draft
+    ? `Creates private immutable skill revision ${draft.revision}. Requires ${requiredTools.length} tool${requiredTools.length === 1 ? "" : "s"}, ${requiredComponents.length} component${requiredComponents.length === 1 ? "" : "s"}, and ${requiredApprovals.length} approval boundar${requiredApprovals.length === 1 ? "y" : "ies"}. Attaches only to the completed-step coworker.`
+    : "Creates private immutable skill version 1 and attaches it only to the completed-step coworker.";
 
   return (
     <div
@@ -921,7 +926,8 @@ function SaveAsSkillReview({
         <header className="flex items-start justify-between border-b border-zinc-100 px-6 py-5">
           <div>
             <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-violet-700">
-              Trusted skill review · draft revision 1
+              Trusted skill review
+              {draft ? ` · draft revision ${draft.revision}` : fixture ? " · fixture" : ""}
             </div>
             <h2 id="skill-review-title" className="mt-1 text-xl font-semibold text-zinc-950">
               {title}
@@ -942,41 +948,40 @@ function SaveAsSkillReview({
               <ReviewBlock
                 title="When to use"
                 body={
-                  draft?.when_to_use ??
-                  "After a support review when sourced evidence should become an accountable operating plan."
+                  draft?.when_to_use ?? "Review the draft when to use guidance before publishing."
                 }
               />
               <ReviewBlock
                 title="Inputs"
-                body={(
-                  draft?.inputs ?? ["Date range", "support dataset artifact", "operating objective"]
-                ).join(" · ")}
+                body={
+                  inputs.length > 0
+                    ? inputs.join(" · ")
+                    : "Inputs are captured in the draft manifest."
+                }
               />
               <ReviewBlock
                 title="Output"
-                body={
-                  draft?.output ??
-                  "Chart, TaskRecord, PDF brief, and approval-ready external change."
-                }
+                body={draft?.output ?? "Output is defined in the draft manifest."}
               />
               <ReviewBlock
                 title="Validation"
-                body={
-                  draft?.validation ??
-                  "Every claim cites the source revision; task and artifact must persist before completion."
-                }
+                body={draft?.validation ?? "Validation rules are defined in the draft manifest."}
               />
               <ReviewBlock
                 title="No or stale data"
-                body={(
-                  draft?.failures ?? [
-                    "Return a sourced no-change result and ask for a current dataset.",
-                  ]
-                ).join(" · ")}
+                body={
+                  draft?.failures.length
+                    ? draft.failures.join(" · ")
+                    : "Return a sourced no-change result when evidence is missing."
+                }
               />
               <ReviewBlock
                 title="Failure behavior"
-                body="Preserve partial artifacts, name the failed step, and do not retry external writes implicitly."
+                body={
+                  draft?.failures.length
+                    ? draft.failures.join(" · ")
+                    : "Preserve partial artifacts and name the failed step."
+                }
               />
             </div>
             <section className="mt-4 rounded-2xl border border-zinc-200 p-4">
@@ -993,8 +998,14 @@ function SaveAsSkillReview({
               </ol>
             </section>
             <div className="mt-4 grid grid-cols-2 gap-3">
-              <ReviewBlock title="Required tools" body={requiredTools.join(" · ")} />
-              <ReviewBlock title="Required components" body={requiredComponents.join(" · ")} />
+              <ReviewBlock
+                title="Required tools"
+                body={requiredTools.length > 0 ? requiredTools.join(" · ") : "None"}
+              />
+              <ReviewBlock
+                title="Required components"
+                body={requiredComponents.length > 0 ? requiredComponents.join(" · ") : "None"}
+              />
               <ReviewBlock
                 title="Approval boundary"
                 body={
@@ -1007,17 +1018,14 @@ function SaveAsSkillReview({
                 title="Source lineage"
                 body={
                   draft
-                    ? `Run ${draft.source_run_id} · source content hash ${draft.source_content_hash}`
-                    : "Run run_4A91 · Analyst step 1 · Operator step 2 · source content hash locked"
+                    ? `Run ${draft.source_run_id} · manifest hash ${draft.draft_hash}`
+                    : "Source run lineage is unavailable."
                 }
               />
             </div>
             <section className="mt-4 rounded-2xl border border-violet-100 bg-violet-50 p-4">
               <h3 className="text-xs font-semibold text-violet-900">Package diff</h3>
-              <p className="mt-1 text-xs leading-5 text-violet-800">
-                Creates private immutable skill version 1 and attaches it only to Operator. No
-                tools, channels, accounts, components, or approval exemptions are added.
-              </p>
+              <p className="mt-1 text-xs leading-5 text-violet-800">{packageDiff}</p>
             </section>
             <div className="mt-5 flex items-center justify-between">
               <p className="max-w-md text-xs leading-5 text-zinc-500">

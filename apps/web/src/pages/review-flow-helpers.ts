@@ -49,6 +49,28 @@ export function isStaleTaskRevision(error: unknown): error is ApiError {
   return error instanceof ApiError && error.code === "stale_task_revision";
 }
 
+export function friendlyApiError(error: unknown): string {
+  if (!(error instanceof ApiError)) {
+    return error instanceof Error ? error.message : "Something went wrong.";
+  }
+  switch (error.code) {
+    case "stale_task_revision":
+      return "This task was updated elsewhere. Review the latest revision and try again.";
+    case "stale_coworker_draft":
+      return "The coworker draft changed on the server. Review the updated revision.";
+    case "manifest_mismatch":
+      return "The skill manifest no longer matches the coworker grants. Review requirements before attaching.";
+    case "config_revision_mismatch":
+      return "The coworker changed while attaching the skill. Refresh and try again.";
+    case "coworker_provisioning_failed":
+      return error.message;
+    case "expired_proposal":
+      return "This draft expired. Start a new coworker request.";
+    default:
+      return error.message;
+  }
+}
+
 export function buildFixtureCoworkerDraft(workspaceId: string, _request: string): CoworkerDraft {
   return coworkerDraftSchema.parse({
     schemaVersion: 1,

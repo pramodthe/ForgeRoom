@@ -45,6 +45,7 @@ Run browser component/API fixtures, keyboard/axe checks, 1440 px visual snapshot
 
 ## Work log
 
+- 2026-08-29 — Slice 2: task creation dialog, task conflict retry UX, coworker draft revise flow, provisioning failure state, save-as-skill review from live draft fields and friendly API errors.
 - 2026-08-29 — Slice 1: server-revision-driven coworker builder review (fixture draft, stale draft recovery, session restore), task transition stale-revision retry, save-as-skill draft refresh recovery, ApiError details parsing. Full axe/E2E still pending (P0-407/P0-504).
 - 2026-08-27 — PR #36 added a fixture-driven parallel frontend prototype for the coworker, Task and Save-as-skill review surfaces. This is visual and interaction progress only: the task remains blocked and unchecked until the server-backed revisions, authorized mutations, refresh recovery and complete P0 E2E evidence satisfy the acceptance criteria above.
 - 2026-08-27 — The prototype review pass now enforces the shared Task transition state machine, persists fixture approval decisions across refresh without claiming runtime resume, atomically commits fixture storage before in-memory state and labels unavailable channel creation honestly. Verified with repository lint, typecheck, all test suites, production builds and headed Playwright interaction checks. These checks harden the prototype but do not unblock or complete P0-410.

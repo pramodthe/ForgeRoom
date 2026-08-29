@@ -1,19 +1,23 @@
-import { Link, useParams } from "@tanstack/react-router";
+import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { LoadingState, RouteErrorState } from "@forgeroom/ui-components";
 import type { TaskRecordV1, TaskStatus } from "@forgeroom/contracts";
 import { TASK_TRANSITIONS } from "@forgeroom/domain/transitions";
-import { useState, type ReactNode } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import {
+  createTask,
   getTask,
   listChannels,
   listCoworkers,
   listTasks,
   updateFixtureTaskStatus,
 } from "../api/workspace-api";
+import { newIdempotencyKey } from "../api/http-client";
 import { workspaceTaskDetailPath, workspaceTasksPath } from "../routes/paths";
 import { Avatar } from "../ui/avatar";
 import { useSession } from "../auth/session-context";
+import { useDialogFocus } from "../ui/use-dialog-focus";
+import { friendlyApiError, isStaleTaskRevision } from "./review-flow-helpers";
 
 const STATUS_STYLE: Record<TaskRecordV1["status"], string> = {
   todo: "bg-zinc-100 text-zinc-700",
@@ -25,20 +29,60 @@ const STATUS_STYLE: Record<TaskRecordV1["status"], string> = {
 };
 
 export function TasksPage() {
+  const navigate = useNavigate();
   const { workspaceId } = useParams({ from: "/w/$workspaceId/tasks" });
+  const queryClient = useQueryClient();
+  const { session } = useSession();
   const [filter, setFilter] = useState<"All" | "Open" | "Mine">("All");
   const [sort, setSort] = useState<"updated" | "due">("updated");
+  const [createOpen, setCreateOpen] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
   const tasksQuery = useQuery({
     queryKey: ["tasks", workspaceId],
     queryFn: () => listTasks(workspaceId),
+  });
+  const channelsQuery = useQuery({
+    queryKey: ["channels", workspaceId],
+    queryFn: () => listChannels(workspaceId),
   });
   const coworkersQuery = useQuery({
     queryKey: ["coworkers", workspaceId],
     queryFn: () => listCoworkers(workspaceId),
   });
-  if (tasksQuery.isLoading || coworkersQuery.isLoading)
+  const createMutation = useMutation({
+    mutationFn: async (input: { channelId: string; title: string; description: string }) => {
+      if (!session) throw new Error("Your session expired. Sign in again.");
+      return createTask({
+        workspaceId,
+        channelId: input.channelId,
+        csrfToken: session.csrf_token,
+        command: {
+          schemaVersion: 1,
+          title: input.title,
+          description: input.description || null,
+          status: "todo",
+          assignee_type: null,
+          assignee_id: null,
+          source_message_id: null,
+          source_run_id: null,
+          due_at: null,
+          idempotency_key: newIdempotencyKey("task_create"),
+        },
+      });
+    },
+    onSuccess: async (task) => {
+      setCreateError(null);
+      setCreateOpen(false);
+      await queryClient.invalidateQueries({ queryKey: ["tasks", workspaceId] });
+      await navigate({ to: workspaceTaskDetailPath(workspaceId, task.id) });
+    },
+    onError: (error) => {
+      setCreateError(friendlyApiError(error));
+    },
+  });
+  if (tasksQuery.isLoading || coworkersQuery.isLoading || channelsQuery.isLoading)
     return <LoadingState title="Loading tasks…" />;
-  if (tasksQuery.error || coworkersQuery.error)
+  if (tasksQuery.error || coworkersQuery.error || channelsQuery.error)
     return <RouteErrorState title="Unable to load tasks" />;
   const tasks = tasksQuery.data ?? [];
   const coworkers = new Map((coworkersQuery.data ?? []).map((coworker) => [coworker.id, coworker]));
@@ -74,11 +118,13 @@ export function TasksPage() {
           </div>
           <button
             type="button"
-            disabled
-            title="Task creation API is not connected yet"
-            className="rounded-xl bg-zinc-300 px-4 py-2.5 text-sm font-semibold text-white shadow-sm disabled:cursor-not-allowed"
+            onClick={() => {
+              setCreateError(null);
+              setCreateOpen(true);
+            }}
+            className="rounded-xl bg-zinc-950 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-zinc-800"
           >
-            Task creation pending
+            + New task
           </button>
         </div>
         <div className="mt-6 grid grid-cols-3 gap-3">
@@ -147,7 +193,113 @@ export function TasksPage() {
           </div>
         </section>
       </div>
+      {createOpen ? (
+        <TaskCreateDialog
+          channels={channelsQuery.data ?? []}
+          pending={createMutation.isPending}
+          error={createError}
+          onClose={() => setCreateOpen(false)}
+          onCreate={(input) => createMutation.mutate(input)}
+        />
+      ) : null}
     </main>
+  );
+}
+
+function TaskCreateDialog({
+  channels,
+  pending,
+  error,
+  onClose,
+  onCreate,
+}: {
+  channels: Awaited<ReturnType<typeof listChannels>>;
+  pending: boolean;
+  error: string | null;
+  onClose: () => void;
+  onCreate: (input: { channelId: string; title: string; description: string }) => void;
+}) {
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useDialogFocus(dialogRef, onClose);
+  const [channelId, setChannelId] = useState(channels[0]?.id ?? "");
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-950/45 p-6 backdrop-blur-sm"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="task-create-title"
+    >
+      <div
+        ref={dialogRef}
+        tabIndex={-1}
+        className="w-full max-w-lg rounded-3xl bg-white p-6 shadow-2xl"
+      >
+        <h2 id="task-create-title" className="text-lg font-semibold text-zinc-950">
+          Create task
+        </h2>
+        <p className="mt-1 text-sm text-zinc-500">
+          Authoritative workspace record with revision tracking.
+        </p>
+        <label className="mt-5 block text-xs text-zinc-500">
+          Channel
+          <select
+            value={channelId}
+            onChange={(event) => setChannelId(event.target.value)}
+            className="mt-1.5 w-full rounded-xl border border-zinc-200 px-3 py-2.5 text-sm text-zinc-800"
+          >
+            {channels.map((channel) => (
+              <option key={channel.id} value={channel.id}>
+                {channel.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="mt-3 block text-xs text-zinc-500">
+          Title
+          <input
+            data-autofocus
+            value={title}
+            onChange={(event) => setTitle(event.target.value)}
+            className="mt-1.5 w-full rounded-xl border border-zinc-200 px-3 py-2.5 text-sm text-zinc-800"
+          />
+        </label>
+        <label className="mt-3 block text-xs text-zinc-500">
+          Description
+          <textarea
+            value={description}
+            onChange={(event) => setDescription(event.target.value)}
+            rows={3}
+            className="mt-1.5 w-full rounded-xl border border-zinc-200 p-3 text-sm text-zinc-800"
+          />
+        </label>
+        {error ? (
+          <p className="mt-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-800" role="alert">
+            {error}
+          </p>
+        ) : null}
+        <div className="mt-5 flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg px-3 py-2 text-sm text-zinc-600"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            disabled={pending || !title.trim() || !channelId}
+            onClick={() =>
+              onCreate({ channelId, title: title.trim(), description: description.trim() })
+            }
+            className="rounded-lg bg-zinc-950 px-4 py-2 text-sm font-semibold text-white disabled:bg-zinc-300"
+          >
+            {pending ? "Creating…" : "Create task"}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -374,6 +526,8 @@ export function TaskDetailPage() {
 function TaskTransitionPanel({ workspaceId, task }: { workspaceId: string; task: TaskRecordV1 }) {
   const { session } = useSession();
   const queryClient = useQueryClient();
+  const [conflictNotice, setConflictNotice] = useState<string | null>(null);
+  const [pendingStatus, setPendingStatus] = useState<TaskStatus | null>(null);
   const mutation = useMutation({
     mutationFn: (status: TaskStatus) =>
       updateFixtureTaskStatus({
@@ -383,17 +537,49 @@ function TaskTransitionPanel({ workspaceId, task }: { workspaceId: string; task:
         csrfToken: session?.csrf_token,
       }),
     onSuccess: async (updated) => {
+      setConflictNotice(null);
+      setPendingStatus(null);
       queryClient.setQueryData(["task", workspaceId, task.id], updated);
       await queryClient.invalidateQueries({ queryKey: ["tasks", workspaceId] });
+    },
+    onError: async (error, status) => {
+      if (isStaleTaskRevision(error)) {
+        const latest = await getTask(workspaceId, task.id);
+        if (latest) {
+          queryClient.setQueryData(["task", workspaceId, task.id], latest);
+          setConflictNotice(
+            `Task updated elsewhere (revision ${latest.current_revision}). Retry your change when ready.`,
+          );
+          setPendingStatus(status);
+          return;
+        }
+      }
+      setConflictNotice(null);
+      setPendingStatus(null);
     },
   });
   const transitions = TASK_TRANSITIONS[task.status];
 
   return (
     <div className="mt-3 space-y-2">
-      {mutation.error ? (
+      {conflictNotice ? (
+        <div className="rounded-lg bg-amber-50 p-3 text-[11px] text-amber-900" role="status">
+          {conflictNotice}
+          {pendingStatus ? (
+            <button
+              type="button"
+              onClick={() => mutation.mutate(pendingStatus)}
+              disabled={mutation.isPending}
+              className="mt-2 block w-full rounded-lg bg-amber-900 px-3 py-2 text-xs font-semibold text-white disabled:bg-amber-300"
+            >
+              Retry {TASK_TRANSITION_LABEL[pendingStatus]}
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+      {mutation.error && !conflictNotice ? (
         <p className="rounded-lg bg-red-50 p-3 text-[11px] text-red-800" role="alert">
-          {mutation.error.message}
+          {friendlyApiError(mutation.error)}
         </p>
       ) : null}
       {transitions.map((status, index) => (

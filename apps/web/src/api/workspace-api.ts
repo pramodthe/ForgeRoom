@@ -13,6 +13,7 @@ import type {
   CoworkerDraft,
   CoworkerDraftConfirmCommand,
   CoworkerDraftCreateCommand,
+  CoworkerDraftReviseCommand,
   CoworkerProfile,
   CoworkerUpdateCommand,
   SkillDraft,
@@ -22,6 +23,7 @@ import type {
   SkillVersion,
   TaskRecordV1,
   TaskStatus,
+  TaskCreateCommand,
   ConnectionListItem,
   ConnectionReconnectCommand,
   ConnectionReconnectResult,
@@ -269,6 +271,26 @@ function persistFixtureTask(task: TaskRecordV1): void {
   fixtureTasks.set(task.id, task);
 }
 
+function getFixtureTaskById(taskId: string): TaskRecordV1 | null {
+  const mock = MOCK_TASKS.find((candidate) => candidate.id === taskId);
+  if (mock) return fixtureTask(mock);
+  const existing = fixtureTasks.get(taskId);
+  if (existing) return existing;
+  const storage = fixtureStorage();
+  if (!storage) return null;
+  const storageKey = `${FIXTURE_TASK_STORAGE_PREFIX}${taskId}`;
+  try {
+    const raw = storage.getItem(storageKey);
+    if (!raw) return null;
+    const stored = taskRecordV1Schema.parse(JSON.parse(raw));
+    fixtureTasks.set(stored.id, stored);
+    return stored;
+  } catch {
+    storage.removeItem(storageKey);
+    return null;
+  }
+}
+
 function storedFixtureRunSkill(): SkillVersion | null {
   if (fixtureRunSkill) return fixtureRunSkill;
   const storage = fixtureStorage();
@@ -453,7 +475,12 @@ export async function removeChannelPin(input: {
 export async function listTasks(workspaceId: string): Promise<TaskRecordV1[]> {
   if (useMockApi) {
     assertWorkspace(workspaceId);
-    return MOCK_TASKS.map((task) => fixtureTask(task));
+    const mockIds = new Set(MOCK_TASKS.map((task) => task.id));
+    const base = MOCK_TASKS.map((task) => fixtureTask(task));
+    const created = [...fixtureTasks.values()].filter(
+      (task) => task.workspace_id === workspaceId && !mockIds.has(task.id),
+    );
+    return [...base, ...created];
   }
   const channels = await listChannels(workspaceId);
   const responses = await Promise.all(
@@ -467,11 +494,52 @@ export async function listTasks(workspaceId: string): Promise<TaskRecordV1[]> {
   return responses.flat();
 }
 
+export async function createTask(input: {
+  workspaceId: string;
+  channelId: string;
+  command: TaskCreateCommand;
+  csrfToken: string;
+}): Promise<TaskRecordV1> {
+  if (useMockApi) {
+    assertWorkspace(input.workspaceId);
+    const now = new Date().toISOString();
+    const task = taskRecordV1Schema.parse({
+      schemaVersion: 1,
+      id: `task_${crypto.randomUUID().replace(/-/g, "").slice(0, 12)}`,
+      workspace_id: input.workspaceId,
+      channel_id: input.channelId,
+      title: input.command.title,
+      description: input.command.description,
+      status: input.command.status,
+      assignee_type: input.command.assignee_type,
+      assignee_id: input.command.assignee_id,
+      source_message_id: input.command.source_message_id,
+      source_run_id: input.command.source_run_id,
+      due_at: input.command.due_at,
+      current_revision: 1,
+      created_by_type: "human",
+      created_by_id: MOCK_SESSION.user.id,
+      created_at: now,
+      updated_at: now,
+    });
+    persistFixtureTask(task);
+    return task;
+  }
+  const body = await apiFetch<{ task: unknown; request_id: string }>(
+    `/api/channels/${encodeURIComponent(input.channelId)}/tasks`,
+    {
+      method: "POST",
+      csrfToken: input.csrfToken,
+      body: JSON.stringify(input.command),
+    },
+  );
+  return taskRecordV1Schema.parse(stripRequestId(body).task);
+}
+
 export async function getTask(workspaceId: string, taskId: string): Promise<TaskRecordV1 | null> {
   if (useMockApi) {
     assertWorkspace(workspaceId);
-    const task = MOCK_TASKS.find((candidate) => candidate.id === taskId);
-    return task ? fixtureTask(task) : null;
+    return getFixtureTaskById(taskId);
   }
   try {
     const body = await apiFetch<{ task: unknown; request_id: string }>(
@@ -658,6 +726,22 @@ export async function createCoworkerDraft(input: {
 export async function getCoworkerDraft(input: { draftId: string }): Promise<CoworkerDraft> {
   const body = await apiFetch<{ draft: unknown; request_id: string }>(
     `/api/coworker-drafts/${encodeURIComponent(input.draftId)}`,
+  );
+  return coworkerDraftSchema.parse(stripRequestId(body).draft);
+}
+
+export async function reviseCoworkerDraft(input: {
+  draftId: string;
+  csrfToken: string;
+  command: CoworkerDraftReviseCommand;
+}): Promise<CoworkerDraft> {
+  const body = await apiFetch<{ draft: unknown; request_id: string }>(
+    `/api/coworker-drafts/${encodeURIComponent(input.draftId)}/revise`,
+    {
+      method: "POST",
+      csrfToken: input.csrfToken,
+      body: JSON.stringify(input.command),
+    },
   );
   return coworkerDraftSchema.parse(stripRequestId(body).draft);
 }
