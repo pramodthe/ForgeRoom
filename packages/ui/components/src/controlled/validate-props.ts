@@ -1,4 +1,5 @@
 import { P0_AGENT_TOOL_COMPONENT_NAMES } from "../index";
+import { MAX_STRING_LENGTH } from "./limits";
 import { PARAMETER_SCHEMAS } from "./schemas";
 
 type P0AgentToolComponentName = (typeof P0_AGENT_TOOL_COMPONENT_NAMES)[number];
@@ -20,7 +21,7 @@ function validateValue(
   const type = schema.type;
   if (type === "string") {
     if (typeof value !== "string") return `${path} must be a string`;
-    if (value.length > 512) return `${path} exceeds max length`;
+    if (value.length > MAX_STRING_LENGTH) return `${path} exceeds max length`;
     if (Array.isArray(schema.enum) && !schema.enum.includes(value)) {
       return `${path} is not an allowed value`;
     }

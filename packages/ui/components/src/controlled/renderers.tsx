@@ -6,7 +6,14 @@ import {
   CONTROLLED_MUTED_TEXT,
   CONTROLLED_SURFACE_CLASS,
 } from "./theme";
-import { MAX_CHART_POINTS, MAX_CHART_SERIES, MAX_TABLE_COLUMNS, MAX_TABLE_ROWS } from "./limits";
+import {
+  MAX_CHART_POINTS,
+  MAX_CHART_SERIES,
+  MAX_FORM_FIELDS,
+  MAX_TABLE_COLUMNS,
+  MAX_TABLE_ROWS,
+} from "./limits";
+import { clampToLimit } from "./presentation-limits";
 
 type ChartProps = {
   title: string;
@@ -19,10 +26,6 @@ type ChartProps = {
   points?: Array<Record<string, string | number>>;
 };
 
-function clampRows<T>(rows: T[], max: number): T[] {
-  return rows.slice(0, max);
-}
-
 export function ControlledDataTable(props: {
   caption: string;
   description?: string | null;
@@ -30,8 +33,8 @@ export function ControlledDataTable(props: {
   columns: Array<{ key: string; label: string; align?: string }>;
   rows?: Array<Record<string, string | number>>;
 }) {
-  const columns = clampRows(props.columns, MAX_TABLE_COLUMNS);
-  const rows = clampRows(props.rows ?? [], MAX_TABLE_ROWS);
+  const columns = clampToLimit(props.columns, MAX_TABLE_COLUMNS);
+  const rows = clampToLimit(props.rows ?? [], MAX_TABLE_ROWS);
   const [query, setQuery] = useState("");
   const [descending, setDescending] = useState(true);
   const sortKey = columns[0]?.key;
@@ -117,8 +120,8 @@ export function ControlledDataTable(props: {
 
 export function ControlledBarOrLineChart(props: ChartProps) {
   const [view, setView] = useState<"chart" | "table">("chart");
-  const series = clampRows(props.series, MAX_CHART_SERIES);
-  const points = clampRows(props.points ?? [], MAX_CHART_POINTS);
+  const series = clampToLimit(props.series, MAX_CHART_SERIES);
+  const points = clampToLimit(props.points ?? [], MAX_CHART_POINTS);
   const maxValue = useMemo(() => {
     let max = 1;
     for (const point of points) {
@@ -368,7 +371,7 @@ export function ControlledChoiceForm(props: {
   submitting?: boolean;
 }) {
   const [values, setValues] = useState<Record<string, unknown>>({});
-  const fields = clampRows(props.fields, 12);
+  const fields = clampToLimit(props.fields, MAX_FORM_FIELDS);
 
   return (
     <form

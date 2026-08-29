@@ -7,6 +7,28 @@ import {
 import { buildCoworkerDraftProposalFromRequest } from "./builder";
 import { hashCoworkerDraftBody, resolveCoworkerDraft } from "./resolver";
 
+/** In-process OD-012 Research draft exactDiff expectations (provider-fixtures candidate). */
+const OD012_RESEARCH_EXACT_DIFF = {
+  grants: [
+    {
+      directToolSlug: RESEARCH_READ_TOOL_SLUG,
+      role: "read",
+      riskClass: "read",
+    },
+  ],
+  mustIncludeDenials: [
+    "write_tools",
+    "destructive_tools",
+    "new_account_connection",
+    "native_subagents",
+    "knowledge_memory_workflow_unsupported_in_p0",
+  ],
+  denialExamples: {
+    write_tools: ["GITHUB_ADD_LABELS_TO_AN_ISSUE"],
+    destructive_tools: ["GITHUB_REMOVE_A_LABEL_FROM_AN_ISSUE"],
+  },
+} as const;
+
 describe("coworker draft builder", () => {
   it("maps the golden research prompt to a read-only proposal request", () => {
     const proposal = buildCoworkerDraftProposalFromRequest({ request: GOLDEN_RESEARCH_PROMPT });
@@ -54,6 +76,38 @@ describe("coworker draft resolver", () => {
         entry.includes("knowledge_memory_workflow_unsupported_in_p0"),
       ),
     ).toBe(true);
+  });
+
+  it("locks OD-012 Research exactDiff grant slug and denial codes/examples", () => {
+    const untrusted = buildCoworkerDraftProposalFromRequest({ request: GOLDEN_RESEARCH_PROMPT });
+    const resolved = resolveCoworkerDraft({
+      proposal: untrusted,
+      workspaceId: "workspace_1",
+      assignableChannelIds: ["ch_general"],
+      existingHandles: [],
+    });
+    const { grants, mustIncludeDenials, denialExamples } = OD012_RESEARCH_EXACT_DIFF;
+
+    expect(grants).toHaveLength(1);
+    expect(grants[0]?.role).toBe("read");
+    expect(grants[0]?.riskClass).toBe("read");
+    expect(resolved.proposal.tool_grants).toEqual(grants.map((grant) => grant.directToolSlug));
+    expect(resolved.effectivePreview.tools).toEqual(grants.map((grant) => grant.directToolSlug));
+    expect(untrusted.approvalIntent).toBe("read_only");
+    expect(resolved.effectivePreview.native_subagents_enabled).toBe(false);
+
+    for (const code of mustIncludeDenials) {
+      expect(resolved.effectivePreview.denials.some((entry) => entry.includes(code))).toBe(true);
+    }
+    for (const [code, examples] of Object.entries(denialExamples)) {
+      const matching = resolved.effectivePreview.denials.filter((entry) => entry.includes(code));
+      expect(matching.length).toBeGreaterThan(0);
+      for (const example of examples) {
+        expect(resolved.effectivePreview.denials.some((entry) => entry.includes(example))).toBe(
+          true,
+        );
+      }
+    }
   });
 
   it("hashes draft bodies deterministically", () => {
