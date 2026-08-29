@@ -31,6 +31,8 @@ import {
   UI_INTERACTION_TRANSITIONS,
   type UiComponentInterruptState,
   type UiInteractionState,
+  transitionUiComponentInterrupt,
+  transitionUiInteraction,
 } from "./transitions";
 
 function assertClosedGraph<T extends string>(
@@ -150,6 +152,8 @@ describe("domain transition guards (P0-501)", () => {
     expect(canTransitionUiComponentInterrupt("waiting", "resolved")).toBe(true);
     expect(canTransitionUiComponentInterrupt("waiting", "stale")).toBe(true);
     expect(canTransitionUiComponentInterrupt("resolved", "continued")).toBe(true);
+    expect(transitionUiComponentInterrupt("waiting", "stale")).toBe("stale");
+    expect(() => transitionUiComponentInterrupt("stale", "waiting")).toThrow();
   });
 
   it("allows stale only from nonterminal controlled UI interactions", () => {
@@ -161,5 +165,7 @@ describe("domain transition guards (P0-501)", () => {
     expect(canTransitionUiInteraction("prepared", "stale")).toBe(true);
     expect(canTransitionUiInteraction("token_issued", "stale")).toBe(true);
     expect(canTransitionUiInteraction("dispatching", "stale")).toBe(true);
+    expect(transitionUiInteraction("token_issued", "stale")).toBe("stale");
+    expect(() => transitionUiInteraction("succeeded", "stale")).toThrow();
   });
 });

@@ -1,6 +1,6 @@
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
 import type postgres from "postgres";
-import { canonicalizeJson, canTransitionUiInteraction } from "@forgeroom/domain";
+import { canonicalizeJson, transitionUiInteraction } from "@forgeroom/domain";
 import type {
   ActionGrant,
   SafeJsonValue,
@@ -1074,12 +1074,10 @@ export async function commitUiInteraction(
       channelStatus: row.channel_status,
     });
     if (cas.status === "stale") {
-      if (!canTransitionUiInteraction("token_issued", "stale")) {
-        throw new Error("UI interaction stale transition is not allowed by the domain lifecycle");
-      }
+      const staleInteractionState = transitionUiInteraction("token_issued", "stale");
       await tx`
         UPDATE ui_interactions
-        SET state = 'stale', consumed_at = ${now},
+        SET state = ${staleInteractionState}, consumed_at = ${now},
             result_redacted_json = ${JSON.stringify({ stateRevision: row.current_state_revision })}::jsonb
         WHERE id = ${row.interaction_id} AND state = 'token_issued'
       `;

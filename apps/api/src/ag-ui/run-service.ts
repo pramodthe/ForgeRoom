@@ -504,6 +504,44 @@ export type AgUiRunBootstrap = {
   trueforgeTurnId: string;
 };
 
+/** Persist a redacted retry marker while keeping artifact failure secondary to approvals. */
+export async function recordAgUiArtifactProjectionFailure(input: {
+  sql: ReturnType<typeof createSql>;
+  bootstrap: AgUiRunBootstrap;
+  terminalEventId: string | null;
+}): Promise<void> {
+  const eventId = input.terminalEventId ?? `${input.bootstrap.trueforgeTurnId}:turn.done`;
+  console.error("AG-UI sandbox artifact projection failed", {
+    agentTurnId: input.bootstrap.agentTurnId,
+    trueforgeTurnId: input.bootstrap.trueforgeTurnId,
+  });
+  try {
+    const ingested = await ingestNormalizedTrueForgeEvent(input.sql, {
+      agentTurnId: input.bootstrap.agentTurnId,
+      expectedTurnStates: ["creating", "streaming", "required_actions", "completed"],
+      event: {
+        trueforgeEventId: `${eventId}:artifact_projection_failed`,
+        normalizedType: "artifact.publication_failed",
+        threadId: input.bootstrap.threadId,
+        sequenceNumber: null,
+        payloadRedacted: {
+          reason: "artifact_projection_failed",
+          retryable: true,
+        },
+      },
+    });
+    if (!ingested.ok) {
+      console.error("AG-UI artifact failure marker could not be persisted", {
+        agentTurnId: input.bootstrap.agentTurnId,
+      });
+    }
+  } catch {
+    console.error("AG-UI artifact failure marker could not be persisted", {
+      agentTurnId: input.bootstrap.agentTurnId,
+    });
+  }
+}
+
 export type AgUiRunService = {
   getCapabilities(
     session: SessionResponse,
@@ -1175,7 +1213,13 @@ export function createAgUiRunService(options: {
                   rawEvents: rawTrueForgeEvents,
                   trueforgeClient,
                   artifacts,
-                }).catch(() => undefined);
+                }).catch(async () => {
+                  await recordAgUiArtifactProjectionFailure({
+                    sql,
+                    bootstrap,
+                    terminalEventId: readNonEmptyString(raw.id),
+                  });
+                });
               }
             }
             const turnDoneOutcome =

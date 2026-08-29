@@ -43,6 +43,24 @@ describe("P0-312 sandbox artifact discovery", () => {
     ]);
     expect(discovered).toEqual([]);
   });
+
+  it("discovers canonical artifact paths without dropping unknown extensions", () => {
+    const discovered = extractDiscoveredSandboxArtifacts([
+      { type: "sandbox.created", id: "e1", sandbox_id: "sb_abc123" },
+      {
+        type: "model.message",
+        id: "e2",
+        content:
+          "```sandbox_artifacts\n[Report](/home/daytona/report.pdf)\n[Data](/home/daytona/data.json)\n[Bundle](/home/daytona/bundle.zip)\n[Output](/home/daytona/output)\n```",
+      },
+    ]);
+    expect(discovered.map(({ relativePath, mimeType }) => ({ relativePath, mimeType }))).toEqual([
+      { relativePath: "report.pdf", mimeType: "application/pdf" },
+      { relativePath: "data.json", mimeType: "application/json" },
+      { relativePath: "bundle.zip", mimeType: "application/zip" },
+      { relativePath: "output", mimeType: "application/octet-stream" },
+    ]);
+  });
 });
 
 describe("P0-312 sandbox path validation", () => {
@@ -117,6 +135,14 @@ describe("P0-312 safe preview", () => {
       content: Buffer.from('<svg onload="alert(1)"></svg>', "utf8"),
     });
     expect(svg.kind).toBe("unsupported");
+  });
+
+  it("retains download-only formats without attempting an executable preview", async () => {
+    const pdf = await buildArtifactPreview({
+      mimeType: "application/pdf",
+      content: Buffer.from("%PDF-1.7", "utf8"),
+    });
+    expect(pdf).toEqual({ kind: "unsupported", reason: "unsupported_preview_type" });
   });
 
   it("re-encodes raster images through the processor and records alt-text status", async () => {

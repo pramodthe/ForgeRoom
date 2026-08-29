@@ -181,6 +181,16 @@ export function canTransitionUiComponentInterrupt(
   return UI_COMPONENT_INTERRUPT_TRANSITIONS[from]?.includes(to) ?? false;
 }
 
+export function transitionUiComponentInterrupt(
+  from: UiComponentInterruptState,
+  to: UiComponentInterruptState,
+): UiComponentInterruptState {
+  if (!canTransitionUiComponentInterrupt(from, to)) {
+    throw new Error(`Invalid UI component interrupt transition: ${from} -> ${to}`);
+  }
+  return to;
+}
+
 /** Controlled UI interaction edges; every terminal state is closed. */
 export const UI_INTERACTION_TRANSITIONS: Record<UiInteractionState, readonly UiInteractionState[]> =
   {
@@ -198,4 +208,14 @@ export function canTransitionUiInteraction(
   to: UiInteractionState,
 ): boolean {
   return UI_INTERACTION_TRANSITIONS[from]?.includes(to) ?? false;
+}
+
+export function transitionUiInteraction(
+  from: UiInteractionState,
+  to: UiInteractionState,
+): UiInteractionState {
+  if (!canTransitionUiInteraction(from, to)) {
+    throw new Error(`Invalid UI interaction transition: ${from} -> ${to}`);
+  }
+  return to;
 }

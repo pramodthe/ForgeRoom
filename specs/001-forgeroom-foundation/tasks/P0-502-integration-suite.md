@@ -35,6 +35,6 @@ pnpm test:integration
 
 ## Completion evidence
 
-- Local report (2026-08-29): expanded `pnpm test:integration` release runner — 50 files / 269 tests passed with zero skips across DB, API, web reconnect/replay, orchestration, AG-UI, Composio, TrueForge, artifacts and private component MCP. This includes cross-route PauseGroup rejection, provider required-action/artifact capture and encrypted request-changes lifecycle recovery.
+- Local report (2026-08-29): expanded `pnpm test:integration` release runner — 50 files / 272 tests passed with zero skips across DB, API, web reconnect/replay, orchestration, AG-UI, Composio, TrueForge, artifacts and private component MCP. This includes cross-route PauseGroup rejection, provider required-action/artifact capture, durable artifact-failure observability and encrypted request-changes lifecycle recovery.
 - Stability remediation: DB-heavy groups are capped at four workers and the two component-gateway cases that exercise migrated databases use the suite-standard 60-second timeout.
 - Redacted provider trace: still required; local adapter/integration success is not represented as a live provider run.

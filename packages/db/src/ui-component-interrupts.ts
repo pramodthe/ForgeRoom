@@ -1,5 +1,5 @@
 import type postgres from "postgres";
-import { canTransitionUiComponentInterrupt, canTransitionUiInteraction } from "@forgeroom/domain";
+import { transitionUiComponentInterrupt, transitionUiInteraction } from "@forgeroom/domain";
 
 export type SqlClient = postgres.Sql;
 
@@ -12,17 +12,13 @@ export async function staleWaitingUiComponentInterruptsForRunStep(
   sql: SqlClient,
   input: { runStepId: string; now: string; reason: "run_cancelling" | "run_failed" },
 ): Promise<{ staleInterruptIds: string[] }> {
-  if (
-    !canTransitionUiComponentInterrupt("waiting", "stale") ||
-    !canTransitionUiInteraction("token_issued", "stale")
-  ) {
-    throw new Error("Controlled UI stale transition is not allowed by the domain lifecycle");
-  }
+  const staleInterruptState = transitionUiComponentInterrupt("waiting", "stale");
+  const staleInteractionState = transitionUiInteraction("token_issued", "stale");
   const rows = await sql<{ id: string }[]>`
     WITH stale_interrupts AS (
       UPDATE ui_component_interrupts
       SET
-        state = 'stale',
+        state = ${staleInterruptState},
         stale_at = ${input.now}::timestamptz,
         result_redacted_json = jsonb_build_object('reason', ${input.reason}::text)
       WHERE run_step_id = ${input.runStepId}
@@ -36,7 +32,7 @@ export async function staleWaitingUiComponentInterruptsForRunStep(
     ), stale_interactions AS (
       UPDATE ui_interactions
       SET
-        state = 'stale',
+        state = ${staleInteractionState},
         consumed_at = COALESCE(consumed_at, ${input.now}::timestamptz),
         result_redacted_json = jsonb_build_object('reason', ${input.reason}::text)
       WHERE action_grant_id IN (SELECT action_grant_id FROM stale_interrupts)

@@ -116,6 +116,10 @@ export async function buildArtifactPreview(
     };
   }
 
+  if (!mimeType.startsWith("image/")) {
+    return { kind: "unsupported", reason: "unsupported_preview_type" };
+  }
+
   if (!input.imageProcessor) {
     return { kind: "unsupported", reason: "image_processor_unavailable" };
   }

@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   P0_COMPOSIO_DESCRIPTOR_HASHES,
   P0_COMPOSIO_TRUEFORGE_CONNECTOR_NAME,
@@ -9,6 +9,7 @@ import { HASH, seedRuntime, withMigratedDatabase } from "@forgeroom/db/test-harn
 import {
   captureTrueForgeRequiredActions,
   persistAgUiSandboxArtifacts,
+  recordAgUiArtifactProjectionFailure,
   type AgUiRunBootstrap,
 } from "./run-service";
 import { loadRunReceiptSnapshot } from "../runs/receipt";
@@ -366,6 +367,41 @@ describe("AG-UI raw TrueForge required-action capture", () => {
 
       const receipt = await loadRunReceiptSnapshot(sql, "run_1");
       expect(receipt?.artifact_id).toBe(artifactRows[0]?.id);
+    });
+  }, 60_000);
+
+  it("persists a redacted retry marker when artifact projection fails", async () => {
+    await withMigratedDatabase(async (sql) => {
+      await seedRuntime(sql);
+      await sql`
+        UPDATE agent_turns
+        SET trueforge_turn_id = ${bootstrap.trueforgeTurnId}
+        WHERE id = ${bootstrap.agentTurnId}
+      `;
+      const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+      try {
+        await recordAgUiArtifactProjectionFailure({
+          sql,
+          bootstrap,
+          terminalEventId: "evt_done_artifact_failure",
+        });
+      } finally {
+        error.mockRestore();
+      }
+      const events = await sql<
+        Array<{ normalized_type: string; normalized_payload_redacted_json: unknown }>
+      >`
+        SELECT normalized_type, normalized_payload_redacted_json
+        FROM run_events
+        WHERE agent_turn_id = ${bootstrap.agentTurnId}
+          AND normalized_type = 'artifact.publication_failed'
+      `;
+      expect(events).toHaveLength(1);
+      expect(events[0]?.normalized_type).toBe("artifact.publication_failed");
+      expect(JSON.parse(String(events[0]?.normalized_payload_redacted_json))).toEqual({
+        reason: "artifact_projection_failed",
+        retryable: true,
+      });
     });
   }, 60_000);
 });

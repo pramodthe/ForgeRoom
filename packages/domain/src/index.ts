@@ -48,6 +48,8 @@ export {
   canTransitionTask,
   canTransitionUiComponentInterrupt,
   canTransitionUiInteraction,
+  transitionUiComponentInterrupt,
+  transitionUiInteraction,
   ACTION_PROPOSAL_TRANSITIONS,
   AGENT_TURN_RECONCILIATION_TRANSITIONS,
   AGENT_TURN_TRANSITIONS,

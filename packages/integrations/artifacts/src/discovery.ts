@@ -15,15 +15,18 @@ function readString(value: unknown): string | null {
   return typeof value === "string" && value.length > 0 ? value : null;
 }
 
-function mimeTypeForPath(path: string): string | null {
+function mimeTypeForPath(path: string): string {
   const lower = path.toLowerCase();
   if (lower.endsWith(".md") || lower.endsWith(".markdown")) return "text/markdown";
   if (lower.endsWith(".txt") || lower.endsWith(".log")) return "text/plain";
   if (lower.endsWith(".csv")) return "text/csv";
+  if (lower.endsWith(".json")) return "application/json";
+  if (lower.endsWith(".pdf")) return "application/pdf";
+  if (lower.endsWith(".zip")) return "application/zip";
   if (lower.endsWith(".png")) return "image/png";
   if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) return "image/jpeg";
   if (lower.endsWith(".webp")) return "image/webp";
-  return null;
+  return "application/octet-stream";
 }
 
 function parseSandboxArtifactBlock(
@@ -39,14 +42,13 @@ function parseSandboxArtifactBlock(
       const link = line.trim().match(/^\[([^\]\r\n]+)\]\((\/[^)\r\n]+)\)$/u);
       if (!link) continue;
       const validated = validateSandboxArtifactPath(link[2]!);
-      const mimeType = validated.ok ? mimeTypeForPath(validated.normalizedPath) : null;
-      if (!validated.ok || !mimeType) continue;
+      if (!validated.ok) continue;
       discovered.push({
         sandboxId: activeSandboxId,
         sandboxPath: validated.normalizedPath,
         relativePath: validated.relativePath,
         name: link[1]!,
-        mimeType,
+        mimeType: mimeTypeForPath(validated.normalizedPath),
         declaredByteSize: null,
         trueforgeEventId,
         sourceWireType: "model.message",

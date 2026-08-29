@@ -36,12 +36,12 @@ Run happy path, traversal, oversized, bad MIME, active HTML, teardown and unauth
 ## Completion evidence
 
 - Tests/results:
-  - `pnpm --filter @forgeroom/artifacts test` — 13 passed (discovery, path traversal, MIME/size validation, safe preview, HTML/SVG rejection, image processor hook)
-  - `pnpm --filter @forgeroom/orchestration test -- src/artifact-extraction.test.ts` — 4 passed (publish path, sandbox-not-ready, worker command binding, teardown download failure)
+  - `pnpm --filter @forgeroom/artifacts test` — 19 passed (canonical discovery, path traversal, MIME/size validation, download-only formats, safe preview, HTML/SVG rejection, image processor hook)
+  - `pnpm --filter @forgeroom/orchestration test -- src/artifact-extraction.test.ts` — 5 passed (publish path, sandbox-not-ready, worker command binding, teardown download failure)
   - `pnpm --filter @forgeroom/api test -- src/artifacts/artifacts.test.ts` — 3 passed (auth required, metadata+download+preview CSP, cross-workspace forbidden)
   - `pnpm --filter @forgeroom/{artifacts,orchestration,api,contracts,worker} typecheck` — green
 - Sample safe artifact path:
-  - Wire `sandbox.file` / assistant `sandbox_files` → `artifact.discovered` → TrueForge `download-sandbox-file` → validated hash → `artifact.published` + `forgeroom.artifact.v1`
+  - TrueForge `model.message` fenced `sandbox_artifacts` block → `artifact.discovered` → TrueForge `download-sandbox-file` → validated hash → `artifact.published` + `forgeroom.artifact.v1`
   - Preview: `GET /api/artifacts/:id/preview` returns JSON text preview or re-encoded PNG/WebP bytes with `Content-Security-Policy: script-src 'none'`
   - Worker: `publish_sandbox_artifact` command executes idempotent CAS publish via `executePublishSandboxArtifact`
 - Files:
@@ -53,4 +53,4 @@ Run happy path, traversal, oversized, bad MIME, active HTML, teardown and unauth
 
 ## Work log
 
-- 2026-08-27 — Implemented TrueForge sandbox-file discovery, pre-download validation, durable publication orchestration, safe preview endpoint, and worker `publish_sandbox_artifact` wiring. Live TrueForge end-to-end retain probe remains blocked on OpenAI billing (same as P0-311).
+- 2026-08-27 — Implemented TrueForge canonical `sandbox_artifacts` discovery, pre-download validation, durable publication orchestration, safe preview endpoint, and worker `publish_sandbox_artifact` wiring. Live TrueForge end-to-end retain probe remains blocked on OpenAI billing (same as P0-311).
