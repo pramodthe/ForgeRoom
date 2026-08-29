@@ -40,3 +40,9 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm test
       - run: pnpm build
+      - name: Install Playwright Chromium
+        run: pnpm --filter @forgeroom/e2e exec playwright install --with-deps chromium
+      - name: Browser E2E (prototype)
+        run: pnpm test:e2e
+        env:
+          CI: true

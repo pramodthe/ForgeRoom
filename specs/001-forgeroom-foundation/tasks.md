@@ -65,7 +65,7 @@ Each task file is authoritative for its status and evidence. Keep this index and
 | [ ] | [P0-501](./tasks/P0-501-unit-suite.md) | Unit suite completion | blocked | P0-108, P0-109, P0-212, P0-213, P0-303, P0-306, P0-312, P0-314–P0-316, P0-318 |
 | [ ] | [P0-502](./tasks/P0-502-integration-suite.md) | Runtime/integration suite | blocked | P0-109, P0-204, P0-208, P0-212, P0-213, P0-305, P0-309, P0-312, P0-313, P0-315, P0-318 |
 | [ ] | [P0-503](./tasks/P0-503-security-suite.md) | Core security acceptance | blocked | P0-104, P0-109, P0-208, P0-213, P0-303, P0-306–P0-309, P0-311–P0-314, P0-318 |
-| [ ] | [P0-504](./tasks/P0-504-browser-e2e.md) | Complete browser E2E | ready | P0-109, P0-213, P0-305, P0-309, P0-312, P0-313, P0-318, P0-407, P0-408, P0-410 |
+| [ ] | [P0-504](./tasks/P0-504-browser-e2e.md) | Complete browser E2E | in_progress | P0-109, P0-213, P0-305, P0-309, P0-312, P0-313, P0-318, P0-407, P0-408, P0-410 |
 | [ ] | [P0-506](./tasks/P0-506-agui-genui-conformance.md) | AG-UI/controlled-GenUI conformance | blocked | P0-211, P0-212, P0-308, P0-313–P0-316, P0-408 |
 | [ ] | [P0-505](./tasks/P0-505-release-demo.md) | Preflight, docs and demo rehearsal | blocked | P0-313, P0-501–P0-504, P0-506 |
 

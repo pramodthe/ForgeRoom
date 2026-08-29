@@ -16,6 +16,7 @@
     "format": "prettier --write .",
     "typecheck": "pnpm -r --sort --if-present typecheck",
     "test": "pnpm -r --sort --if-present test",
+    "test:e2e": "pnpm --filter @forgeroom/e2e test:e2e",
     "build": "pnpm -r --sort --if-present build",
     "fixtures:seed": "pnpm --filter @forgeroom/test-fixtures seed",
     "fixtures:reset": "pnpm --filter @forgeroom/test-fixtures reset"
