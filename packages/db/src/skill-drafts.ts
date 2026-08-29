@@ -1,10 +1,13 @@
 import type postgres from "postgres";
-import type { SafeJsonValue, SkillDraft } from "@forgeroom/contracts";
-import { skillDraftSchema } from "@forgeroom/contracts";
+import type { SafeJsonValue, SkillDraft, SkillVersion } from "@forgeroom/contracts";
+import { skillDraftSchema, skillVersionSchema } from "@forgeroom/contracts";
 import {
   buildSkillDraft,
   buildSkillDraftMarkdown,
+  buildSkillVersionFromDraft,
   hashSkillMarkdown,
+  publishedSkillMarkdownBlobKey,
+  validateSkillDraftPublish,
   type SkillRunEvidence,
 } from "@forgeroom/domain";
 import { loadRunDetail } from "./run-detail";
@@ -127,6 +130,35 @@ function parseManifestDraft(manifestJson: unknown): SkillDraft | null {
   return parsed.success ? parsed.data : null;
 }
 
+function parseManifestVersion(manifestJson: unknown): SkillVersion | null {
+  const parsed = skillVersionSchema.safeParse(parseManifestJson(manifestJson));
+  return parsed.success ? parsed.data : null;
+}
+
+type SkillVersionRow = {
+  id: string;
+  skill_id: string;
+  workspace_id: string;
+  manifest_json: unknown;
+  state: string;
+  content_hash: string;
+  source_run_id: string | null;
+};
+
+async function loadSkillVersionRow(
+  sql: SqlClient,
+  versionId: string,
+): Promise<SkillVersionRow | null> {
+  const rows = await sql<SkillVersionRow[]>`
+    SELECT sv.id, sv.skill_id, s.workspace_id, sv.manifest_json, sv.state, sv.content_hash, sv.source_run_id
+    FROM skill_versions AS sv
+    JOIN skills AS s ON s.id = sv.skill_id
+    WHERE sv.id = ${versionId}
+    LIMIT 1
+  `;
+  return rows[0] ?? null;
+}
+
 export async function getSkillDraftById(
   sql: SqlClient,
   draftId: string,
@@ -156,6 +188,182 @@ export async function getSkillDraftById(
     return null;
   }
   return { draft, skillId: row.skill_id, workspaceId: row.workspace_id };
+}
+
+export async function getSkillVersionById(
+  sql: SqlClient,
+  versionId: string,
+): Promise<{ version: SkillVersion; skillId: string; workspaceId: string } | null> {
+  const row = await loadSkillVersionRow(sql, versionId);
+  if (!row || row.state !== "published") {
+    return null;
+  }
+  const version = parseManifestVersion(row.manifest_json);
+  if (!version) {
+    return null;
+  }
+  return { version, skillId: row.skill_id, workspaceId: row.workspace_id };
+}
+
+export type PublishSkillDraftInput = {
+  draftId: string;
+  workspaceId: string;
+  channelId: string;
+  publishedBy: string;
+  expectedRevision: number;
+  expectedDraftHash: string;
+  expectedSourceContentHash: string;
+  now: string;
+};
+
+export type PublishSkillDraftResult =
+  | {
+      ok: true;
+      version: SkillVersion;
+      skillId: string;
+      markdown: string;
+      blobKey: string;
+      sourceRunId: string;
+      newlyPublished: boolean;
+    }
+  | {
+      ok: false;
+      code: "not_found" | "revision_mismatch" | "draft_hash_mismatch" | "source_hash_mismatch";
+    };
+
+export async function publishSkillDraftRecord(
+  sql: SqlClient,
+  input: PublishSkillDraftInput,
+): Promise<PublishSkillDraftResult> {
+  const row = await loadSkillVersionRow(sql, input.draftId);
+  if (!row || row.workspace_id !== input.workspaceId) {
+    return { ok: false, code: "not_found" };
+  }
+
+  if (row.state === "published") {
+    const version = parseManifestVersion(row.manifest_json);
+    if (!version) {
+      return { ok: false, code: "not_found" };
+    }
+    return {
+      ok: true,
+      version,
+      skillId: row.skill_id,
+      markdown: "",
+      blobKey: publishedSkillMarkdownBlobKey(row.skill_id, version.version),
+      sourceRunId: version.source_run_id,
+      newlyPublished: false,
+    };
+  }
+
+  if (row.state !== "draft") {
+    return { ok: false, code: "not_found" };
+  }
+
+  const draft = parseManifestDraft(row.manifest_json);
+  if (!draft) {
+    return { ok: false, code: "not_found" };
+  }
+
+  const validationError = validateSkillDraftPublish({
+    draft,
+    expectedRevision: input.expectedRevision,
+    expectedDraftHash: input.expectedDraftHash,
+    expectedSourceContentHash: input.expectedSourceContentHash,
+  });
+  if (validationError === "revision_mismatch") {
+    return { ok: false, code: "revision_mismatch" };
+  }
+  if (validationError === "draft_hash_mismatch") {
+    return { ok: false, code: "draft_hash_mismatch" };
+  }
+  if (validationError === "source_hash_mismatch") {
+    return { ok: false, code: "source_hash_mismatch" };
+  }
+
+  const markdown = buildSkillDraftMarkdown({
+    when_to_use: draft.when_to_use,
+    inputs: draft.inputs,
+    method: draft.method,
+    validation: draft.validation,
+    output: draft.output,
+    failures: draft.failures,
+    required_tools: draft.required_tools,
+    required_components: draft.required_components,
+    required_approvals: draft.required_approvals,
+  });
+  const contentHash = hashSkillMarkdown(markdown);
+  if (contentHash !== row.content_hash) {
+    return { ok: false, code: "draft_hash_mismatch" };
+  }
+
+  const version = buildSkillVersionFromDraft(draft, row.skill_id, contentHash, input.now);
+  const blobKey = publishedSkillMarkdownBlobKey(row.skill_id, version.version);
+  const sourceRunId = draft.source_run_id;
+
+  await sql.begin(async (tx) => {
+    await tx`
+      UPDATE skill_versions
+      SET
+        state = 'published',
+        manifest_json = ${JSON.stringify(version)}::jsonb,
+        manifest_hash = ${version.manifest_hash},
+        skill_markdown_blob_key = ${blobKey},
+        content_hash = ${contentHash},
+        published_at = ${input.now}
+      WHERE id = ${input.draftId}
+        AND state = 'draft'
+    `;
+    await tx`
+      UPDATE skills
+      SET current_version_id = ${input.draftId}, updated_at = ${input.now}
+      WHERE id = ${row.skill_id}
+    `;
+    const channels = await tx<{ next_sequence: number }[]>`
+      SELECT next_sequence
+      FROM channels
+      WHERE id = ${input.channelId}
+      FOR UPDATE
+    `;
+    const sequence = channels[0]?.next_sequence ?? 0;
+    await tx`
+      INSERT INTO channel_events (
+        id, channel_id, sequence, type, actor_type, actor_id, run_id, payload_json, created_at
+      ) VALUES (
+        ${`${input.draftId}_published`},
+        ${input.channelId},
+        ${sequence},
+        'custom',
+        'human',
+        ${input.publishedBy},
+        ${sourceRunId},
+        ${JSON.stringify({
+          event_kind: "skill.version_published",
+          skill_version_id: input.draftId,
+          skill_id: row.skill_id,
+          manifest_hash: version.manifest_hash,
+          content_hash: contentHash,
+          source_run_id: sourceRunId,
+        })}::jsonb,
+        ${input.now}
+      )
+    `;
+    await tx`
+      UPDATE channels
+      SET next_sequence = ${sequence + 1}, updated_at = ${input.now}
+      WHERE id = ${input.channelId}
+    `;
+  });
+
+  return {
+    ok: true,
+    version,
+    skillId: row.skill_id,
+    markdown,
+    blobKey,
+    sourceRunId,
+    newlyPublished: true,
+  };
 }
 
 export type CreateSkillDraftInput = {

@@ -176,6 +176,7 @@ export type {
   SkillBinding,
   SkillDraftCreateCommand,
   SkillDraftReviseCommand,
+  SkillDraftPublishCommand,
 } from "./skills";
 
 export {

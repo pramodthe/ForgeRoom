@@ -21,6 +21,7 @@ import {
   taskUpdateCommandSchema,
   runCancelCommandSchema,
   skillDraftCreateCommandSchema,
+  skillDraftPublishCommandSchema,
 } from "@forgeroom/contracts";
 import { randomOpaqueId } from "../auth/crypto";
 import type { AuthService } from "../auth/service";
@@ -1048,5 +1049,28 @@ export function mountWorkspaceRoutes(
       return fail(c, result.error);
     }
     return okJson(c, { draft: result.value }, 200);
+  });
+
+  app.post("/api/skill-drafts/:draftId/publish", async (c) => {
+    const authed = await requireMutationSession(c, env, auth);
+    if (authed instanceof Response) {
+      return authed;
+    }
+    const draftId = requireParam(c, "draftId");
+    if (draftId instanceof Response) {
+      return draftId;
+    }
+    const parsed = skillDraftPublishCommandSchema.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) {
+      const failure = errorResponse("validation_failed", "Invalid skill draft publish command.", {
+        status: 400,
+      });
+      return c.json(failure.body, failure.status);
+    }
+    const result = await workspace.publishSkillDraft(authed.session, draftId, parsed.data);
+    if (!result.ok) {
+      return fail(c, result.error);
+    }
+    return okJson(c, { version: result.value }, 200);
   });
 }
