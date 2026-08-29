@@ -20,10 +20,10 @@ Coworkers can answer inline with a small, polished, accessible table/chart/task/
 
 - [x] Implement exactly the P0 agent-tool set: DataTable, BarOrLineChart, TaskCard, ArtifactCard and bounded ChoiceForm; privileged HITL renderers are server-only and never offered.
 - [x] Use the pinned official AG-UI client with the application-owned registry/default fallback; optional CopilotKit render hooks are used only if P0-210 enables a coherent graph, without conditional hook ordering or approval bypass.
-- [x] Render preparing, streaming, ready, waiting, refused, stale, incompatible and failed states without raw JSON.
+- [ ] Render preparing, streaming, ready, waiting, refused, stale, incompatible and failed states without raw JSON. *(slice 1: degraded/stale/refused labels; waiting/streaming chrome deferred)*
 - [x] Charts have data-table summaries, artifacts retain authenticated revisions/labels and forms have labels/errors.
 - [x] Enforce row/series/point/byte limits and deterministic theme tokens.
-- [x] Arbitrary URLs, HTML, scripts, prototype keys and unsafe SVG never reach a renderer.
+- [x] Arbitrary URLs, HTML, scripts, prototype keys and unsafe SVG never reach a renderer. *(slice 1: ArtifactCard download hardening)*
 - [x] Complete props validate client-side against the published component schema before render; invalid props fall back inert rather than rendering partially. *(deferred here from P0-315, which owns the server-side half)*
 - [x] Error boundary contains each instance and preserves its text alternative/timeline.
 - [x] Trusted approval/question/connection cards cannot be shadowed or authored by the model.
