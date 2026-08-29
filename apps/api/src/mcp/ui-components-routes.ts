@@ -183,6 +183,15 @@ export function mountUiComponentsMcpRoutes(
           input.workspace,
           context.coworkerId,
           prepared.args,
+          {
+            channelAgentSessionId: context.channelAgentSessionId,
+            generationId: context.generationId,
+            expectedGeneration: context.generation,
+            workspaceId: context.workspaceId,
+            channelId: context.channelId,
+            coworkerId: context.coworkerId,
+            applicationToolName: TASK_RECORD_UPSERT_TOOL_NAME,
+          },
         );
         return {
           content: [{ type: "text", text: JSON.stringify(result) }],

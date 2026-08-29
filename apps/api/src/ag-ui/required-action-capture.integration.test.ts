@@ -78,28 +78,45 @@ async function seedReviewedWriteBinding(sql: Parameters<typeof seedRuntime>[0]):
   `;
 }
 
-function approvalTurnDone(toolName = WRITE_TOOL) {
-  return {
+function approvalWire(toolName = WRITE_TOOL) {
+  const source = {
+    type: "model.message",
+    id: "evt_model_approval",
+    thread_id: bootstrap.threadId,
+    tool_calls: [
+      {
+        id: "tool_call_1",
+        function: {
+          name: toolName,
+          arguments: JSON.stringify({
+            owner: "pramodthe",
+            repo: "ForgeRoom",
+            issue_number: 35,
+            labels: ["provider-e2e"],
+            access_token: SECRET,
+          }),
+        },
+      },
+    ],
+  };
+  const done = {
     type: "turn.done",
     id: "evt_done_approval",
     state: {
       required_actions: [
         {
           type: "tool.approval_required",
-          id: "provider_action_1",
-          tool_call_id: "tool_call_1",
-          tool_name: toolName,
-          arguments: {
-            owner: "pramodthe",
-            repo: "ForgeRoom",
-            issue_number: 35,
-            labels: ["provider-e2e"],
-            access_token: SECRET,
-          },
+          tool_calls: [
+            {
+              id: "tool_call_1",
+              source_event_id: source.id,
+            },
+          ],
         },
       ],
     },
   };
+  return { source, done, rawEvents: [source, done] };
 }
 
 describe("AG-UI raw TrueForge required-action capture", () => {
@@ -108,17 +125,20 @@ describe("AG-UI raw TrueForge required-action capture", () => {
       await seedRuntime(sql);
       await seedReviewedWriteBinding(sql);
 
+      const wire = approvalWire();
       const first = await captureTrueForgeRequiredActions({
         sql,
         bootstrap,
-        raw: approvalTurnDone(),
+        raw: wire.done,
+        rawEvents: wire.rawEvents,
       });
       expect(first).toEqual({ ok: true, inserted: true });
 
       const replay = await captureTrueForgeRequiredActions({
         sql,
         bootstrap,
-        raw: approvalTurnDone(),
+        raw: wire.done,
+        rawEvents: wire.rawEvents,
       });
       expect(replay).toEqual({ ok: true, inserted: false });
 
@@ -187,20 +207,24 @@ describe("AG-UI raw TrueForge required-action capture", () => {
       await seedRuntime(sql);
       await seedReviewedWriteBinding(sql);
 
+      const unknownWire = approvalWire("GITHUB_CREATE_ISSUE");
       const unknown = await captureTrueForgeRequiredActions({
         sql,
         bootstrap,
-        raw: approvalTurnDone("GITHUB_CREATE_ISSUE"),
+        raw: unknownWire.done,
+        rawEvents: unknownWire.rawEvents,
       });
       expect(unknown).toEqual({
         ok: false,
         reason: "unreviewed_approval_tool:GITHUB_CREATE_ISSUE",
       });
 
+      const wire = approvalWire();
       const stale = await captureTrueForgeRequiredActions({
         sql,
         bootstrap: { ...bootstrap, trueforgeSessionId: "tf_sess_replaced" },
-        raw: approvalTurnDone(),
+        raw: wire.done,
+        rawEvents: wire.rawEvents,
       });
       expect(stale).toEqual({
         ok: false,
@@ -242,13 +266,10 @@ describe("AG-UI raw TrueForge required-action capture", () => {
           content: "raw provider response must not persist",
         },
         {
-          type: "sandbox.file",
-          id: "evt_sandbox_file",
-          sandbox_id: "sb_daytona_1",
-          path: "forgeroom-p0-probe-sample.md",
-          name: "forgeroom-p0-probe-sample.md",
-          mime_type: "text/markdown",
-          byte_size: content.byteLength,
+          type: "model.message",
+          id: "evt_sandbox_artifacts",
+          content:
+            "Generated artifact:\n```sandbox_artifacts\n[forgeroom-p0-probe-sample.md](/home/daytona/forgeroom-p0-probe-sample.md)\n```",
         },
       ];
 

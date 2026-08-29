@@ -8,6 +8,7 @@ import {
   buildPreflightReport,
   formatPreflightReport,
   inspectAgUiGraph,
+  isSupportedScryptPasswordHash,
   parseDotEnv,
 } from "./preflight.mjs";
 
@@ -121,6 +122,38 @@ test("marks configured but unreachable local dependencies as not ready", async (
     assert.equal(report.checks.find((item) => item.id === "database")?.ready, false);
     assert.equal(report.checks.find((item) => item.id === "trueforge")?.status, "configured");
     assert.equal(report.checks.find((item) => item.id === "trueforge")?.ready, false);
+  });
+});
+
+test("production auth requires the exact supported scrypt hash structure", async () => {
+  await withTempStorage(async (storageRoot) => {
+    const validHash = `scrypt$16384$8$1$${Buffer.alloc(16).toString("base64url")}$${Buffer.alloc(64).toString("base64url")}`;
+    assert.equal(isSupportedScryptPasswordHash(validHash), true);
+    assert.equal(isSupportedScryptPasswordHash("scrypt$32768$8$1$bad$bad"), false);
+
+    const productionEnv = {
+      ...localEnv(storageRoot),
+      NODE_ENV: "production",
+      OWNER_PASSWORD_HASH: validHash,
+      AUTH_STORE: "postgres",
+    };
+    delete productionEnv.OWNER_PASSWORD;
+    const valid = await buildPreflightReport({
+      root: repoRoot,
+      env: productionEnv,
+      databaseProbe: async () => true,
+      trueForgeProbe: async () => true,
+    });
+    assert.equal(valid.checks.find((item) => item.id === "auth")?.status, "verified");
+
+    const malformed = await buildPreflightReport({
+      root: repoRoot,
+      env: { ...productionEnv, OWNER_PASSWORD_HASH: "scrypt$16384$8$1$bad$bad" },
+      databaseProbe: async () => true,
+      trueForgeProbe: async () => true,
+    });
+    assert.equal(malformed.checks.find((item) => item.id === "auth")?.status, "blocked");
+    assert.equal(malformed.localReady, false);
   });
 });
 

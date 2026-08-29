@@ -1,5 +1,6 @@
 import { createHash, randomBytes } from "node:crypto";
 import type postgres from "postgres";
+import { canTransitionUiComponentInterrupt } from "@forgeroom/domain";
 
 export type SqlClient = postgres.Sql;
 
@@ -256,6 +257,9 @@ async function staleUnresolvedForGeneration(
   stalePauseGroupIds: string[];
   staleInterruptIds: string[];
 }> {
+  if (!canTransitionUiComponentInterrupt("waiting", "stale")) {
+    throw new Error("Component interrupt stale transition is not allowed by the domain lifecycle");
+  }
   const proposals = await tx`
     UPDATE action_proposals
     SET state = 'stale'

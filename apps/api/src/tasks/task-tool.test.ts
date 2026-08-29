@@ -134,7 +134,11 @@ describe("TaskRecord internal tool", () => {
     });
     expect(denied.ok).toBe(false);
 
-    const material = materializeTaskGrantFromOperations(["create", "update_status"]);
+    const material = materializeTaskGrantFromOperations([
+      "create",
+      "update_status",
+      "update_fields",
+    ]);
     await store.replaceActiveTaskGrantsForSubject(
       coworker.id,
       [
@@ -182,5 +186,114 @@ describe("TaskRecord internal tool", () => {
     if (!updated.ok) return;
     expect(updated.value.status).toBe("in_progress");
     expect(updated.value.current_revision).toBe(2);
+
+    const sessionId = "cas_channel_task_tool_ops";
+    const persistGeneration = async (
+      generationId: string,
+      generation: number,
+      applicationToolNames: string[],
+    ) => {
+      const timestamp = `2026-08-27T00:00:0${generation}.000Z`;
+      await store.persistProvisionedSession({
+        logicalSession: {
+          id: sessionId,
+          workspaceId: "workspace_1",
+          channelId: "channel_task_tool",
+          agentProfileId: coworker.id,
+          logicalAguiThreadId: "thread_channel_task_tool_ops",
+          currentGenerationId: generationId,
+          lastDeliveredChannelSequence: 0,
+          state: "active",
+          createdAt: "2026-08-27T00:00:00.000Z",
+          updatedAt: timestamp,
+        },
+        revision: {
+          id: `revision_${generation}`,
+          agentProfileId: coworker.id,
+          sourceConfigRevision: generation,
+          effectiveConfigRedactedJson: {
+            application_tool_names: applicationToolNames,
+          },
+          effectiveSpecHash: `sha256:spec_${generation}`,
+          approvalPolicyHash: `sha256:policy_${generation}`,
+          createdBy: "user_owner",
+          createdAt: timestamp,
+        },
+        generation: {
+          id: generationId,
+          channelAgentSessionId: sessionId,
+          generation,
+          agentVersionId: null,
+          sessionRevisionId: `revision_${generation}`,
+          trueforgeSessionId: `tf_session_${generation}`,
+          effectiveSpecHash: `sha256:spec_${generation}`,
+          approvalPolicyHash: `sha256:policy_${generation}`,
+          activeTurnId: null,
+          state: "ready",
+          createdAt: timestamp,
+          retiredAt: null,
+        },
+      });
+    };
+    const guardFor = (generationId: string, generation: number) => ({
+      channelAgentSessionId: sessionId,
+      generationId,
+      expectedGeneration: generation,
+      workspaceId: "workspace_1",
+      channelId: "channel_task_tool",
+      coworkerId: coworker.id,
+      applicationToolName: TASK_RECORD_UPSERT_TOOL_DESCRIPTOR.name,
+    });
+
+    await persistGeneration("generation_1", 1, [TASK_RECORD_UPSERT_TOOL_DESCRIPTOR.name]);
+    const generationBound = await executeTaskRecordUpsertTool(
+      workspace,
+      coworker.id,
+      {
+        channel_id: "channel_task_tool",
+        task_id: created.value.id,
+        expected_revision: 2,
+        idempotency_key: "update_generation_1",
+        title: "Inspect connector safely",
+      },
+      guardFor("generation_1", 1),
+    );
+    expect(generationBound.ok).toBe(true);
+
+    await persistGeneration("generation_2", 2, [TASK_RECORD_UPSERT_TOOL_DESCRIPTOR.name]);
+    const stale = await executeTaskRecordUpsertTool(
+      workspace,
+      coworker.id,
+      {
+        channel_id: "channel_task_tool",
+        task_id: created.value.id,
+        expected_revision: 3,
+        idempotency_key: "stale_generation_1",
+        title: "Stale mutation",
+      },
+      guardFor("generation_1", 1),
+    );
+    expect(stale).toMatchObject({
+      ok: false,
+      error: { code: "conflict", details: { reason: "stale_generation" } },
+    });
+
+    await persistGeneration("generation_3", 3, []);
+    const revoked = await executeTaskRecordUpsertTool(
+      workspace,
+      coworker.id,
+      {
+        channel_id: "channel_task_tool",
+        task_id: created.value.id,
+        expected_revision: 3,
+        idempotency_key: "revoked_generation_3",
+        title: "Revoked mutation",
+      },
+      guardFor("generation_3", 3),
+    );
+    expect(revoked).toMatchObject({
+      ok: false,
+      error: { code: "conflict", details: { reason: "application_tool_not_offered" } },
+    });
   });
 });

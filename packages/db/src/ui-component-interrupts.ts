@@ -1,4 +1,5 @@
 import type postgres from "postgres";
+import { canTransitionUiComponentInterrupt, canTransitionUiInteraction } from "@forgeroom/domain";
 
 export type SqlClient = postgres.Sql;
 
@@ -11,6 +12,12 @@ export async function staleWaitingUiComponentInterruptsForRunStep(
   sql: SqlClient,
   input: { runStepId: string; now: string; reason: "run_cancelling" | "run_failed" },
 ): Promise<{ staleInterruptIds: string[] }> {
+  if (
+    !canTransitionUiComponentInterrupt("waiting", "stale") ||
+    !canTransitionUiInteraction("token_issued", "stale")
+  ) {
+    throw new Error("Controlled UI stale transition is not allowed by the domain lifecycle");
+  }
   const rows = await sql<{ id: string }[]>`
     WITH stale_interrupts AS (
       UPDATE ui_component_interrupts

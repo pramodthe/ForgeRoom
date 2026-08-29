@@ -7,7 +7,6 @@ import {
 
 const FIXTURE_LINES = `demo-rec-001 → open
 demo-rec-002 → ready`;
-const P0_TRUEFORGE_SANDBOX_FILE_WIRE_TYPE = "sandbox.file" as const;
 
 describe("P0-312 sandbox artifact publication", () => {
   const fixtureContent = Buffer.from(FIXTURE_LINES, "utf8");
@@ -19,7 +18,7 @@ describe("P0-312 sandbox artifact publication", () => {
     mimeType: "text/markdown",
     declaredByteSize: fixtureContent.byteLength,
     trueforgeEventId: "e2",
-    sourceWireType: P0_TRUEFORGE_SANDBOX_FILE_WIRE_TYPE,
+    sourceWireType: "model.message" as const,
   };
 
   const baseInput = {

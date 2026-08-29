@@ -31,6 +31,28 @@ const DIRECT_TOOLS = [
 const APPROVAL_TOOLS = ["GITHUB_ADD_LABELS_TO_AN_ISSUE", "GITHUB_REMOVE_A_LABEL_FROM_AN_ISSUE"];
 const AGENT_COMPONENTS = ["ArtifactCard", "BarOrLineChart", "ChoiceForm", "DataTable", "TaskCard"];
 const SERVER_COMPONENTS = ["ApprovalCard", "ConnectionCard", "RequiredQuestionCard"];
+const SCRYPT_HASH_PATTERN = /^[A-Za-z0-9_-]+$/u;
+
+function isCanonicalBase64Url(value, expectedLength) {
+  if (!SCRYPT_HASH_PATTERN.test(value)) return false;
+  const decoded = Buffer.from(value, "base64url");
+  return decoded.length === expectedLength && decoded.toString("base64url") === value;
+}
+
+/** Structural validation only; preflight never evaluates an owner password. */
+export function isSupportedScryptPasswordHash(encoded) {
+  if (typeof encoded !== "string") return false;
+  const parts = encoded.split("$");
+  return (
+    parts.length === 6 &&
+    parts[0] === "scrypt" &&
+    parts[1] === "16384" &&
+    parts[2] === "8" &&
+    parts[3] === "1" &&
+    isCanonicalBase64Url(parts[4] ?? "", 16) &&
+    isCanonicalBase64Url(parts[5] ?? "", 64)
+  );
+}
 
 function check(id, label, scope, status, ready, detail) {
   return { id, label, scope, status, ready, detail };
@@ -317,9 +339,13 @@ export async function buildPreflightReport(options = {}) {
   const authBypass = env.AUTH_BYPASS === "true";
   const hasLocalCredential =
     valuePresent(env, "OWNER_PASSWORD_HASH") || valuePresent(env, "OWNER_PASSWORD");
+  const passwordHashValid =
+    !valuePresent(env, "OWNER_PASSWORD_HASH") ||
+    isSupportedScryptPasswordHash(env.OWNER_PASSWORD_HASH.trim());
   const authValid =
     !authBypass &&
     hasLocalCredential &&
+    passwordHashValid &&
     (!production ||
       (valuePresent(env, "OWNER_PASSWORD_HASH") &&
         !valuePresent(env, "OWNER_PASSWORD") &&

@@ -106,6 +106,22 @@ export type TaskGrantRecord = {
 export type TaskRecord = TaskRecordV1;
 export type TaskRevisionRecord = TaskRevision;
 
+/**
+ * Generation-scoped authority carried only by the application MCP task tool.
+ * Durable task writers recheck this authority in the same critical section as
+ * the task mutation so a rotation or tool revocation cannot race the route's
+ * initial offer lookup.
+ */
+export type TaskToolGenerationGuard = {
+  channelAgentSessionId: string;
+  generationId: string;
+  expectedGeneration: number;
+  workspaceId: string;
+  channelId: string;
+  coworkerId: string;
+  applicationToolName: string;
+};
+
 export type RunProvenanceRecord = {
   id: string;
   workspaceId: string;
@@ -127,7 +143,13 @@ export type AuditEventRecord = {
 };
 
 export type TaskWriteFailureReason =
-  "not_found" | "conflict" | "channel_archived" | "invalid_provenance" | "invalid_assignee";
+  | "not_found"
+  | "conflict"
+  | "channel_archived"
+  | "invalid_provenance"
+  | "invalid_assignee"
+  | "stale_generation"
+  | "application_tool_not_offered";
 
 export type TaskWriteResult =
   | {
@@ -426,6 +448,7 @@ export type WorkspaceCatalogStore = {
     revision: TaskRevisionRecord;
     event: ChannelEventInsert;
     audit: AuditEventRecord;
+    generationGuard?: TaskToolGenerationGuard;
   }): Promise<TaskWriteResult>;
   updateTaskWithRevision(input: {
     task: TaskRecord;
@@ -433,6 +456,7 @@ export type WorkspaceCatalogStore = {
     expectedRevision: number;
     event: ChannelEventInsert;
     audit: AuditEventRecord;
+    generationGuard?: TaskToolGenerationGuard;
   }): Promise<TaskWriteResult>;
 
   listParticipants(channelId: string): Promise<ParticipantRecord[]>;
@@ -840,6 +864,40 @@ export function createMemoryWorkspaceStore(): WorkspaceCatalogStore {
     return null;
   }
 
+  function validateTaskToolGenerationGuard(
+    task: TaskRecord,
+    guard: TaskToolGenerationGuard | undefined,
+  ): TaskWriteFailureReason | null {
+    if (!guard) return null;
+    const generation = sessionGenerations.get(guard.generationId);
+    const session = generation ? agentSessions.get(generation.channelAgentSessionId) : null;
+    if (
+      !generation ||
+      !session ||
+      generation.channelAgentSessionId !== guard.channelAgentSessionId ||
+      generation.generation !== guard.expectedGeneration ||
+      generation.state !== "ready" ||
+      session.currentGenerationId !== generation.id ||
+      session.state !== "active" ||
+      session.workspaceId !== guard.workspaceId ||
+      session.channelId !== guard.channelId ||
+      session.agentProfileId !== guard.coworkerId ||
+      task.workspace_id !== guard.workspaceId ||
+      task.channel_id !== guard.channelId
+    ) {
+      return "stale_generation";
+    }
+    const revision = sessionRevisions.get(generation.sessionRevisionId);
+    const applicationToolNames = revision?.effectiveConfigRedactedJson.application_tool_names;
+    if (
+      !Array.isArray(applicationToolNames) ||
+      !applicationToolNames.includes(guard.applicationToolName)
+    ) {
+      return "application_tool_not_offered";
+    }
+    return null;
+  }
+
   function appendEventLocked(input: {
     channelId: string;
     event: ChannelEventInsert;
@@ -969,6 +1027,8 @@ export function createMemoryWorkspaceStore(): WorkspaceCatalogStore {
     },
     async insertTaskWithRevision(input) {
       return withChannelLock(input.task.channel_id, () => {
+        const guardFailure = validateTaskToolGenerationGuard(input.task, input.generationGuard);
+        if (guardFailure) return { ok: false, reason: guardFailure };
         if (tasks.has(input.task.id)) return { ok: false, reason: "conflict" };
         const invalid = validateTaskWrite(input.task);
         if (invalid) return { ok: false, reason: invalid };
@@ -986,6 +1046,8 @@ export function createMemoryWorkspaceStore(): WorkspaceCatalogStore {
     },
     async updateTaskWithRevision(input) {
       return withChannelLock(input.task.channel_id, () => {
+        const guardFailure = validateTaskToolGenerationGuard(input.task, input.generationGuard);
+        if (guardFailure) return { ok: false, reason: guardFailure };
         const current = tasks.get(input.task.id);
         if (!current) return { ok: false, reason: "not_found" };
         if (current.current_revision !== input.expectedRevision) {

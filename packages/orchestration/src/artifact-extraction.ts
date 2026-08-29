@@ -109,7 +109,9 @@ function buildDiscoveredEvent(input: {
       sandbox_id: input.discovery.sandboxId,
       name: input.discovery.name,
       mime_type: input.discovery.mimeType,
-      byte_size: input.discovery.declaredByteSize,
+      ...(input.discovery.declaredByteSize === null
+        ? {}
+        : { byte_size: input.discovery.declaredByteSize }),
       source_sandbox_path: input.discovery.relativePath,
     },
   };
@@ -348,7 +350,10 @@ export async function executePublishSandboxArtifactCommand(
       events: [],
     };
   }
-  if (loaded.discovery.declaredByteSize !== command.payload.byte_size) {
+  if (
+    loaded.discovery.declaredByteSize !== null &&
+    loaded.discovery.declaredByteSize !== command.payload.byte_size
+  ) {
     return {
       ok: false,
       kind: "size_mismatch",

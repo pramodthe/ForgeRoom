@@ -1,4 +1,5 @@
 import type { WorkspaceService } from "../workspace/service";
+import type { TaskToolGenerationGuard } from "../workspace/store";
 import { TASK_RECORD_UPSERT_TOOL_NAME } from "./constants";
 import { taskRecordUpsertPolicy } from "./policy";
 import {
@@ -19,6 +20,7 @@ export async function executeTaskRecordUpsertTool(
   workspace: WorkspaceService,
   coworkerId: string,
   rawArgs: unknown,
+  generationGuard?: TaskToolGenerationGuard,
 ) {
   const parsed = taskRecordUpsertToolArgsSchema.safeParse(rawArgs);
   if (!parsed.success) {
@@ -31,5 +33,5 @@ export async function executeTaskRecordUpsertTool(
       },
     };
   }
-  return workspace.executeTaskRecordTool(coworkerId, parsed.data);
+  return workspace.executeTaskRecordTool(coworkerId, parsed.data, generationGuard);
 }

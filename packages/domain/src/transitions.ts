@@ -8,6 +8,10 @@ import type {
   TaskStatus,
 } from "@forgeroom/contracts";
 
+export type UiComponentInterruptState = "waiting" | "resolved" | "continued" | "stale";
+export type UiInteractionState =
+  "prepared" | "token_issued" | "dispatching" | "succeeded" | "failed" | "denied" | "stale";
+
 export const TASK_TRANSITIONS: Record<TaskStatus, readonly TaskStatus[]> = {
   todo: ["in_progress", "blocked", "cancelled"],
   in_progress: ["blocked", "in_review", "done", "cancelled"],
@@ -157,4 +161,41 @@ export function canTransitionActionProposal(
   to: ActionProposalState,
 ): boolean {
   return ACTION_PROPOSAL_TRANSITIONS[from]?.includes(to) ?? false;
+}
+
+/** Controlled-component interrupt edges enforced by the persistence gateway. */
+export const UI_COMPONENT_INTERRUPT_TRANSITIONS: Record<
+  UiComponentInterruptState,
+  readonly UiComponentInterruptState[]
+> = {
+  waiting: ["resolved", "stale"],
+  resolved: ["continued"],
+  continued: [],
+  stale: [],
+};
+
+export function canTransitionUiComponentInterrupt(
+  from: UiComponentInterruptState,
+  to: UiComponentInterruptState,
+): boolean {
+  return UI_COMPONENT_INTERRUPT_TRANSITIONS[from]?.includes(to) ?? false;
+}
+
+/** Controlled UI interaction edges; every terminal state is closed. */
+export const UI_INTERACTION_TRANSITIONS: Record<UiInteractionState, readonly UiInteractionState[]> =
+  {
+    prepared: ["token_issued", "stale"],
+    token_issued: ["dispatching", "succeeded", "failed", "denied", "stale"],
+    dispatching: ["succeeded", "failed", "denied", "stale"],
+    succeeded: [],
+    failed: [],
+    denied: [],
+    stale: [],
+  };
+
+export function canTransitionUiInteraction(
+  from: UiInteractionState,
+  to: UiInteractionState,
+): boolean {
+  return UI_INTERACTION_TRANSITIONS[from]?.includes(to) ?? false;
 }

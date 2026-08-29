@@ -39,7 +39,7 @@ Run reconnect, cancellation race, correction ordering and fail-closed restart te
   - `pnpm --filter @forgeroom/db test -- run-control`
   - Existing SSE Last-Event-ID replay coverage in `apps/api` event-log tests + `dedupeReplayEnvelopes`
   - `pnpm --filter @forgeroom/orchestration test -- watchdog.test.ts` (21 files / 134 tests passed, including six watchdog tests)
-  - `pnpm --filter @forgeroom/worker test -- index.test.ts` (7 tests passed; accepted event usage reaches the application watchdog)
+  - `pnpm --filter @forgeroom/worker test -- index.integration.test.ts` (7 tests passed; accepted event usage reaches the application watchdog)
   - `pnpm --filter @forgeroom/orchestration typecheck`
   - `pnpm --filter @forgeroom/worker typecheck`
 - UI/API trace:

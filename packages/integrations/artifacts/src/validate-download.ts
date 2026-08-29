@@ -61,7 +61,7 @@ export function validateDiscoveredArtifactDownload(input: {
   if (content.byteLength > P0_MAX_ARTIFACT_BYTES) {
     return { ok: false, reason: "size_exceeded" };
   }
-  if (content.byteLength !== discovery.declaredByteSize) {
+  if (discovery.declaredByteSize !== null && content.byteLength !== discovery.declaredByteSize) {
     return { ok: false, reason: "size_mismatch" };
   }
 
@@ -91,10 +91,10 @@ export function validateDiscoveredArtifactMetadata(
   if (!isAllowedArtifactMimeType(discovery.mimeType)) {
     return { ok: false, reason: "mime_not_allowed" };
   }
-  if (discovery.declaredByteSize <= 0) {
+  if (discovery.declaredByteSize !== null && discovery.declaredByteSize <= 0) {
     return { ok: false, reason: "empty_content" };
   }
-  if (discovery.declaredByteSize > P0_MAX_ARTIFACT_BYTES) {
+  if (discovery.declaredByteSize !== null && discovery.declaredByteSize > P0_MAX_ARTIFACT_BYTES) {
     return { ok: false, reason: "size_exceeded" };
   }
   return { ok: true };

@@ -1,6 +1,3 @@
-/** TrueForge wire event announcing a sandbox-produced file ready for extraction (P0-312). */
-export const P0_TRUEFORGE_SANDBOX_FILE_WIRE_TYPE = "sandbox.file" as const;
-
 /** Relative sandbox root for P0 Daytona fixtures (ADR-005). */
 export const P0_SANDBOX_ARTIFACT_ROOT = "/home/daytona/" as const;
 

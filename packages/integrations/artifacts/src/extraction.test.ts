@@ -6,25 +6,17 @@ import {
   validateSandboxArtifactPath,
   buildArtifactPreview,
   P0_MAX_ARTIFACT_BYTES,
-  P0_TRUEFORGE_SANDBOX_FILE_WIRE_TYPE,
 } from "./index";
 
-const FIXTURE_LINES = `demo-rec-001 → open
-demo-rec-002 → ready`;
-
 describe("P0-312 sandbox artifact discovery", () => {
-  it("reads artifact metadata from sandbox.file wire events", () => {
-    const content = Buffer.from(FIXTURE_LINES, "utf8");
+  it("reads canonical fenced sandbox_artifacts links from model.message", () => {
     const wire = [
       { type: "sandbox.created", id: "e1", sandbox_id: "sb_abc123" },
       {
-        type: P0_TRUEFORGE_SANDBOX_FILE_WIRE_TYPE,
+        type: "model.message",
         id: "e2",
-        sandbox_id: "sb_abc123",
-        path: "forgeroom-p0-probe-sample.md",
-        name: "forgeroom-p0-probe-sample.md",
-        mime_type: "text/markdown",
-        byte_size: content.byteLength,
+        content:
+          "Completed.\n```sandbox_artifacts\n[Demo records](/home/daytona/forgeroom-p0-probe-sample.md)\n```",
       },
     ];
     const discovered = extractDiscoveredSandboxArtifacts(wire);
@@ -33,28 +25,23 @@ describe("P0-312 sandbox artifact discovery", () => {
       sandboxId: "sb_abc123",
       relativePath: "forgeroom-p0-probe-sample.md",
       mimeType: "text/markdown",
-      declaredByteSize: content.byteLength,
-      sourceWireType: P0_TRUEFORGE_SANDBOX_FILE_WIRE_TYPE,
+      name: "Demo records",
+      declaredByteSize: null,
+      sourceWireType: "model.message",
     });
   });
 
-  it("reads artifact metadata from assistant.message sandbox_files JSON", () => {
-    const payload = {
-      sandbox_id: "sb_abc123",
-      sandbox_files: [
-        {
-          path: "forgeroom-p0-probe-sample.md",
-          mime_type: "text/markdown",
-          byte_size: 12,
-        },
-      ],
-    };
+  it("rejects invented sandbox.file and sandbox_files JSON shapes", () => {
     const discovered = extractDiscoveredSandboxArtifacts([
       { type: "sandbox.created", id: "e1", sandbox_id: "sb_abc123" },
-      { type: "assistant.message", id: "e2", content: JSON.stringify(payload) },
+      { type: "sandbox.file", id: "e2", path: "/home/daytona/fake.md" },
+      {
+        type: "model.message",
+        id: "e3",
+        content: JSON.stringify({ sandbox_files: [{ path: "/home/daytona/fake.md" }] }),
+      },
     ]);
-    expect(discovered).toHaveLength(1);
-    expect(discovered[0]?.sourceWireType).toBe("assistant.message");
+    expect(discovered).toEqual([]);
   });
 });
 
@@ -76,7 +63,7 @@ describe("P0-312 download validation", () => {
       mimeType: "text/html",
       declaredByteSize: 4,
       trueforgeEventId: "evt_1",
-      sourceWireType: P0_TRUEFORGE_SANDBOX_FILE_WIRE_TYPE,
+      sourceWireType: "model.message",
     } as const;
     expect(validateDiscoveredArtifactMetadata(discovery).ok).toBe(false);
 

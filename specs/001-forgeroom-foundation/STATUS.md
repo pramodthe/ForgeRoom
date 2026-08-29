@@ -59,7 +59,7 @@ Never put credentials in this file.
 
 ## Recently completed
 
-- Release verification/security closeout (2026-08-29): P0-503 done after an independent review found six authorization, encryption, redaction and lifecycle gaps; all were fixed and the post-fix focused review passed 41/41. Final-tree gates passed lint, typecheck, unit suites, 269 integration tests, 438 security tests, three prototype browser runs, isolated live-API browser coverage and production build.
+- Release verification/security closeout (2026-08-29): P0-503 done after an independent review found six authorization, encryption, redaction and lifecycle gaps; all were fixed and the post-fix focused review passed 41/41. Final-tree gates passed lint, typecheck, unit suites, 269 integration tests, 440 security tests, three prototype browser runs, isolated live-API browser coverage and production build.
 - Release-compliance remediation (2026-08-29): SC-001 guarded AgentTurn history recovery; explicit integration/security release runners; removal of the last conditional Postgres skip; database timeout stabilization; exact provider E2E state/hash/lineage assertions; conservative task-index synchronization.
 - P0-501 slice 2 (2026-08-29): controlled prop/presentation adversarial unit tests + OD-012 draft exactDiff lock; STATUS merge conflict resolved.
 - P0-407 → `done` (2026-08-29): axe + 1440px visual baselines; slices 1–3 merged (#68, #71).

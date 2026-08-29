@@ -97,8 +97,12 @@ export async function captureTrueForgeRequiredActions(input: {
   sql: ReturnType<typeof createSql>;
   bootstrap: AgUiRunBootstrap;
   raw: Record<string, unknown>;
+  rawEvents?: Array<Record<string, unknown>>;
 }): Promise<{ ok: true; inserted: boolean } | { ok: false; reason: string }> {
-  const requiredActions = extractRawRequiredActions(input.raw);
+  const requiredActions = resolveTrueForgeRequiredActions(
+    extractRawRequiredActions(input.raw),
+    input.rawEvents ?? [input.raw],
+  );
   if (requiredActions.length === 0) {
     return { ok: true, inserted: false };
   }
@@ -279,6 +283,92 @@ export async function captureTrueForgeRequiredActions(input: {
   return persisted.ok
     ? { ok: true, inserted: persisted.inserted }
     : { ok: false, reason: persisted.reason };
+}
+
+function readNonEmptyString(value: unknown): string | null {
+  return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+function parseToolArguments(value: unknown): unknown {
+  if (typeof value !== "string") return value ?? {};
+  try {
+    return JSON.parse(value) as unknown;
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * TrueForge groups approvals as tool-call references. Rebind every reference to
+ * the immutable model.message that declared its tool name and arguments before
+ * the generic PauseGroup capture path performs policy redaction.
+ */
+export function resolveTrueForgeRequiredActions(
+  requiredActions: Array<Record<string, unknown>>,
+  rawEvents: Array<Record<string, unknown>>,
+): Array<Record<string, unknown>> {
+  const sourceEvents = new Map(
+    rawEvents
+      .filter((event) => readNonEmptyString(event.id))
+      .map((event) => [readNonEmptyString(event.id)!, event]),
+  );
+  return requiredActions.flatMap((action) => {
+    const type = readNonEmptyString(action.type)?.toLowerCase() ?? "";
+    const refs = Array.isArray(action.tool_calls)
+      ? action.tool_calls
+      : Array.isArray(action.toolCalls)
+        ? action.toolCalls
+        : null;
+    if (!type.includes("approval") || !refs || refs.length === 0) return [action];
+
+    return refs.flatMap((item) => {
+      if (!item || typeof item !== "object" || Array.isArray(item)) return [action];
+      const ref = item as Record<string, unknown>;
+      const toolCallId = readNonEmptyString(ref.id);
+      const sourceEventId =
+        readNonEmptyString(ref.source_event_id) ?? readNonEmptyString(ref.sourceEventId);
+      const source = sourceEventId ? sourceEvents.get(sourceEventId) : null;
+      const calls = source && Array.isArray(source.tool_calls) ? source.tool_calls : [];
+      const call = calls.find(
+        (candidate) =>
+          candidate &&
+          typeof candidate === "object" &&
+          !Array.isArray(candidate) &&
+          readNonEmptyString((candidate as Record<string, unknown>).id) === toolCallId,
+      ) as Record<string, unknown> | undefined;
+      const fn =
+        call?.function && typeof call.function === "object" && !Array.isArray(call.function)
+          ? (call.function as Record<string, unknown>)
+          : null;
+      const toolInfo =
+        call?.tool_info && typeof call.tool_info === "object" && !Array.isArray(call.tool_info)
+          ? (call.tool_info as Record<string, unknown>)
+          : null;
+      const toolName =
+        readNonEmptyString(fn?.name) ??
+        readNonEmptyString(toolInfo?.name) ??
+        readNonEmptyString(call?.name);
+      if (!toolCallId || !sourceEventId || !source || !call || !toolName) {
+        return [
+          {
+            ...action,
+            id: toolCallId ?? action.id,
+            tool_call_id: toolCallId ?? undefined,
+          },
+        ];
+      }
+      return [
+        {
+          type: "tool.approval_required",
+          id: toolCallId,
+          tool_call_id: toolCallId,
+          tool_name: toolName,
+          arguments: parseToolArguments(fn?.arguments ?? call.arguments),
+          thread_id: action.thread_id ?? action.threadId ?? source.thread_id ?? source.threadId,
+        },
+      ];
+    });
+  });
 }
 
 function stableArtifactId(input: {
@@ -1067,22 +1157,25 @@ export function createAgUiRunService(options: {
             rawTrueForgeEvents.push(raw);
             const normalized = normalizeTrueForgeEvent(raw);
             if (normalized.normalizedType === "turn.done") {
+              const captured = await captureTrueForgeRequiredActions({
+                sql,
+                bootstrap,
+                raw,
+                rawEvents: rawTrueForgeEvents,
+              });
+              if (!captured.ok) {
+                throw new Error(`Trusted required-action capture failed: ${captured.reason}`);
+              }
               if (artifacts) {
+                // Artifact publication is secondary to the trusted pause boundary.
+                // A missing/invalid file must never erase an approval that was durably captured.
                 await persistAgUiSandboxArtifacts({
                   sql,
                   bootstrap,
                   rawEvents: rawTrueForgeEvents,
                   trueforgeClient,
                   artifacts,
-                });
-              }
-              const captured = await captureTrueForgeRequiredActions({
-                sql,
-                bootstrap,
-                raw,
-              });
-              if (!captured.ok) {
-                throw new Error(`Trusted required-action capture failed: ${captured.reason}`);
+                }).catch(() => undefined);
               }
             }
             const turnDoneOutcome =

@@ -58,6 +58,7 @@ import type {
   TaskWriteResult,
   RunProvenanceRecord,
   TaskWriteFailureReason,
+  TaskToolGenerationGuard,
   WorkspaceCatalogStore,
 } from "./store";
 import {
@@ -373,6 +374,60 @@ async function validateTaskWriteSql(
   return null;
 }
 
+function applicationToolNames(value: unknown): string[] {
+  const config =
+    typeof value === "string"
+      ? (() => {
+          try {
+            return JSON.parse(value) as unknown;
+          } catch {
+            return null;
+          }
+        })()
+      : value;
+  if (!config || typeof config !== "object" || Array.isArray(config)) return [];
+  const names = (config as Record<string, unknown>).application_tool_names;
+  return Array.isArray(names)
+    ? names.filter((name): name is string => typeof name === "string")
+    : [];
+}
+
+async function validateTaskToolGenerationGuardSql(
+  tx: SqlClient,
+  task: TaskRecord,
+  guard: TaskToolGenerationGuard | undefined,
+): Promise<TaskWriteFailureReason | null> {
+  if (!guard) return null;
+  const rows = await tx<
+    {
+      effective_config: unknown;
+    }[]
+  >`
+    SELECT sr.effective_config_redacted_json AS effective_config
+    FROM channel_agent_sessions AS cas
+    JOIN channel_agent_session_generations AS gen
+      ON gen.channel_agent_session_id = cas.id
+    JOIN session_revisions AS sr ON sr.id = gen.session_revision_id
+    WHERE cas.id = ${guard.channelAgentSessionId}
+      AND gen.id = ${guard.generationId}
+      AND gen.generation = ${guard.expectedGeneration}
+      AND gen.id = cas.current_generation_id
+      AND gen.state = 'ready'
+      AND cas.state = 'active'
+      AND cas.workspace_id = ${guard.workspaceId}
+      AND cas.channel_id = ${guard.channelId}
+      AND cas.agent_profile_id = ${guard.coworkerId}
+      AND ${task.workspace_id} = ${guard.workspaceId}
+      AND ${task.channel_id} = ${guard.channelId}
+    FOR UPDATE OF cas, gen
+  `;
+  const row = rows[0];
+  if (!row) return "stale_generation";
+  return applicationToolNames(row.effective_config).includes(guard.applicationToolName)
+    ? null
+    : "application_tool_not_offered";
+}
+
 function mapAgentSession(row: typeof channelAgentSessions.$inferSelect): ChannelAgentSessionRecord {
   return {
     id: row.id,
@@ -642,6 +697,12 @@ export function createPostgresWorkspaceStore(sql: SqlClient): WorkspaceCatalogSt
       let result: AppendChannelEventResult | TaskWriteResult;
       try {
         result = await sql.begin(async (tx) => {
+          const guardFailure = await validateTaskToolGenerationGuardSql(
+            tx as unknown as SqlClient,
+            input.task,
+            input.generationGuard,
+          );
+          if (guardFailure) return { ok: false, reason: guardFailure } satisfies TaskWriteResult;
           const channelRows = await tx<
             {
               id: string;
@@ -738,6 +799,12 @@ export function createPostgresWorkspaceStore(sql: SqlClient): WorkspaceCatalogSt
     },
     async updateTaskWithRevision(input): Promise<TaskWriteResult> {
       return sql.begin(async (tx) => {
+        const guardFailure = await validateTaskToolGenerationGuardSql(
+          tx as unknown as SqlClient,
+          input.task,
+          input.generationGuard,
+        );
+        if (guardFailure) return { ok: false, reason: guardFailure } satisfies TaskWriteResult;
         const rows = await tx<{ current_revision: number; channel_id: string }[]>`
           SELECT current_revision, channel_id FROM tasks WHERE id = ${input.task.id} FOR UPDATE
         `;

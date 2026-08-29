@@ -170,6 +170,7 @@ git clone https://github.com/pramodthe/ForgeRoom.git
 cd ForgeRoom
 pnpm install
 cp .env.example .env
+# Edit .env and set OWNER_PASSWORD to a local-only development password.
 docker compose -f infra/compose.yaml up -d
 pnpm --filter @forgeroom/db migrate
 ```

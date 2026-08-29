@@ -37,7 +37,7 @@ pnpm test:security
 
 ## Completion evidence
 
-- Local report (2026-08-29): expanded `pnpm test:security` release runner under Node 22.20.0 — 80 files / 438 tests passed with zero skips across contracts, domain, DB, orchestration, adapters, API isolation/archive/audit paths, real Sharp image hardening, web trusted-host UI, controlled components and decompressed-trace redaction.
+- Local report (2026-08-29): expanded `pnpm test:security` release runner under Node 24.19.0 — 82 files / 440 tests passed with zero skips across contracts, domain, DB, orchestration, adapters, API isolation/archive/audit paths, real Sharp image hardening, web trusted-host UI, controlled components and decompressed-trace redaction.
 - Runner fails early below the repository's Node 22.12.0 engine floor and caps DB/API workers to avoid false timeout failures.
 - Checklist reviewer: independent Codex boundary review and post-fix re-review on 2026-08-29; final focused verification passed 41/41 and accepted the P0-503/P0-506 independent-review criteria after six reported authorization/redaction/lifecycle defects were fixed with adversarial regressions.
 - Code Mode note: P0 has no separate Code Mode dispatch type; the security proof covers the sandbox-enabled compiled MCP connector and fail-closed write-approval policy rather than claiming a distinct live dispatch surface.

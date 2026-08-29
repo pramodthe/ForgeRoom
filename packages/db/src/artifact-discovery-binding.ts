@@ -3,7 +3,6 @@ import type { createSql } from "./client";
 type SqlClient = ReturnType<typeof createSql>;
 
 const P0_SANDBOX_ARTIFACT_ROOT = "/home/daytona";
-const P0_TRUEFORGE_SANDBOX_FILE_WIRE_TYPE = "sandbox.file" as const;
 
 function collapseSlashes(value: string): string {
   return value.replace(/\/+/g, "/");
@@ -58,7 +57,7 @@ export type ArtifactDiscoveryBinding = {
     mimeType: string;
     declaredByteSize: number;
     trueforgeEventId: string;
-    sourceWireType: typeof P0_TRUEFORGE_SANDBOX_FILE_WIRE_TYPE | "assistant.message";
+    sourceWireType: "model.message";
   };
   sandboxCommandState: "creating" | "running" | "completed" | "failed";
 };
@@ -225,7 +224,7 @@ export async function loadSandboxArtifactDiscoveryBinding(
       mimeType,
       declaredByteSize,
       trueforgeEventId: discovered.trueforge_event_id,
-      sourceWireType: P0_TRUEFORGE_SANDBOX_FILE_WIRE_TYPE,
+      sourceWireType: "model.message",
     },
     sandboxCommandState: resolveSandboxCommandState(sandboxEvents, sandboxId, toolCallId),
   };

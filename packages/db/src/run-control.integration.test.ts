@@ -46,6 +46,19 @@ async function seedWaitingInterrupt(sql: Parameters<typeof seedRuntime>[0]) {
       'user_1', 'registry', 'token_issued', ${NOW}
     )
   `;
+  await sql`
+    INSERT INTO ui_interactions (
+      id, ui_instance_id, render_revision, action_grant_id, render_node_id,
+      handler_key, intent_name, payload_redacted_json, payload_hash,
+      interaction_token_hash, idempotency_key_hash, token_expires_at,
+      actor_user_id, client_kind, state, result_redacted_json, consumed_at, created_at
+    ) VALUES (
+      'int_stop_terminal', 'ui_1', 0, 'ag_stop_interrupt', 'node_1',
+      'controlled_ui.complete_component_interrupt.v1', 'submit', '{}'::jsonb, ${HASH},
+      'sha256:terminal-token', 'idempotency-stop-terminal', '2099-01-01T00:00:00.000Z',
+      'user_1', 'registry', 'succeeded', '{"kept":true}'::jsonb, ${NOW}, ${NOW}
+    )
+  `;
 }
 
 describe("run stop and correction", () => {
@@ -86,6 +99,12 @@ describe("run stop and correction", () => {
         consumed_at: expect.any(Date),
         stale_reason: "run_cancelling",
       });
+      expect(
+        await sql<{ state: string; result: unknown }[]>`
+          SELECT state, result_redacted_json AS result
+          FROM ui_interactions WHERE id = 'int_stop_terminal'
+        `,
+      ).toEqual([{ state: "succeeded", result: { kept: true } }]);
 
       // The terminal settle path is an idempotent cleanup backstop.
       await settleCancelledStep(sql, { runStepId: "step_1", now: NOW });

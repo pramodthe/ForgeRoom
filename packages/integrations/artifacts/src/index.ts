@@ -16,7 +16,6 @@ export {
   P0_MAX_IMAGE_PIXELS,
   P0_SANDBOX_ARTIFACT_FIXTURE_PATH,
   P0_SANDBOX_ARTIFACT_ROOT,
-  P0_TRUEFORGE_SANDBOX_FILE_WIRE_TYPE,
 } from "./extraction-p0-contract";
 export { extractDiscoveredSandboxArtifacts, type DiscoveredSandboxArtifact } from "./discovery";
 export { validateSandboxArtifactPath, type SandboxPathValidationResult } from "./sandbox-path";

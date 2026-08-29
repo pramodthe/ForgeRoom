@@ -67,7 +67,6 @@ export {
   P0_SANDBOX_FIXTURE_REMOTE_PATH,
   P0_SANDBOX_FORBIDDEN_SENSITIVE_READ_TOOLS,
   P0_TRUEFORGE_SANDBOX_CREATED_WIRE_TYPE,
-  P0_TRUEFORGE_SANDBOX_FILE_WIRE_TYPE,
 } from "./sandbox-p0-contract";
 export type {
   RegisterHeaderAuthMcpServerInput,

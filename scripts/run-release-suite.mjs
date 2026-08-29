@@ -37,7 +37,7 @@ const suites = {
       package: "@forgeroom/api",
       files: [
         ".integration.test.ts",
-        "src/ag-ui/routes.test.ts",
+        "src/ag-ui/routes.integration.test.ts",
         "src/workspace/event-log.test.ts",
       ],
       workers: 4,
@@ -172,7 +172,7 @@ const suites = {
       package: "@forgeroom/api",
       workers: 4,
       files: [
-        "src/ag-ui/routes.test.ts",
+        "src/ag-ui/routes.integration.test.ts",
         "src/approvals/decisions.test.ts",
         "src/artifacts/artifacts.test.ts",
         "src/auth/rate-limit.test.ts",
