@@ -114,7 +114,7 @@ export type SkillDraftRow = {
   manifestJson: unknown;
 };
 
-function parseManifestJson(manifestJson: unknown): unknown {
+export function parseManifestJson(manifestJson: unknown): unknown {
   if (typeof manifestJson === "string") {
     try {
       return JSON.parse(manifestJson) as unknown;

@@ -235,12 +235,27 @@ export {
   publishSkillDraftRecord,
   slugifySkillStableName,
 } from "./skill-drafts";
+export {
+  attachSkillBindingRecord,
+  detachSkillBindingRecord,
+  findActiveSkillBinding,
+  getSkillBindingById,
+  loadPinnedSkillStableNames,
+  loadPublishedSkillVersionForAttach,
+} from "./skill-bindings";
 export type {
   CreateSkillDraftInput,
   LoadSkillRunEvidenceResult,
   PublishSkillDraftInput,
   PublishSkillDraftResult,
 } from "./skill-drafts";
+export type {
+  AttachSkillBindingInput,
+  AttachSkillBindingResult,
+  DetachSkillBindingInput,
+  DetachSkillBindingResult,
+  PublishedSkillVersionRow,
+} from "./skill-bindings";
 export type { ArtifactDiscoveryBinding } from "./artifact-discovery-binding";
 export type {
   ArtifactRecord,
