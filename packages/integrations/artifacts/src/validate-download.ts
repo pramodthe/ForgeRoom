@@ -150,7 +150,12 @@ function inspectZipContent(content: Buffer): "safe" | "sensitive" | "invalid" {
       const nameLength = content.readUInt16LE(offset + 28);
       const extraLength = content.readUInt16LE(offset + 30);
       const commentLength = content.readUInt16LE(offset + 32);
+      const versionMadeBy = content.readUInt16LE(offset + 4);
+      const externalAttributes = content.readUInt32LE(offset + 38);
       const localOffset = content.readUInt32LE(offset + 42);
+      const hostSystem = versionMadeBy >>> 8;
+      const unixMode = externalAttributes >>> 16;
+      if (hostSystem === 3 && (unixMode & 0xf000) === 0xa000) return "invalid";
       const nameEnd = offset + 46 + nameLength;
       if (nameEnd > content.length || (flags & 0x1) !== 0) return "invalid";
       const nameBytes = content.subarray(offset + 46, nameEnd);
@@ -173,6 +178,11 @@ function inspectZipContent(content: Buffer): "safe" | "sensitive" | "invalid" {
       if (localOffset + 30 > content.length || content.readUInt32LE(localOffset) !== 0x04034b50) {
         return "invalid";
       }
+      const localFlags = content.readUInt16LE(localOffset + 6);
+      const localMethod = content.readUInt16LE(localOffset + 8);
+      const localCrc = content.readUInt32LE(localOffset + 14);
+      const localCompressedSize = content.readUInt32LE(localOffset + 18);
+      const localUncompressedSize = content.readUInt32LE(localOffset + 22);
       const localNameLength = content.readUInt16LE(localOffset + 26);
       const localExtraLength = content.readUInt16LE(localOffset + 28);
       const localNameStart = localOffset + 30;
@@ -181,6 +191,21 @@ function inspectZipContent(content: Buffer): "safe" | "sensitive" | "invalid" {
       if (localExtraEnd > content.length) return "invalid";
       const localNameBytes = content.subarray(localNameStart, localNameEnd);
       const localName = localNameBytes.toString("utf8");
+      if (
+        localFlags !== flags ||
+        localMethod !== method ||
+        !localNameBytes.equals(nameBytes) ||
+        ((flags & 0x8) === 0 &&
+          (localCrc !== expectedCrc ||
+            localCompressedSize !== compressedSize ||
+            localUncompressedSize !== uncompressedSize)) ||
+        ((flags & 0x8) !== 0 &&
+          ((localCrc !== 0 && localCrc !== expectedCrc) ||
+            (localCompressedSize !== 0 && localCompressedSize !== compressedSize) ||
+            (localUncompressedSize !== 0 && localUncompressedSize !== uncompressedSize)))
+      ) {
+        return "invalid";
+      }
       if (!isSafeZipEntryPath(localName)) return "invalid";
       if (isSensitiveArtifactPath(localName)) return "sensitive";
       const localExtraInspection = inspectZipExtra(
@@ -193,16 +218,20 @@ function inspectZipContent(content: Buffer): "safe" | "sensitive" | "invalid" {
       if (dataEnd > centralOffset) return "invalid";
       let localEnd = dataEnd;
       if ((flags & 0x8) !== 0) {
-        const hasSignature =
-          dataEnd + 4 <= centralOffset && content.readUInt32LE(dataEnd) === 0x08074b50;
-        const descriptorStart = dataEnd + (hasSignature ? 4 : 0);
-        localEnd = descriptorStart + 12;
-        if (localEnd > centralOffset) return "invalid";
-        if (
-          content.readUInt32LE(descriptorStart) !== expectedCrc ||
-          content.readUInt32LE(descriptorStart + 4) !== compressedSize ||
-          content.readUInt32LE(descriptorStart + 8) !== uncompressedSize
+        const matchesDescriptor = (descriptorStart: number): boolean =>
+          descriptorStart + 12 <= centralOffset &&
+          content.readUInt32LE(descriptorStart) === expectedCrc &&
+          content.readUInt32LE(descriptorStart + 4) === compressedSize &&
+          content.readUInt32LE(descriptorStart + 8) === uncompressedSize;
+        if (matchesDescriptor(dataEnd)) {
+          localEnd = dataEnd + 12;
+        } else if (
+          dataEnd + 4 <= centralOffset &&
+          content.readUInt32LE(dataEnd) === 0x08074b50 &&
+          matchesDescriptor(dataEnd + 4)
         ) {
+          localEnd = dataEnd + 16;
+        } else {
           return "invalid";
         }
       }

@@ -349,6 +349,24 @@ describe("P0-312 download validation", () => {
       }),
     ).toMatchObject({ ok: false, reason: "archive_invalid" });
 
+    const symlinkZip = createStoredZip("safe-link", Buffer.from("../../.env"));
+    const symlinkEndOffset = symlinkZip.length - 22;
+    const symlinkCentralOffset = symlinkZip.readUInt32LE(symlinkEndOffset + 16);
+    symlinkZip.writeUInt16LE(3 << 8, symlinkCentralOffset + 4);
+    symlinkZip.writeUInt32LE((0xa000 << 16) >>> 0, symlinkCentralOffset + 38);
+    expect(
+      validateDiscoveredArtifactDownload({ discovery: zipDiscovery, content: symlinkZip }),
+    ).toMatchObject({ ok: false, reason: "archive_invalid" });
+
+    const mismatchedHeaderZip = createStoredZip("summary.txt", Buffer.from("safe"));
+    mismatchedHeaderZip.writeUInt16LE(8, 8);
+    expect(
+      validateDiscoveredArtifactDownload({
+        discovery: zipDiscovery,
+        content: mismatchedHeaderZip,
+      }),
+    ).toMatchObject({ ok: false, reason: "archive_invalid" });
+
     const nestedZip = createStoredZip(
       "inner.zip",
       createStoredZip("safe.txt", Buffer.from("safe")),
