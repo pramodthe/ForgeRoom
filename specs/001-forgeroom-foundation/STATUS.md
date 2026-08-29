@@ -5,9 +5,9 @@
 | Overall | M0 Demo contract done; M1 Foundation done; P0-315/P0-317/P0-407/P0-316/P0-410/P0-408 done; P0-301–P0-314, P0-404, P0-405 done |
 | Current phase | Phase 1 — Foundation / M5 Verification |
 | Active task | P0-501 (in_progress); P0-504 (in_progress; providers E2E blocked on secrets) |
-| Next task | P0-501 remaining unit gaps (interaction CAS extract next); finish P0-504 providers when secrets available; then P0-502 / P0-503 / P0-506 |
-| P0 blockers | Run-limit hard enforcement (P0-204/OD-008 evidence); P0-504 providers E2E needs secrets |
-| Last updated | 2026-08-29 (P0-501 slice 2 controlled limits; STATUS conflict resolved; P0-504 #75–#77 merged) |
+| Next task | Independent review for P0-210/P0-503; finish P0-204 OD-008 watchdogs and P0-504 provider E2E; then P0-506/P0-505 |
+| P0 blockers | P0-204/OD-008 watchdog evidence; P0-210 independent review; P0-504 provider secrets; P0-503 checklist reviewer |
+| Last updated | 2026-08-29 (release-compliance remediation: SC-001, release suites, provider E2E assertions, status synchronization) |
 
 ## Milestones
 
@@ -22,11 +22,9 @@
 
 ## Current decisions needed
 
-- P0-210 status is inconsistent and needs an owner to reconcile: `tasks.md` marks it `[x] done`
-  and both dependents (P0-211, P0-314) are `done`, but the task file front matter still says
-  `in_review` with owner `cursor-agent`. The index is authoritative for the checkbox, so the task
-  file is the likely stale side — but moving a task to `done` requires a reviewer to confirm its
-  acceptance criteria and evidence, so this is not resolved here.
+- P0-204 and P0-210 are synchronized to `in_review` in their task files and `tasks.md`. Existing
+  downstream implementation remains intact, but neither task is represented as accepted while
+  OD-008 watchdog evidence or P0-210's unchecked compatibility criteria remain open.
 
 Still open for later owner tasks (see `decisions/OPEN.md` and `provider-fixtures/`):
 
@@ -61,6 +59,7 @@ Never put credentials in this file.
 
 ## Recently completed
 
+- Release-compliance remediation (2026-08-29): SC-001 guarded AgentTurn history recovery; explicit integration/security release runners; removal of the last conditional Postgres skip; database timeout stabilization; exact provider E2E state/hash/lineage assertions; conservative task-index synchronization.
 - P0-501 slice 2 (2026-08-29): controlled prop/presentation adversarial unit tests + OD-012 draft exactDiff lock; STATUS merge conflict resolved.
 - P0-407 → `done` (2026-08-29): axe + 1440px visual baselines; slices 1–3 merged (#68, #71).
 - P0-315 → `done` (2026-08-29): component/interaction gateway merged #70.
