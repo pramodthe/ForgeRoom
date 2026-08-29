@@ -67,6 +67,7 @@ export function WorkPanelPane(props: { workspaceId: string; channelId: string; c
       {workroomUi.selectedRunId ? (
         <RunDetailDrawer
           workspaceId={props.workspaceId}
+          channelId={props.channelId}
           runId={workroomUi.selectedRunId}
           onClose={workroomUi.closeRunDrawer}
         />

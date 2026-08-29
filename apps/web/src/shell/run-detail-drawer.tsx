@@ -1,33 +1,112 @@
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import type { Run, RunStep } from "@forgeroom/contracts";
 import { useRef, useState } from "react";
-import { getRunReceipt } from "../api/channel-resources-api";
+import { cancelRun, getRun, getRunReceipt } from "../api/channel-resources-api";
+import { newIdempotencyKey } from "../api/http-client";
 import { isFixtureMode } from "../api/mode";
-import { publishFixtureRunSkill } from "../api/workspace-api";
+import { listChannelRoster, publishFixtureRunSkill } from "../api/workspace-api";
+import { useSession } from "../auth/session-context";
 import { Avatar } from "../ui/avatar";
 import { useDialogFocus } from "../ui/use-dialog-focus";
 
 type RunDetailDrawerProps = {
   workspaceId: string;
+  channelId: string;
   runId: string;
   onClose: () => void;
 };
 
 const STOPPED_RUN_KEY = "forgeroom:fixture:run:v1:run_4A91:stopped";
 
-export function RunDetailDrawer({ workspaceId, runId, onClose }: RunDetailDrawerProps) {
+const STOPPABLE_STEP_STATES = new Set<RunStep["state"]>([
+  "queued",
+  "acquiring_session",
+  "running",
+  "awaiting_input",
+  "awaiting_approval",
+  "blocked_connection",
+]);
+
+function formatStepState(state: RunStep["state"]): string {
+  return state.replaceAll("_", " ");
+}
+
+function lifecycleLabel(lifecycle: Run["lifecycle"]): string {
+  return lifecycle.replaceAll("_", " ");
+}
+
+export function RunDetailDrawer({ workspaceId, channelId, runId, onClose }: RunDetailDrawerProps) {
   if (isFixtureMode) {
     return <FixtureRunDetailDrawer workspaceId={workspaceId} onClose={onClose} />;
   }
-  return <LiveRunDetailDrawer runId={runId} onClose={onClose} />;
+  return (
+    <LiveRunDetailDrawer
+      workspaceId={workspaceId}
+      channelId={channelId}
+      runId={runId}
+      onClose={onClose}
+    />
+  );
 }
 
-function LiveRunDetailDrawer({ runId, onClose }: { runId: string; onClose: () => void }) {
+function LiveRunDetailDrawer({
+  workspaceId,
+  channelId,
+  runId,
+  onClose,
+}: {
+  workspaceId: string;
+  channelId: string;
+  runId: string;
+  onClose: () => void;
+}) {
+  const { session } = useSession();
+  const queryClient = useQueryClient();
+  const [cancelError, setCancelError] = useState<string | null>(null);
   const drawerRef = useRef<HTMLElement>(null);
   useDialogFocus(drawerRef, onClose);
+  const runQuery = useQuery({
+    queryKey: ["run", runId],
+    queryFn: () => getRun(runId),
+  });
   const receiptQuery = useQuery({
     queryKey: ["run-receipt", runId],
     queryFn: () => getRunReceipt(runId),
   });
+  const rosterQuery = useQuery({
+    queryKey: ["channel-roster", channelId],
+    queryFn: () => listChannelRoster(workspaceId, channelId),
+  });
+  const cancelMutation = useMutation({
+    mutationFn: async (run: Run) => {
+      if (!session) throw new Error("Session required.");
+      return cancelRun({
+        runId,
+        csrfToken: session.csrf_token,
+        command: {
+          schemaVersion: 1,
+          expected_lifecycle: run.lifecycle,
+          reason: "Owner requested stop from run drawer",
+          idempotency_key: newIdempotencyKey("cancel_run"),
+        },
+      });
+    },
+    onSuccess: async () => {
+      setCancelError(null);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["run", runId] }),
+        queryClient.invalidateQueries({ queryKey: ["run-receipt", runId] }),
+      ]);
+    },
+    onError: (error) => {
+      setCancelError(error instanceof Error ? error.message : "Unable to stop remaining work.");
+    },
+  });
+
+  const run = runQuery.data?.run;
+  const isLoading = runQuery.isLoading || receiptQuery.isLoading;
+  const hasLoadError = runQuery.error || receiptQuery.error;
+  const stoppable = run?.steps.some((step) => STOPPABLE_STEP_STATES.has(step.state)) ?? false;
 
   return (
     <div className="fixed inset-0 z-40 flex justify-end bg-zinc-950/30" role="presentation">
@@ -48,12 +127,16 @@ function LiveRunDetailDrawer({ runId, onClose }: { runId: string; onClose: () =>
         <header className="sticky top-0 z-10 flex items-start justify-between border-b border-zinc-200 bg-white/95 px-6 py-5 backdrop-blur">
           <div>
             <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-violet-700">
-              Run receipt · {runId}
+              Run · {runId}
             </div>
             <h2 id="run-drawer-title" className="mt-1 text-xl font-semibold text-zinc-950">
-              {receiptQuery.data?.receipt.run_id ?? "Run details"}
+              {run?.goal ?? "Run details"}
             </h2>
-            <p className="mt-1 text-xs text-zinc-500">Normalized audit receipt</p>
+            <p className="mt-1 text-xs text-zinc-500">
+              {run
+                ? `${run.routing_mode === "direct" ? "Direct" : "Team"} routing · ${lifecycleLabel(run.lifecycle)}`
+                : "Loading normalized run"}
+            </p>
           </div>
           <button
             type="button"
@@ -66,18 +149,75 @@ function LiveRunDetailDrawer({ runId, onClose }: { runId: string; onClose: () =>
         </header>
 
         <div className="space-y-4 p-6">
-          {receiptQuery.isLoading ? (
+          {isLoading ? (
             <section className="rounded-2xl border border-zinc-200 bg-white p-4 text-sm text-zinc-600">
-              Loading run receipt…
+              Loading run details…
             </section>
           ) : null}
-          {receiptQuery.error ? (
+          {hasLoadError ? (
             <section
               className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-800"
               role="alert"
             >
-              Unable to load run receipt.
+              Unable to load run details.
             </section>
+          ) : null}
+          {run && runQuery.data ? (
+            <>
+              <section className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <div className="text-[10px] font-semibold uppercase tracking-wide text-zinc-400">
+                      Source message
+                    </div>
+                    <p className="mt-1.5 text-sm leading-6 text-zinc-700">
+                      {runQuery.data.source_message_body}
+                    </p>
+                  </div>
+                  <span className="rounded-full bg-violet-50 px-2.5 py-1 text-xs font-medium capitalize text-violet-700">
+                    {lifecycleLabel(run.lifecycle)}
+                  </span>
+                </div>
+              </section>
+
+              <section className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-semibold text-zinc-900">Persistent coworker steps</h3>
+                  <span className="text-[11px] text-zinc-400">
+                    {run.steps.length} step{run.steps.length === 1 ? "" : "s"} · no child agents
+                  </span>
+                </div>
+                <div className="mt-4 space-y-4">
+                  {run.steps.map((step) => {
+                    const coworker = rosterQuery.data?.coworkers.find(
+                      (entry) => entry.coworker_id === step.assigned_coworker_id,
+                    );
+                    const waiting =
+                      step.state === "awaiting_input" || step.state === "awaiting_approval";
+                    return (
+                      <div key={step.id} className="flex gap-3">
+                        <Avatar name={coworker?.name ?? "Coworker"} tone="violet" size="sm" />
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center justify-between gap-3">
+                            <span className="text-sm font-medium text-zinc-900">
+                              {coworker?.name ?? step.assigned_coworker_id}
+                            </span>
+                            <span
+                              className={`text-[11px] font-medium capitalize ${
+                                waiting ? "text-amber-700" : "text-emerald-700"
+                              }`}
+                            >
+                              {formatStepState(step.state)}
+                            </span>
+                          </div>
+                          <p className="mt-1 text-xs leading-5 text-zinc-600">{step.objective}</p>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </section>
+            </>
           ) : null}
           {receiptQuery.data ? (
             <section className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
@@ -89,18 +229,6 @@ function LiveRunDetailDrawer({ runId, onClose }: { runId: string; onClose: () =>
                   <dd className="truncate font-mono text-[11px]">
                     {receiptQuery.data.receipt_hash}
                   </dd>
-                </div>
-                <div className="flex justify-between gap-3">
-                  <dt className="text-zinc-500">Channel</dt>
-                  <dd>{receiptQuery.data.receipt.channel_id}</dd>
-                </div>
-                <div className="flex justify-between gap-3">
-                  <dt className="text-zinc-500">Source message</dt>
-                  <dd>{receiptQuery.data.receipt.source_message_id}</dd>
-                </div>
-                <div className="flex justify-between gap-3">
-                  <dt className="text-zinc-500">Coworker steps</dt>
-                  <dd>{receiptQuery.data.receipt.coworker_ids.length}</dd>
                 </div>
                 <div className="flex justify-between gap-3">
                   <dt className="text-zinc-500">Task</dt>
@@ -116,6 +244,26 @@ function LiveRunDetailDrawer({ runId, onClose }: { runId: string; onClose: () =>
                 </div>
               </dl>
             </section>
+          ) : null}
+          {run && stoppable ? (
+            <div className="border-t border-zinc-200 pt-4">
+              <button
+                type="button"
+                disabled={cancelMutation.isPending}
+                onClick={() => void cancelMutation.mutate(run)}
+                className="rounded-xl border border-zinc-300 bg-white px-4 py-2.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:text-zinc-400"
+              >
+                {cancelMutation.isPending ? "Stopping remaining work…" : "Stop remaining work"}
+              </button>
+              {cancelError ? (
+                <p
+                  className="mt-3 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-800"
+                  role="alert"
+                >
+                  {cancelError}
+                </p>
+              ) : null}
+            </div>
           ) : null}
         </div>
       </section>
