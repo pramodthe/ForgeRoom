@@ -370,11 +370,12 @@ describe("UI data functions", () => {
   }, 60_000);
 
   it("returns a time_ms limit error from the retained grant on replay", async () => {
+    const startedAtMs = 1_000_000;
     const nowSpy = vi.spyOn(Date, "now");
     let calls = 0;
     nowSpy.mockImplementation(() => {
       calls += 1;
-      return calls === 1 ? 0 : 10;
+      return startedAtMs + (calls - 1) * 100;
     });
     try {
       await withMigratedDatabase(async (sql) => {
