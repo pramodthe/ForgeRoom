@@ -30,6 +30,8 @@ import type {
   RunDetailResponse,
   SkillDraft,
   SkillDraftCreateCommand,
+  SkillDraftPublishCommand,
+  SkillVersion,
   TaskCreateCommand,
   TaskRecordV1,
   TaskRevision,
@@ -75,7 +77,8 @@ import { getRunReceiptForSession } from "../runs/receipt";
 import { getRunForSession } from "../runs/detail";
 import { cancelRunForSession } from "../runs/cancel";
 import { createSkillDraftForRun, getSkillDraftForSession } from "../skills/drafts";
-import { getSkillDraftById } from "@forgeroom/db";
+import { getSkillVersionForSession, publishSkillDraftForSession } from "../skills/publish";
+import { getSkillDraftById, getSkillVersionById } from "@forgeroom/db";
 import { customAguiEvent, messageCreatedAguiEvent, pinAguiEvent } from "./event-builders";
 import { ChannelEventPersistenceError } from "./event-guard";
 import { createChannelEventHub, type ChannelEventHub } from "./event-hub";
@@ -612,6 +615,15 @@ export type WorkspaceService = {
     session: SessionResponse,
     draftId: string,
   ): Promise<WorkspaceServiceResult<SkillDraft>>;
+  publishSkillDraft(
+    session: SessionResponse,
+    draftId: string,
+    command: SkillDraftPublishCommand,
+  ): Promise<WorkspaceServiceResult<SkillVersion>>;
+  getSkillVersion(
+    session: SessionResponse,
+    versionId: string,
+  ): Promise<WorkspaceServiceResult<SkillVersion>>;
   steerCorrection(
     session: SessionResponse,
     runId: string,
@@ -4244,6 +4256,39 @@ export function createWorkspaceService(options?: {
         };
       }
       return getSkillDraftForSession(sql, session, draftId);
+    },
+
+    async publishSkillDraft(session, draftId, command) {
+      if (!sql) {
+        return {
+          ok: false,
+          error: { code: "not_found", message: "Skill drafts require a database-backed API." },
+        };
+      }
+      return withIdempotency({
+        workspaceId: session.workspace_id,
+        commandKind: "skill_draft.publish",
+        idempotencyKey: command.idempotency_key,
+        resultId: draftId,
+        reload: async (id) => {
+          const loaded = await getSkillVersionById(sql, id);
+          if (!loaded || loaded.workspaceId !== session.workspace_id) {
+            return null;
+          }
+          return loaded.version;
+        },
+        run: async () => publishSkillDraftForSession(sql, session, draftId, command, now),
+      });
+    },
+
+    async getSkillVersion(session, versionId) {
+      if (!sql) {
+        return {
+          ok: false,
+          error: { code: "not_found", message: "Skill versions require a database-backed API." },
+        };
+      }
+      return getSkillVersionForSession(sql, session, versionId);
     },
 
     async getRun(session, runId) {

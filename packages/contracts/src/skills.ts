@@ -148,3 +148,4 @@ export type SkillVersion = z.infer<typeof skillVersionSchema>;
 export type SkillBinding = z.infer<typeof skillBindingSchema>;
 export type SkillDraftCreateCommand = z.infer<typeof skillDraftCreateCommandSchema>;
 export type SkillDraftReviseCommand = z.infer<typeof skillDraftReviseCommandSchema>;
+export type SkillDraftPublishCommand = z.infer<typeof skillDraftPublishCommandSchema>;

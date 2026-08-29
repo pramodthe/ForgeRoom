@@ -153,3 +153,10 @@ export {
   SkillDraftBuildError,
   type SkillDraftBody,
 } from "./skills/draft";
+export {
+  buildSkillVersionFromDraft,
+  hashSkillVersionManifest,
+  publishedSkillMarkdownBlobKey,
+  validateSkillDraftPublish,
+  type SkillPublishValidationError,
+} from "./skills/publish";

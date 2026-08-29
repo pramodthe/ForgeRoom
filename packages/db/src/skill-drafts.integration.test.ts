@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { skillDraftSchema } from "@forgeroom/contracts";
+import { skillDraftSchema, skillVersionSchema } from "@forgeroom/contracts";
 import type postgres from "postgres";
 import { collectRequiredTools } from "@forgeroom/domain";
 import {
   createSkillDraftRecord,
   getSkillDraftById,
+  getSkillVersionById,
   loadSkillRunEvidence,
+  publishSkillDraftRecord,
   slugifySkillStableName,
 } from "./skill-drafts";
 import { ingestNormalizedTrueForgeEvent } from "./turn-lifecycle";
@@ -108,6 +110,39 @@ describe("skill drafts persistence", () => {
       const reloaded = await getSkillDraftById(sql, "skd_1");
       expect(reloaded?.draft.id).toBe("skd_1");
       expect(reloaded?.workspaceId).toBe("ws_1");
+
+      const published = await publishSkillDraftRecord(sql, {
+        draftId: "skd_1",
+        workspaceId: "ws_1",
+        channelId: "ch_1",
+        publishedBy: "user_1",
+        expectedRevision: parsed.revision,
+        expectedDraftHash: parsed.draft_hash,
+        expectedSourceContentHash: parsed.source_content_hash,
+        now: NOW,
+      });
+      expect(published.ok).toBe(true);
+      if (!published.ok) return;
+      const version = skillVersionSchema.parse(published.version);
+      expect(version.state).toBe("published");
+      expect(version.source_run_id).toBe("run_1");
+      expect(await getSkillDraftById(sql, "skd_1")).toBeNull();
+      const reloadedVersion = await getSkillVersionById(sql, "skd_1");
+      expect(reloadedVersion?.version.manifest_hash).toBe(version.manifest_hash);
+
+      const replay = await publishSkillDraftRecord(sql, {
+        draftId: "skd_1",
+        workspaceId: "ws_1",
+        channelId: "ch_1",
+        publishedBy: "user_1",
+        expectedRevision: parsed.revision,
+        expectedDraftHash: parsed.draft_hash,
+        expectedSourceContentHash: parsed.source_content_hash,
+        now: NOW,
+      });
+      expect(replay.ok).toBe(true);
+      if (!replay.ok) return;
+      expect(replay.newlyPublished).toBe(false);
     });
   }, 60_000);
 
