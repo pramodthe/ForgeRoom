@@ -111,8 +111,19 @@ export type SkillDraftRow = {
   manifestJson: unknown;
 };
 
+function parseManifestJson(manifestJson: unknown): unknown {
+  if (typeof manifestJson === "string") {
+    try {
+      return JSON.parse(manifestJson) as unknown;
+    } catch {
+      return manifestJson;
+    }
+  }
+  return manifestJson;
+}
+
 function parseManifestDraft(manifestJson: unknown): SkillDraft | null {
-  const parsed = skillDraftSchema.safeParse(manifestJson);
+  const parsed = skillDraftSchema.safeParse(parseManifestJson(manifestJson));
   return parsed.success ? parsed.data : null;
 }
 
