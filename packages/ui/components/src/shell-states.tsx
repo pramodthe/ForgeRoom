@@ -8,7 +8,11 @@ type ShellStateProps = {
 
 export function LoadingState({ title, description }: ShellStateProps) {
   return (
-    <section className="flex flex-1 items-center justify-center p-8" aria-busy="true">
+    <section
+      className="flex flex-1 items-center justify-center p-8"
+      aria-busy="true"
+      aria-live="polite"
+    >
       <div className="max-w-md text-center">
         <p className="text-sm font-medium text-zinc-900">{title}</p>
         {description ? <p className="mt-2 text-sm text-zinc-600">{description}</p> : null}

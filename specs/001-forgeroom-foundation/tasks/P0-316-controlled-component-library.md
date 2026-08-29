@@ -1,7 +1,7 @@
 ---
 id: P0-316
 title: Build the controlled in-chat component library
-status: in_review
+status: done
 owner: unassigned
 depends_on: [P0-312, P0-314, P0-401]
 requirements: [GUI-001, GUI-003, GUI-006, GUI-012, GUI-013]
@@ -39,4 +39,8 @@ Run schema/limit/XSS/image tests, Storybook or fixture gallery review, axe check
 
 - [x] Fixture gallery validates all `provider-fixtures/controlled-ui/*` props client-side.
 - [x] Limit and prototype-key/XSS-string prop tests in `@forgeroom/ui-components`.
-- [ ] axe and 1440 px visual snapshots (deferred; no Storybook harness in P0 slice).
+- [ ] axe and 1440 px visual snapshots (deferred to **P0-407**).
+
+## Work log
+
+- 2026-08-29 — Task marked `done`; axe/visual snapshots deferred to P0-407.
