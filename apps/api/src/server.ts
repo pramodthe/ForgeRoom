@@ -12,6 +12,8 @@ import { mountComponentRoutes } from "./components/routes";
 import { createPostgresWorkspaceStore } from "./workspace/postgres-store";
 import { createApprovalService, type ApprovalService } from "./approvals/service";
 import { mountApprovalRoutes } from "./approvals/routes";
+import { createQuestionService, type QuestionService } from "./questions/service";
+import { mountQuestionRoutes } from "./questions/routes";
 import { createConnectionService, type ConnectionService } from "./connections/service";
 import { mountConnectionRoutes } from "./connections/routes";
 import { createArtifactServiceFromEnv, type ArtifactService } from "./artifacts/service";
@@ -28,6 +30,7 @@ export function createApiApp(options?: {
   workspace?: WorkspaceService;
   components?: ComponentService;
   approvals?: ApprovalService;
+  questions?: QuestionService;
   connections?: ConnectionService;
   artifacts?: ArtifactService;
   uiInstances?: UiInstanceService;
@@ -71,6 +74,9 @@ export function createApiApp(options?: {
   const approvals =
     options?.approvals ??
     (env && options?.sql ? createApprovalService({ env, sql: options.sql }) : undefined);
+  const questions =
+    options?.questions ??
+    (env && options?.sql ? createQuestionService({ env, sql: options.sql }) : undefined);
   const connections =
     options?.connections ??
     (env
@@ -134,6 +140,9 @@ export function createApiApp(options?: {
     }
     if (approvals) {
       mountApprovalRoutes(app, { env, auth, approvals });
+    }
+    if (questions) {
+      mountQuestionRoutes(app, { env, auth, questions });
     }
     if (connections) {
       mountConnectionRoutes(app, { env, auth, connections });

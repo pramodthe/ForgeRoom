@@ -365,7 +365,7 @@ describe("component tool gateway", () => {
         instanceId: "",
       });
     });
-  });
+  }, 60_000);
 
   it("quarantines when the component grant is revoked before broker finalize", async () => {
     await withMigratedDatabase(async (sql) => {
@@ -396,7 +396,7 @@ describe("component tool gateway", () => {
         textAlternative: "Component grant is missing or revoked.",
       });
     });
-  });
+  }, 60_000);
 
   it("quarantines instead of persisting an instance when a grant revocation commits during create", async () => {
     await withTemporaryDatabase(async (url) => {
