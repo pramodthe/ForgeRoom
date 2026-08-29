@@ -1,7 +1,7 @@
 ---
 id: P0-405
 title: Build Work, Artifacts and Context tabs
-status: in_review
+status: done
 owner: cursor-agent
 depends_on: [P0-108, P0-109, P0-312, P0-403]
 requirements: [ME-001, ME-003, TR-001, TR-002, SB-004, SB-005]
@@ -40,3 +40,7 @@ Run tab/component tests, artifact authorization browser test and visual checks.
   - Work tab: active runs by coworker, receipt link, **Stop** via `POST /api/runs/:id/cancel`
   - Context tab: unpin + scroll-to-message for pinned sources
   - Timeline / artifacts tab / run drawer: **Pin** actions with `source_message_id` / `source_artifact_id`
+
+## Work log
+
+- 2026-08-29 — Task marked `done` after PR stack #48–#53 and closeout #54; all acceptance criteria verified.
