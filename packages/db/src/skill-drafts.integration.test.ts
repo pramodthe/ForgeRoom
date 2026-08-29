@@ -81,9 +81,9 @@ describe("skill drafts persistence", () => {
       });
       expect(loaded.ok).toBe(true);
       if (!loaded.ok) return;
-      expect(loaded.evidence.events.some((event) => event.normalizedType === "tool.succeeded")).toBe(
-        true,
-      );
+      expect(
+        loaded.evidence.events.some((event) => event.normalizedType === "tool.succeeded"),
+      ).toBe(true);
 
       const draft = await createSkillDraftRecord(sql, {
         workspaceId: "ws_1",
