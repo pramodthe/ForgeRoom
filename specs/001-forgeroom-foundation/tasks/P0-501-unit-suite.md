@@ -19,27 +19,32 @@ All unit behaviors required by the canonical test plan are present, deterministi
 
 ## Acceptance criteria
 
-- [ ] Sequence, direct routing, CoworkerDraft, Task and skill capability tests pass. *(largely present; CoworkerDraft permission-diff + Task history still partial)*
+- [ ] Sequence, direct routing, CoworkerDraft, Task and skill capability tests pass. *(CoworkerDraft OD-012 fixture exactDiff/mustIncludeDenials unit-locked in slice 2; Task history still memory-API only)*
 - [x] Session/policy/argument hashing and transition guards pass. *(slice 1: AgentTurn/PauseGroup/ActionProposal tables + exhaustive transition unit suite)*
 - [ ] ToolPolicyDefinition golden/adversarial tests pass. *(present in composio tool-policies)*
-- [ ] Event normalization/redaction and context exclusion tests pass.
+- [x] Event normalization/redaction and context exclusion tests pass. *(already covered by orchestration event-normalize + context-envelope units; checkbox close-out)*
 - [ ] Artifact path/MIME/hash tests pass. *(present)*
-- [ ] AG-UI mapping/reducer/patch, controlled component manifest/grant/props/interaction and unsupported P1 capability tests pass. *(controlled limits + interaction CAS still partial)*
+- [ ] AG-UI mapping/reducer/patch, controlled component manifest/grant/props/interaction and unsupported P1 capability tests pass. *(slice 2: prop schema adversarial limits + presentation clamps; interaction CAS still integration-only)*
 - [x] No P0 unit suite is skipped or `.only`-filtered. *(verified 2026-08-29; one `skipIf(!DATABASE_URL)` on coworker-drafts Postgres path)*
 
 ## Verification
 
 ~~~bash
 pnpm test
-pnpm --filter @forgeroom/domain exec vitest run src/transitions.test.ts
+pnpm --filter @forgeroom/domain exec vitest run src/transitions.test.ts src/coworkers/drafts.test.ts
+pnpm --filter @forgeroom/ui-components exec vitest run src/controlled/validate-props.test.ts src/controlled/presentation-limits.test.ts
 ~~~
 
 ## Completion evidence
 
-- Report path: Vitest `@forgeroom/domain` transitions suite
-- Command/result: `pnpm --filter @forgeroom/domain test` → 17 files / 53 passed (incl. 7 transitions)
+- Report path: Vitest `@forgeroom/domain` transitions + drafts; `@forgeroom/ui-components` controlled limits
+- Command/result (2026-08-29):
+  - `pnpm --filter @forgeroom/domain test` → 17 files / 53 passed (incl. 7 transitions) after slice 1
+  - `pnpm --filter @forgeroom/ui-components exec vitest run src/controlled/validate-props.test.ts src/controlled/presentation-limits.test.ts` → 2 files / 22 passed
+  - `pnpm --filter @forgeroom/domain exec vitest run src/coworkers/drafts.test.ts` → 5 passed (incl. OD-012 fixture exactDiff)
 
 ## Work log
 
 - 2026-08-29 — Claimed after deps done (was falsely `blocked`). Gap analysis vs test-plan unit list. Slice 1: add `AGENT_TURN_TRANSITIONS` / `PAUSE_GROUP_TRANSITIONS` / `ACTION_PROPOSAL_TRANSITIONS` from `data-model.md` and exhaustive closed-graph unit tests including `canTransitionRunStep`.
-- Intended non-goals this slice: interaction CAS extraction, controlled-component adversarial limits, skill binding unit layer (follow-up slices).
+- 2026-08-29 — Slice 2: extract `clampToLimit` presentation clamps; adversarial prop-schema tests (chart series, ChoiceForm fields/options, string length, TaskCard/ArtifactCard/ChoiceForm minima); OD-012 Research draft exactDiff/mustIncludeDenials unit lock (in-process constant, no FS I/O); align ChoiceForm schema `maxItems` with `MAX_FORM_FIELDS` so validation rejects rather than silently truncating; resolve STATUS.md merge conflict from parallel P0-501/P0-504 merges. Next: interaction CAS helper extract or skill attach missing-component cases.
+- Intended non-goals this slice: interaction CAS extraction from `ui-interactions.ts` (follow-up).

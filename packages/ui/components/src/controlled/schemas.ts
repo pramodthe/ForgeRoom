@@ -1,4 +1,5 @@
 import { P0_AGENT_TOOL_COMPONENT_NAMES } from "../index";
+import { MAX_CHART_SERIES, MAX_FORM_FIELDS, MAX_FORM_OPTIONS } from "./limits";
 
 type P0AgentToolComponentName = (typeof P0_AGENT_TOOL_COMPONENT_NAMES)[number];
 
@@ -47,7 +48,7 @@ export const PARAMETER_SCHEMAS: Record<
       y_axis_label: { type: "string" },
       series: {
         type: "array",
-        maxItems: 8,
+        maxItems: MAX_CHART_SERIES,
         items: {
           type: "object",
           additionalProperties: false,
@@ -102,7 +103,7 @@ export const PARAMETER_SCHEMAS: Record<
       cancel_label: { type: "string" },
       fields: {
         type: "array",
-        maxItems: 50,
+        maxItems: MAX_FORM_FIELDS,
         items: {
           type: "object",
           additionalProperties: false,
@@ -114,7 +115,7 @@ export const PARAMETER_SCHEMAS: Record<
             required: { type: "boolean" },
             options: {
               type: "array",
-              maxItems: 20,
+              maxItems: MAX_FORM_OPTIONS,
               items: {
                 type: "object",
                 additionalProperties: false,
