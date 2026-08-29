@@ -11,6 +11,17 @@ import { loadRunDetail } from "./run-detail";
 
 type SqlClient = postgres.Sql;
 
+function normalizePayload(value: unknown): SafeJsonValue {
+  if (typeof value === "string") {
+    try {
+      return JSON.parse(value) as SafeJsonValue;
+    } catch {
+      return value;
+    }
+  }
+  return value as SafeJsonValue;
+}
+
 export type LoadSkillRunEvidenceResult =
   | { ok: true; evidence: SkillRunEvidence; workspaceId: string; channelId: string }
   | { ok: false; code: "not_found" | "forbidden"; message: string };
@@ -70,10 +81,10 @@ export async function loadSkillRunEvidence(
       sourceStepIds: input.sourceStepIds,
       steps: detail.run.steps,
       events: eventRows
-        .filter((row) => selectedStepIds.has(row.run_step_id))
+        .filter((row) => selectedStepIds.has(String(row.run_step_id)))
         .map((row) => ({
           normalizedType: row.normalized_type,
-          payloadRedacted: row.normalized_payload_redacted_json as SafeJsonValue,
+          payloadRedacted: normalizePayload(row.normalized_payload_redacted_json),
         })),
       approvals: approvalRows.map((row) => ({
         toolName: row.tool_name,

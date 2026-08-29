@@ -62,14 +62,28 @@ export function collectRequiredTools(evidence: SkillRunEvidence): string[] {
     if (!event.normalizedType.startsWith("tool.")) {
       continue;
     }
-    if (event.payloadRedacted && typeof event.payloadRedacted === "object") {
-      const toolName = (event.payloadRedacted as Record<string, unknown>).tool_name;
-      if (typeof toolName === "string" && toolName.length > 0) {
-        tools.add(toolName);
-      }
+    const payload = readPayloadRecord(event.payloadRedacted);
+    const toolName = payload?.tool_name;
+    if (typeof toolName === "string" && toolName.length > 0) {
+      tools.add(toolName);
     }
   }
   return [...tools].sort();
+}
+
+function readPayloadRecord(payload: SafeJsonValue): Record<string, unknown> | null {
+  let value: unknown = payload;
+  if (typeof value === "string") {
+    try {
+      value = JSON.parse(value);
+    } catch {
+      return null;
+    }
+  }
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+  return value as Record<string, unknown>;
 }
 
 export function collectRequiredApprovals(evidence: SkillRunEvidence): string[] {
@@ -83,11 +97,10 @@ export function collectRequiredApprovals(evidence: SkillRunEvidence): string[] {
     if (event.normalizedType !== "approval.decided") {
       continue;
     }
-    if (event.payloadRedacted && typeof event.payloadRedacted === "object") {
-      const toolName = (event.payloadRedacted as Record<string, unknown>).tool_name;
-      if (typeof toolName === "string" && toolName.length > 0) {
-        approvals.add(`host_approval_${toolName.toLowerCase()}`);
-      }
+    const payload = readPayloadRecord(event.payloadRedacted);
+    const toolName = payload?.tool_name;
+    if (typeof toolName === "string" && toolName.length > 0) {
+      approvals.add(`host_approval_${toolName.toLowerCase()}`);
     }
   }
   return [...approvals].sort();

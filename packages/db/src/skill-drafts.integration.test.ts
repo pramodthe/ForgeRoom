@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { skillDraftSchema } from "@forgeroom/contracts";
 import type postgres from "postgres";
+import { collectRequiredTools } from "@forgeroom/domain";
 import {
   createSkillDraftRecord,
   getSkillDraftById,
@@ -84,6 +85,7 @@ describe("skill drafts persistence", () => {
       expect(
         loaded.evidence.events.some((event) => event.normalizedType === "tool.succeeded"),
       ).toBe(true);
+      expect(collectRequiredTools(loaded.evidence)).toContain("GITHUB_GET_AN_ISSUE");
 
       const draft = await createSkillDraftRecord(sql, {
         workspaceId: "ws_1",
