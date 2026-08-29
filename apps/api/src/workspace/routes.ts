@@ -20,6 +20,7 @@ import {
   taskCreateCommandSchema,
   taskUpdateCommandSchema,
   runCancelCommandSchema,
+  skillDraftCreateCommandSchema,
 } from "@forgeroom/contracts";
 import { randomOpaqueId } from "../auth/crypto";
 import type { AuthService } from "../auth/service";
@@ -1008,5 +1009,44 @@ export function mountWorkspaceRoutes(
       return fail(c, result.error);
     }
     return okJson(c, result.value, 201);
+  });
+
+  app.post("/api/runs/:runId/skill-drafts", async (c) => {
+    const authed = await requireMutationSession(c, env, auth);
+    if (authed instanceof Response) {
+      return authed;
+    }
+    const runId = requireParam(c, "runId");
+    if (runId instanceof Response) {
+      return runId;
+    }
+    const parsed = skillDraftCreateCommandSchema.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) {
+      const failure = errorResponse("validation_failed", "Invalid skill draft create command.", {
+        status: 400,
+      });
+      return c.json(failure.body, failure.status);
+    }
+    const result = await workspace.createSkillDraft(authed.session, runId, parsed.data);
+    if (!result.ok) {
+      return fail(c, result.error);
+    }
+    return okJson(c, { draft: result.value }, 201);
+  });
+
+  app.get("/api/skill-drafts/:draftId", async (c) => {
+    const authed = await requireSession(c, env, auth);
+    if (authed instanceof Response) {
+      return authed;
+    }
+    const draftId = requireParam(c, "draftId");
+    if (draftId instanceof Response) {
+      return draftId;
+    }
+    const result = await workspace.getSkillDraft(authed.session, draftId);
+    if (!result.ok) {
+      return fail(c, result.error);
+    }
+    return okJson(c, { draft: result.value }, 200);
   });
 }
