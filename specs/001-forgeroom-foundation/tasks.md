@@ -50,8 +50,8 @@ Each task file is authoritative for its status and evidence. Keep this index and
 | [x] | [P0-313](./tasks/P0-313-audit-receipt.md) | Audit timeline and JSON receipt | done | P0-203, P0-309, P0-312, P0-315 |
 | [x] | [P0-314](./tasks/P0-314-component-registry-grants.md) | Fixed governed component registry | done | P0-102, P0-103, P0-104, P0-210 |
 | [ ] | [P0-315](./tasks/P0-315-component-tool-interaction-gateway.md) | Component/interaction gateway | in_review | P0-201, P0-208, P0-211, P0-212, P0-314 |
-| [ ] | [P0-316](./tasks/P0-316-controlled-component-library.md) | Small controlled component library | ready | P0-312, P0-314, P0-401 |
-| [ ] | [P0-317](./tasks/P0-317-data-function-time-limits.md) | Data-function time limit | ready | P0-315 |
+| [ ] | [P0-316](./tasks/P0-316-controlled-component-library.md) | Small controlled component library | in_review | P0-312, P0-314, P0-401 |
+| [ ] | [P0-317](./tasks/P0-317-data-function-time-limits.md) | Data-function time limit | in_review | P0-315 |
 | [ ] | [P0-318](./tasks/P0-318-save-run-as-skill.md) | Save successful Run as skill | ready | P0-104, P0-106, P0-206, P0-208, P0-403 |
 | [x] | [P0-401](./tasks/P0-401-app-shell.md) | Authenticated three-pane shell | done | P0-102, P0-104 |
 | [x] | [P0-402](./tasks/P0-402-composer-roster.md) | Channel composer and roster | done | P0-106, P0-107, P0-205, P0-401 |

@@ -4,10 +4,10 @@
 | --- | --- |
 | Overall | M0 Demo contract done; M1 Foundation done; P0-404/P0-405 in_review; P0-315 in_review; P0-301–P0-314 done |
 | Current phase | Phase 1 — Foundation / M4 Product UI |
-| Active task | P0-315 (in_review), P0-404 (in_review), P0-405 (in_review) |
-| Next task | Critical path: P0-316; also ready: P0-317, P0-318 |
+| Active task | P0-315 (in_review), P0-316 (in_review), P0-317 (in_review PR #56), P0-404 (in_review), P0-405 (in_review) |
+| Next task | Critical path: P0-317 merge; also ready: P0-318 |
 | P0 blockers | Run-limit hard enforcement (P0-204/OD-008 evidence) |
-| Last updated | 2026-08-29 (P0-404/P0-405 UI stack merged #50–#53; closeout in review) |
+| Last updated | 2026-08-29 (P0-316 merged #55; P0-317 time-limit closeout in review PR #56) |
 
 ## Milestones
 
@@ -61,7 +61,8 @@ Never put credentials in this file.
 
 ## Recently completed
 
-- P0-404 / P0-405 UI wave (2026-08-29): merged PR #50–#52 (question card, run drawer enrichment, keyboard operability) and PR #53 (pin from message/artifact). Closeout PR adds trusted HITL host-open hook, Work tab stop, task evidence.
+- P0-404 / P0-405 closeout (2026-08-29): merged PR #54 (trusted HITL host-open hook, Work tab stop, task evidence).
+- P0-317 → `in_review` (2026-08-29): `DataGrant.max_time_ms` enforced in `applySnapshotLimits` and `invokeUiDataFunction`; attributed limit errors; integration tests for bytes/time breach.
 - P0-315 → `in_review` (2026-08-28). Nine of eleven open acceptance criteria verified with
   file/line evidence: grant-intersection offers, server broker render results over MCP, one-use
   interaction tokens, manifest render-node binding, bounded interaction scope, absent P1 endpoints,
@@ -70,8 +71,8 @@ Never put credentials in this file.
   took no row locks, so a concurrent revoke/rotate could commit between the recheck and the
   instance/grant inserts. Fixed with `FOR SHARE` on the session, version and grant rows, plus a
   regression test that waits on `pg_stat_activity` until the broker is provably blocked. Two deferred to named tasks rather than prose — client-side prop-schema
-  validation to **P0-316** (owns the renderers), and the data-function time bound to new task
-  **P0-317** (`DataGrant` has `max_rows`/`max_bytes` but no time limit).
+  validation to **P0-316** (owns the renderers). Data-function time bound closed in **P0-317**
+  (`max_time_ms` on `DataGrant`, attributed limit errors, integration tests).
 - Status re-triage (2026-08-28): P0-316, P0-318, P0-404 and P0-405 were marked `blocked` while
   every listed dependency was already `done`; corrected to `ready`.
 - Local gate run at `34bf326`: `pnpm lint`, `typecheck`, `test` (23 files, 116 passed, 1 skipped)
