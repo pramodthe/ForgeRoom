@@ -1,7 +1,7 @@
 ---
 id: P0-408
 title: Integrate AG-UI reducers and generative renderers into the channel
-status: blocked
+status: ready
 owner: unassigned
 depends_on: [P0-212, P0-315, P0-316, P0-403]
 requirements: [AGUI-002, AGUI-003, AGUI-006, GUI-001, GUI-011, GUI-012, GUI-014]

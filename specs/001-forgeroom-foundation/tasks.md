@@ -49,7 +49,7 @@ Each task file is authoritative for its status and evidence. Keep this index and
 | [x] | [P0-312](./tasks/P0-312-artifact-extraction.md) | Artifact extraction and preview | done | P0-310, P0-311 |
 | [x] | [P0-313](./tasks/P0-313-audit-receipt.md) | Audit timeline and JSON receipt | done | P0-203, P0-309, P0-312, P0-315 |
 | [x] | [P0-314](./tasks/P0-314-component-registry-grants.md) | Fixed governed component registry | done | P0-102, P0-103, P0-104, P0-210 |
-| [ ] | [P0-315](./tasks/P0-315-component-tool-interaction-gateway.md) | Component/interaction gateway | in_review | P0-201, P0-208, P0-211, P0-212, P0-314 |
+| [x] | [P0-315](./tasks/P0-315-component-tool-interaction-gateway.md) | Component/interaction gateway | done | P0-201, P0-208, P0-211, P0-212, P0-314 |
 | [x] | [P0-316](./tasks/P0-316-controlled-component-library.md) | Small controlled component library | done | P0-312, P0-314, P0-401 |
 | [ ] | [P0-317](./tasks/P0-317-data-function-time-limits.md) | Data-function time limit | in_review | P0-315 |
 | [x] | [P0-318](./tasks/P0-318-save-run-as-skill.md) | Save successful Run as skill | done | P0-104, P0-106, P0-206, P0-208, P0-403 |
@@ -60,7 +60,7 @@ Each task file is authoritative for its status and evidence. Keep this index and
 | [x] | [P0-405](./tasks/P0-405-work-tabs.md) | Tasks, Work, Artifacts and Context | done | P0-108, P0-109, P0-312, P0-403 |
 | [x] | [P0-406](./tasks/P0-406-settings-screens.md) | Coworker, Skills and Connections UI | done | P0-106, P0-304, P0-318, P0-401 |
 | [ ] | [P0-407](./tasks/P0-407-ux-accessibility.md) | Required states and accessibility | in_progress | P0-402–P0-406, P0-316, P0-410 |
-| [ ] | [P0-408](./tasks/P0-408-agui-rich-timeline.md) | AG-UI reducers and controlled rich timeline | blocked | P0-212, P0-315, P0-316, P0-403 |
+| [ ] | [P0-408](./tasks/P0-408-agui-rich-timeline.md) | AG-UI reducers and controlled rich timeline | ready | P0-212, P0-315, P0-316, P0-403 |
 | [x] | [P0-410](./tasks/P0-410-coworker-task-skill-ui.md) | Coworker/Task/skill review flows | done | P0-109, P0-213, P0-318, P0-402, P0-406 |
 | [ ] | [P0-501](./tasks/P0-501-unit-suite.md) | Unit suite completion | blocked | P0-108, P0-109, P0-212, P0-213, P0-303, P0-306, P0-312, P0-314–P0-316, P0-318 |
 | [ ] | [P0-502](./tasks/P0-502-integration-suite.md) | Runtime/integration suite | blocked | P0-109, P0-204, P0-208, P0-212, P0-213, P0-305, P0-309, P0-312, P0-313, P0-315, P0-318 |

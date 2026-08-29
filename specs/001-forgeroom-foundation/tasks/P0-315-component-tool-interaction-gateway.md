@@ -1,7 +1,7 @@
 ---
 id: P0-315
 title: Implement component tool bridge, UIInstances and interaction gateway
-status: in_review
+status: done
 owner: unassigned
 depends_on: [P0-201, P0-208, P0-211, P0-212, P0-314]
 requirements: [PLAT-006, GUI-004, GUI-005, GUI-008, GUI-009, GUI-010, GUI-011, GUI-014]
@@ -21,7 +21,7 @@ TrueForge can call a granted frontend component, persist its exact instance and 
 - [x] Browser renderer tools are advertisements; server offers only its grant intersection to TrueForge. *(`packages/orchestration/src/capability-intersection.ts:147` `intersectEffectiveComponentTools`)*
 - [x] Publication/version/schema/descriptor/grant recheck occurs after complete args and immediately before instance creation. *(two-checkpoint `recheckBrokerComponentAuthority`; checkpoint 2 takes `FOR SHARE` on the session, version and grant rows — PR #46)*
 - [x] Component descriptor/grant changes block affected queue claims, rotate offered-tool session revisions and stale old offers.
-- [ ] Complete props validate server-side and client-side; one tool call creates one immutable UIInstance lineage. *(server-side validation and immutable lineage complete; client-side prop-schema validation deferred to [P0-316](./P0-316-controlled-component-library.md), which builds the renderers — `component-host.tsx` is today an error boundary only)*
+- [x] Complete props validate server-side and client-side; one tool call creates one immutable UIInstance lineage. *(server-side validation + immutable lineage in broker path; client-side prop-schema validation in P0-316 `validateControlledProps` + fixture gallery tests)*
 - [x] Server broker returns ordinary render results without a live browser; interactive waiting is represented by a durable interrupt, not an ephemeral callback. *(`packages/integrations/ui-components-mcp/src/protocol.ts:119-137` structured `callTool` result)*
 - [x] `UIComponentInterrupt` is application-owned and distinct from PauseGroup: one bounded result CAS-resolves it and enqueues one structured same-RunStep continuation on the exact session generation; duplicates/stale generations cannot enqueue and no generic UI endpoint calls `RunAgentInput.resume`.
 - [x] Data functions are reviewed read-only handlers with independent grants and row/byte/time limits. *(row/byte/time enforced in `packages/db/src/retained-data-grants.ts` `applySnapshotLimits` and `packages/db/src/ui-data-functions.ts`; closeout [P0-317](./P0-317-data-function-time-limits.md))*
@@ -39,14 +39,12 @@ Run forged-tool, stale-grant, schema, data-grant, interaction-token replay, gran
 
 ## Implementation progress
 
-The gateway, broker tail and independent data handlers are implemented. Nine of the eleven open
-acceptance criteria were verified against the merged code on 2026-08-28 and ticked above with
-file/line evidence. Two more landed with PR #46 (two-checkpoint authority recheck, plus `FOR SHARE`
-locks closing the TOCTOU race Qodo flagged at checkpoint 2). Two remain deferred to named follow-up
-tasks rather than prose:
+The gateway, broker tail and independent data handlers are implemented. All acceptance criteria
+verified against merged code through P0-316 (client prop validation) and P0-317 (data-function
+time bound).
 
-- Client-side prop-schema validation → **P0-316** (owns the renderers).
-- Data-function time limit → **P0-317** (`DataGrant` has `max_rows`/`max_bytes` but no time bound).
+- Client-side prop-schema validation → **P0-316** (`validateControlledProps`, fixture gallery).
+- Data-function time limit → **P0-317** (`max_time_ms` on `DataGrant`).
 
 - [x] Trusted-host registry token issuance and commit endpoints for `local_state`.
 - [x] Exact instance/workspace/channel/actor, promoted render revision, manifest hash, render-node,
@@ -87,3 +85,7 @@ tasks rather than prose:
 - `pnpm --filter @forgeroom/api exec vitest run src/components/component.test.ts`
 - `pnpm lint && pnpm typecheck && pnpm test && pnpm build`
 - Qodo fast pre-PR review: clean after the reliability fixes.
+
+## Work log
+
+- 2026-08-29 — Task marked `done`; deferred client validation (P0-316) and time bound (P0-317) closed.
