@@ -4,9 +4,17 @@
 
 [View the public repository](https://github.com/pramodthe/ForgeRoom) · [Read the product specs](./specs/README.md) · [Browse the commit history](https://github.com/pramodthe/ForgeRoom/commits/main)
 
-## The idea
+## What ForgeRoom is
 
-AI agents can produce useful work, but their activity is often hidden in a chat transcript or an opaque background process. ForgeRoom makes that work legible. A person can give coworkers a goal in a shared channel, follow their progress, inspect structured results and artifacts, and approve the exact external action before it happens.
+ForgeRoom is a collaborative workroom where a person works alongside persistent AI coworkers. Instead of treating AI work as a disposable chat response, it gives that work a shared place: a channel, task records, live status, controlled interactive results, artifacts, and an audit trail.
+
+## The problem it solves
+
+Most AI-agent workflows are hard to trust and hard to operate: work happens inside an opaque conversation or background process, tool permissions are broad, important actions can be difficult to inspect, and results disappear without durable context. Teams need AI coworkers that are useful without becoming unaccountable.
+
+## How ForgeRoom solves it
+
+ForgeRoom makes each stage of AI work visible and governed. A person assigns work in a shared channel, can watch persistent coworkers progress, receives structured results and artifacts, and must approve the exact external action before it can run. The resulting state is persisted so the work can be reviewed, replayed, and audited.
 
 The product is designed around one trusted loop:
 
@@ -16,7 +24,7 @@ request → governed coworker → visible work → reviewable result → exact a
 
 ForgeRoom is an active open-source project. Its core foundation is implemented, while the broader 0.1 showcase and release gates remain in progress. Later release goals are deliberately documented as roadmap work rather than represented as finished product.
 
-## What the current foundation delivers
+## Key features in the current foundation
 
 | Capability              | What it means in ForgeRoom                                                                                                                           |
 | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
