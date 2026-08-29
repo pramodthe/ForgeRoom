@@ -11,6 +11,7 @@ import type {
   ChannelPin,
   ChannelPinCreateCommand,
   ChannelPinRemoveCommand,
+  ChannelPinsListResponse,
   ChannelRosterResponse,
   ChannelUpdateCommand,
   CoworkerDisableCommand,
@@ -439,6 +440,10 @@ export type WorkspaceService = {
     pinId: string,
     command: ChannelPinRemoveCommand,
   ): Promise<WorkspaceServiceResult<{ pin: ChannelPin; sequence: number }>>;
+  listPins(
+    session: SessionResponse,
+    channelId: string,
+  ): Promise<WorkspaceServiceResult<ChannelPinsListResponse>>;
   /**
    * Assemble a bounded channel context envelope for a coworker turn.
    * Full turn dispatch is later; this is the authoritative context builder.
@@ -3225,6 +3230,26 @@ export function createWorkspaceService(options?: {
           }
         },
       });
+    },
+
+    async listPins(session, channelId) {
+      const loaded = await loadOwnedChannel(session, channelId);
+      if (!loaded.ok) {
+        return loaded;
+      }
+      const rows = await store.listActivePins(channelId);
+      const pins: ChannelPinsListResponse["pins"] = [];
+      for (const row of rows) {
+        pins.push(await toChannelPin(store, row));
+      }
+      return {
+        ok: true,
+        value: {
+          schemaVersion: 1,
+          channel_id: channelId,
+          pins,
+        },
+      };
     },
 
     async buildChannelContextForTurn(input) {

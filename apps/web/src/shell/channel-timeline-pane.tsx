@@ -17,6 +17,7 @@ import { useSession } from "../auth/session-context";
 import { ChannelComposer } from "./channel-composer";
 import { ChannelHeader } from "./channel-header";
 import { ChannelTimeline } from "./channel-timeline";
+import { PendingApprovalsStrip } from "./pending-approvals-strip";
 import { useChannelWorkroomUi } from "./channel-workroom-ui-context";
 
 type ChannelTimelinePaneProps = {
@@ -131,6 +132,7 @@ export function ChannelTimelinePane({
           membershipMutation.mutate({ action: "remove", coworkerId })
         }
       />
+      <PendingApprovalsStrip channelId={channel.id} archived={archived} />
       <ChannelTimeline
         workspaceId={workspaceId}
         channelId={channel.id}

@@ -48,6 +48,7 @@ export {
   channelPinSchema,
   channelPinCreateCommandSchema,
   channelPinRemoveCommandSchema,
+  channelPinsListResponseSchema,
   routingModeSchema,
 } from "./channels";
 export type {
@@ -63,6 +64,7 @@ export type {
   ChannelPin,
   ChannelPinCreateCommand,
   ChannelPinRemoveCommand,
+  ChannelPinsListResponse,
 } from "./channels";
 
 export {
@@ -228,6 +230,7 @@ export {
   approvalDecisionCommandSchema,
   approvalCardSchema,
   approvalDecisionResultSchema,
+  channelPendingApprovalsResponseSchema,
   requiredActionTypeSchema,
   requiredActionStateSchema,
   requiredActionSchema,
@@ -252,6 +255,7 @@ export type {
   ApprovalDecisionCommand,
   ApprovalCard,
   ApprovalDecisionResult,
+  ChannelPendingApprovalsResponse,
   Question,
   QuestionAnswerCommand,
 } from "./pause";

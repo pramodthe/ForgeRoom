@@ -3,6 +3,7 @@ import type {
   ApprovalDecisionCommand,
   ApprovalDecisionResult,
   AuditReceipt,
+  ChannelPendingApprovalsResponse,
   UiDataFunctionCommand,
   UiInstanceReplayResponse,
 } from "@forgeroom/contracts";
@@ -10,6 +11,7 @@ import {
   approvalCardSchema,
   approvalDecisionResultSchema,
   auditReceiptSchema,
+  channelPendingApprovalsResponseSchema,
   uiInstanceReplayResponseSchema,
 } from "@forgeroom/contracts";
 import { apiFetch, ApiError, stripRequestId } from "./http-client";
@@ -35,6 +37,17 @@ export async function postApprovalDecision(input: {
     },
   );
   return approvalDecisionResultSchema.parse(stripRequestId(body as { request_id: string }));
+}
+
+export async function listChannelPendingApprovals(
+  channelId: string,
+): Promise<ChannelPendingApprovalsResponse> {
+  const body = await apiFetch<unknown>(
+    `/api/channels/${encodeURIComponent(channelId)}/pending-approvals`,
+  );
+  return channelPendingApprovalsResponseSchema.parse(
+    stripRequestId(body as { request_id: string }),
+  );
 }
 
 export async function getRunReceipt(runId: string): Promise<{

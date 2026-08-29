@@ -632,3 +632,24 @@ export async function loadApprovalProposalForCard(
   }
   return { ok: true, snapshot: rowToSnapshot(row) };
 }
+
+export async function listPendingApprovalProposalIds(
+  sql: SqlClient,
+  input: { channelId: string; workspaceId: string; now?: string },
+): Promise<string[]> {
+  const now = input.now ?? new Date().toISOString();
+  const rows = await sql<{ id: string }[]>`
+    SELECT ap.id
+    FROM action_proposals AS ap
+    JOIN required_actions AS ra ON ra.id = ap.required_action_id
+    JOIN runs AS r ON r.id = ap.run_id
+    JOIN channels AS c ON c.id = r.channel_id
+    WHERE r.channel_id = ${input.channelId}
+      AND c.workspace_id = ${input.workspaceId}
+      AND ap.state = 'proposed'
+      AND ra.state = 'pending'
+      AND ap.expires_at > ${now}
+    ORDER BY ra.created_at ASC
+  `;
+  return rows.map((row) => row.id);
+}

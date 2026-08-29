@@ -153,6 +153,14 @@ export const channelPinRemoveCommandSchema = z
   })
   .strict();
 
+export const channelPinsListResponseSchema = z
+  .object({
+    schemaVersion: schemaVersion1,
+    channel_id: opaqueIdSchema,
+    pins: z.array(channelPinSchema),
+  })
+  .strict();
+
 export type Channel = z.infer<typeof channelSchema>;
 export type ChannelMessageCommand = z.infer<typeof channelMessageCommandSchema>;
 export type ChannelTimelineMessage = z.infer<typeof channelTimelineMessageSchema>;
@@ -165,3 +173,4 @@ export type ChannelParticipantRemoveCommand = z.infer<typeof channelParticipantR
 export type ChannelPin = z.infer<typeof channelPinSchema>;
 export type ChannelPinCreateCommand = z.infer<typeof channelPinCreateCommandSchema>;
 export type ChannelPinRemoveCommand = z.infer<typeof channelPinRemoveCommandSchema>;
+export type ChannelPinsListResponse = z.infer<typeof channelPinsListResponseSchema>;

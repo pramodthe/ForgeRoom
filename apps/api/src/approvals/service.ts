@@ -3,15 +3,18 @@ import {
   approvalCardSchema,
   approvalDecisionCommandSchema,
   approvalDecisionResultSchema,
+  channelPendingApprovalsResponseSchema,
   type ApprovalCard,
   type ApprovalDecisionCommand,
   type ApprovalDecisionResult,
+  type ChannelPendingApprovalsResponse,
   type ErrorCode,
   type SessionResponse,
 } from "@forgeroom/contracts";
 import { buildApprovalCard, isOwnerRole, type ProposalDecisionSnapshot } from "@forgeroom/domain";
 import {
   derivePausePayloadKey,
+  listPendingApprovalProposalIds,
   loadApprovalProposalForCard,
   recordApprovalDecision,
   type ApprovalProposalCardSnapshot,
@@ -78,6 +81,10 @@ export type ApprovalService = {
     session: SessionResponse,
     proposalId: string,
   ): Promise<ApprovalServiceResult<ApprovalCard>>;
+  listPendingApprovals(
+    session: SessionResponse,
+    channelId: string,
+  ): Promise<ApprovalServiceResult<ChannelPendingApprovalsResponse>>;
   decideApproval(
     session: SessionResponse,
     proposalId: string,
@@ -108,6 +115,32 @@ export function createApprovalService(options: { env: ApiEnv; sql: SqlClient }):
       }
       const card = approvalCardSchema.parse(buildApprovalCard(snapshotToDomain(loaded.snapshot)));
       return { ok: true, value: card };
+    },
+
+    async listPendingApprovals(session, channelId) {
+      const channel = await options.sql<{ workspace_id: string }[]>`
+        SELECT workspace_id FROM channels WHERE id = ${channelId} LIMIT 1
+      `;
+      const row = channel[0];
+      if (!row) {
+        return { ok: false, error: { code: "not_found", message: "Channel not found." } };
+      }
+      if (row.workspace_id !== session.workspace_id) {
+        return {
+          ok: false,
+          error: { code: "forbidden", message: "Channel is outside this workspace." },
+        };
+      }
+      const proposalIds = await listPendingApprovalProposalIds(options.sql, {
+        channelId,
+        workspaceId: session.workspace_id,
+      });
+      const value = channelPendingApprovalsResponseSchema.parse({
+        schemaVersion: 1,
+        channel_id: channelId,
+        proposal_ids: proposalIds,
+      });
+      return { ok: true, value };
     },
 
     async decideApproval(session, proposalId, command) {
