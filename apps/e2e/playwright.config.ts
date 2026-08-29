@@ -6,6 +6,7 @@ const baseURL = process.env.FORGEROOM_E2E_BASE_URL ?? "http://127.0.0.1:5173";
 const liveRaw = process.env.FORGEROOM_E2E_LIVE?.trim();
 const liveProviders = liveRaw === "1" || liveRaw === "providers";
 const liveApi = liveRaw === "api" || liveProviders;
+const externalStack = process.env.FORGEROOM_E2E_EXTERNAL_STACK === "1";
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "../..");
 
 export default defineConfig({
@@ -65,22 +66,30 @@ export default defineConfig({
         ]
       : []),
   ],
-  webServer: liveProviders
+  webServer: externalStack
     ? undefined
-    : liveApi
+    : liveProviders
       ? {
-          command: "bash apps/e2e/scripts/start-live-stack.sh",
+          command: "bash apps/e2e/scripts/start-providers-stack.sh",
           url: baseURL,
           reuseExistingServer: !process.env.CI,
-          timeout: 180_000,
+          timeout: 300_000,
           cwd: repoRoot,
         }
-      : {
-          command:
-            "pnpm --filter @forgeroom/web exec vite --mode prototype --host 127.0.0.1 --port 5173",
-          url: baseURL,
-          reuseExistingServer: !process.env.CI,
-          timeout: 120_000,
-          cwd: repoRoot,
-        },
+      : liveApi
+        ? {
+            command: "bash apps/e2e/scripts/start-live-stack.sh",
+            url: baseURL,
+            reuseExistingServer: !process.env.CI,
+            timeout: 180_000,
+            cwd: repoRoot,
+          }
+        : {
+            command:
+              "pnpm --filter @forgeroom/web exec vite --mode prototype --host 127.0.0.1 --port 5173",
+            url: baseURL,
+            reuseExistingServer: !process.env.CI,
+            timeout: 120_000,
+            cwd: repoRoot,
+          },
 });

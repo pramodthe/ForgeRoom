@@ -13,6 +13,16 @@ export const DEMO = {
   taskTitle: "Reconcile the synthetic demo record and publish a sandbox summary",
 } as const;
 
+/** Env vars required for FORGEROOM_E2E_LIVE=1|providers (values never logged). */
+export const PROVIDER_ENV_KEYS = [
+  "OPENAI_API_KEY",
+  "COMPOSIO_API_KEY",
+  "COMPOSIO_CONNECTED_ACCOUNT_ID",
+  "COMPOSIO_USER_ID",
+  "DAYTONA_API_KEY",
+  "TRUEFORGE_BASE_URL",
+] as const;
+
 export function demoChannelPath(): string {
   return `/w/${DEMO.workspaceId}/channels/${DEMO.channelId}`;
 }
@@ -25,13 +35,12 @@ export function demoTasksPath(): string {
   return `/w/${DEMO.workspaceId}/tasks`;
 }
 
+export function missingProviderCredentials(): string[] {
+  return PROVIDER_ENV_KEYS.filter((key) => !process.env[key]?.trim());
+}
+
 export function hasProviderCredentials(): boolean {
-  return Boolean(
-    process.env.OPENAI_API_KEY?.trim() &&
-    process.env.COMPOSIO_API_KEY?.trim() &&
-    process.env.COMPOSIO_CONNECTED_ACCOUNT_ID?.trim() &&
-    process.env.DAYTONA_API_KEY?.trim(),
-  );
+  return missingProviderCredentials().length === 0;
 }
 
 export function liveMode(): "off" | "api" | "providers" {

@@ -3,11 +3,12 @@ import { scanPlaywrightArtifacts } from "../helpers/trace-redaction";
 import { DEMO, hasProviderCredentials, liveMode } from "../helpers/live";
 import {
   assertLiveP0SurfacesAbsent,
+  assertProvidersConfigured,
   createResearchCoworker,
   gotoDemoChannel,
   gotoDemoTasks,
   loginAsOwner,
-  requireProvidersOrSkip,
+  runProviderBackedNarrative,
   sendTeamTask,
 } from "../helpers/live-flows";
 
@@ -15,103 +16,59 @@ import {
  * Full 15-step live scenario from test-plan.md.
  *
  * Modes:
- * - FORGEROOM_E2E_LIVE=api — seeded API steps (1–4 partial); provider steps soft-skipped
- * - FORGEROOM_E2E_LIVE=1|providers — full narrative when provider env is present
+ * - FORGEROOM_E2E_LIVE=api — seeded API structure; provider steps soft-skipped
+ * - FORGEROOM_E2E_LIVE=1|providers — one serial narrative (requires provider env + TrueForge)
  */
 test.describe("P0-504 complete browser scenario (live)", () => {
   test.skip(liveMode() === "off", "Set FORGEROOM_E2E_LIVE=api or FORGEROOM_E2E_LIVE=1");
 
-  test("1–3 auth, seeded channel, Research coworker", async ({ page }) => {
+  test("api structure: auth, channel, soft-skip providers", async ({ page }) => {
+    test.skip(liveMode() !== "api", "api-mode structure coverage only");
+
     await loginAsOwner(page);
     await gotoDemoChannel(page);
     await expect(page.getByText("Workspace service account")).toBeVisible();
     await expect(page.getByText(/Operator/i).first()).toBeVisible();
     await assertLiveP0SurfacesAbsent(page);
 
-    // Research coworker draft/provision needs TrueForge + model; skip fast in api-only mode.
-    if (liveMode() === "api" && !hasProviderCredentials()) {
-      test.info().annotations.push({
-        type: "soft-skip",
-        description: "Research coworker provisioning deferred without TrueForge/providers",
-      });
-      return;
-    }
-    await createResearchCoworker(page);
+    test.info().annotations.push({
+      type: "soft-skip",
+      description: "Research/task/GenUI/approval deferred to FORGEROOM_E2E_LIVE=providers",
+    });
   });
 
-  test("4 task fan-out to coworkers", async ({ page }) => {
-    if (liveMode() === "api" && !hasProviderCredentials()) {
-      test.info().annotations.push({
-        type: "soft-skip",
-        description: "Task fan-out needs coworker turns/providers",
-      });
-      return;
-    }
+  test("providers: full 15-step demo narrative", async ({ page }, testInfo) => {
+    test.skip(liveMode() !== "providers", "Set FORGEROOM_E2E_LIVE=1|providers");
+    assertProvidersConfigured();
+
+    // 1–2 auth + seeded channel
     await loginAsOwner(page);
+    await gotoDemoChannel(page);
+    await expect(page.getByText("Workspace service account")).toBeVisible();
+    await expect(page.getByText(/Operator/i).first()).toBeVisible();
+    await assertLiveP0SurfacesAbsent(page);
+
+    // 3 Research coworker
+    await createResearchCoworker(page);
+
+    // 4 task fan-out
     await sendTeamTask(page);
     await gotoDemoTasks(page);
     await expect(page.getByText(DEMO.taskTitle).first()).toBeVisible({ timeout: 60_000 });
-  });
 
-  test("5–15 provider-backed GenUI, approval, skill, receipt", async ({ page }) => {
-    requireProvidersOrSkip(test);
-    await loginAsOwner(page);
-    await gotoDemoChannel(page);
+    // 5–15 GenUI → deny → refresh → approve → skill → receipt
+    await runProviderBackedNarrative(page);
 
-    // 5 — controlled DataTable / chart from Composio read
-    await expect(
-      page
-        .getByRole("heading", { name: /Synthetic demo records|Synthetic record counts/i })
-        .first(),
-    ).toBeVisible({ timeout: 180_000 });
-
-    // 6 — bounded ChoiceForm
-    const choice = page.getByRole("heading", { name: /Filter synthetic records/i });
-    await expect(choice).toBeVisible({ timeout: 60_000 });
-    await page.getByRole("button", { name: "Apply filter" }).click();
-
-    // 7 — ArtifactCard
-    await expect(page.getByRole("heading", { name: /Sandbox summary/i })).toBeVisible({
-      timeout: 180_000,
+    await testInfo.attach("providers-final", {
+      body: await page.screenshot({ fullPage: true }),
+      contentType: "image/png",
     });
-
-    // 8 — trusted approval
-    const approval = page.getByLabel("Trusted approval card");
-    await expect(approval).toBeVisible({ timeout: 180_000 });
-
-    // 9 — deny; provider unchanged is verified by subsequent reconcile expectations
-    await approval.getByRole("button", { name: "Deny" }).click();
-    await expect(page.getByText(/denied|rejected|not approved/i).first()).toBeVisible();
-
-    // 10–12 — re-request path may surface a new card; approve when present
-    const approvalAgain = page.getByLabel("Trusted approval card");
-    if (await approvalAgain.isVisible()) {
-      // 11 — refresh restores pending proposal
-      await page.reload();
-      await expect(page.getByLabel("Trusted approval card")).toBeVisible({ timeout: 60_000 });
-      await page
-        .getByLabel("Trusted approval card")
-        .getByRole("button", { name: "Approve" })
-        .click();
-    }
-
-    // 13 — reconcile / receipt path
-    await expect(page.getByRole("button", { name: "Receipt" }).first()).toBeVisible({
-      timeout: 180_000,
-    });
-    await page.getByRole("button", { name: "Receipt" }).first().click();
-    await expect(page.getByRole("dialog")).toBeVisible();
-
-    // 14 — save as skill
-    await page.getByRole("button", { name: "Save as skill" }).click();
-    await page.getByRole("button", { name: /Publish v1 and attach/i }).click();
-    await expect(page.getByText(/Skill published and attached/i)).toBeVisible({ timeout: 120_000 });
-
-    // 15 — lineage still visible on receipt
-    await assertLiveP0SurfacesAbsent(page);
   });
 
   test.afterAll(() => {
+    if (liveMode() === "providers" && !hasProviderCredentials()) {
+      return;
+    }
     const scan = scanPlaywrightArtifacts([
       "test-results",
       "playwright-report",
