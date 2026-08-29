@@ -17,7 +17,10 @@ provider-fixtures/composio/accounts.local.json
 # Generated browser snapshots and local Playwright state.
 .playwright-cli/
 playwright-report/
+**/playwright-report/
 test-results/
+**/test-results/
+apps/e2e/blob-report/
 
 # Node / TypeScript build outputs.
 node_modules/

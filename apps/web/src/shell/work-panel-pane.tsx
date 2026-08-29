@@ -59,9 +59,9 @@ export function WorkPanelPane(props: { workspaceId: string; channelId: string; c
         aria-labelledby={`${tabListId}-${activeTab.toLowerCase()}`}
       >
         {showFixture ? (
-          <EmptyPanel
+          <FixtureWorkPanel
             tab={activeTab}
-            detail="Fixture demo content remains in prototype mode only."
+            onOpenDemoReceipt={() => workroomUi.openRunDrawer("run_4A91")}
           />
         ) : activeTab === "Work" ? (
           <LiveWorkTab
@@ -92,6 +92,36 @@ export function WorkPanelPane(props: { workspaceId: string; channelId: string; c
         />
       ) : null}
     </aside>
+  );
+}
+
+function FixtureWorkPanel({
+  tab,
+  onOpenDemoReceipt,
+}: {
+  tab: WorkTab;
+  onOpenDemoReceipt: () => void;
+}) {
+  if (tab !== "Work") {
+    return <EmptyPanel tab={tab} detail="Fixture demo content remains in prototype mode only." />;
+  }
+  return (
+    <div className="space-y-3">
+      <div className="rounded-xl border border-dashed border-zinc-300 bg-white px-4 py-4">
+        <p className="font-medium text-zinc-800">Fixture demo run</p>
+        <p className="mt-1 text-xs text-zinc-500">
+          Prototype mode exposes the save-as-skill and receipt drawer for browser E2E without live
+          providers.
+        </p>
+        <button
+          type="button"
+          className="mt-3 rounded-lg bg-zinc-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-zinc-800"
+          onClick={onOpenDemoReceipt}
+        >
+          Open demo run receipt
+        </button>
+      </div>
+    </div>
   );
 }
 

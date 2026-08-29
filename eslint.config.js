@@ -4,7 +4,15 @@ import tseslint from "typescript-eslint";
 
 export default tseslint.config(
   {
-    ignores: ["**/dist/**", "**/node_modules/**", "**/coverage/**", "specs/**", "pnpm-lock.yaml"],
+    ignores: [
+      "**/dist/**",
+      "**/node_modules/**",
+      "**/coverage/**",
+      "**/playwright-report/**",
+      "**/test-results/**",
+      "specs/**",
+      "pnpm-lock.yaml",
+    ],
   },
   eslint.configs.recommended,
   ...tseslint.configs.recommended,
