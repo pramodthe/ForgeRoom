@@ -6,11 +6,13 @@ import type { ConnectionFixture } from "../api/mock-fixtures";
 import { ApiError } from "../api/http-client";
 import {
   addChannelCoworker,
+  createTask,
   listChannelMessages,
   listChannelRoster,
   listCoworkers,
   removeChannelCoworker,
 } from "../api/workspace-api";
+import { newIdempotencyKey } from "../api/http-client";
 import { runExistingChannelMessage } from "../ag-ui/run-existing-channel-message";
 import { useChannelTimeline } from "../ag-ui/use-channel-timeline";
 import { useSession } from "../auth/session-context";
@@ -128,6 +130,7 @@ export function ChannelTimelinePane({
         membershipBusy={membershipMutation.isPending}
         archived={archived}
         membershipError={membershipError}
+        runs={timeline.runs}
         onAddCoworker={(coworkerId) => membershipMutation.mutate({ action: "add", coworkerId })}
         onRemoveCoworker={(coworkerId) =>
           membershipMutation.mutate({ action: "remove", coworkerId })
@@ -163,6 +166,29 @@ export function ChannelTimelinePane({
           roster={rosterQuery.data.coworkers}
           csrfToken={session.csrf_token}
           disabled={archived || membershipMutation.isPending}
+          onCreateTask={async ({ posted, body, assigneeId }) => {
+            await createTask({
+              workspaceId,
+              channelId: channel.id,
+              csrfToken: session.csrf_token,
+              command: {
+                schemaVersion: 1,
+                title: body.replace(/^@\S+\s*/, "").slice(0, 120) || "Channel assignment",
+                description: body,
+                status: "todo",
+                assignee_type: assigneeId ? "coworker" : null,
+                assignee_id: assigneeId,
+                source_message_id: posted.message_id,
+                source_run_id: null,
+                due_at: null,
+                idempotency_key: newIdempotencyKey("task_create"),
+              },
+            });
+            await Promise.all([
+              queryClient.invalidateQueries({ queryKey: ["tasks", workspaceId] }),
+              queryClient.invalidateQueries({ queryKey: ["channel-tasks", channel.id] }),
+            ]);
+          }}
           onSent={(posted, body) => {
             setLaunchError(null);
             timeline.mergeMessages([

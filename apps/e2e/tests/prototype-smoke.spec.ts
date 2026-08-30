@@ -19,6 +19,33 @@ test.describe("P0-504 prototype smoke (fixture mode)", () => {
     await expect(page.getByText("Analyst").first()).toBeVisible();
     await assertP0SurfacesAbsent(page);
 
+    // Channel membership mutates and can be restored in fixture mode.
+    const removeAnalyst = page.locator('button[aria-label="Remove Analyst from channel"]');
+    await removeAnalyst.locator("..").hover();
+    await removeAnalyst.click();
+    const addCoworker = page.getByLabel("Add coworker to channel");
+    await expect(addCoworker.getByRole("option", { name: /Analyst/ })).toBeAttached();
+    await addCoworker.selectOption("cw_analyst_002");
+    await expect(page.getByText("Analyst").first()).toBeVisible();
+
+    // Pinned context persists in the right-hand Context panel and can be removed.
+    await page.getByRole("button", { name: "Pin message to channel context" }).first().click();
+    await page.getByRole("tab", { name: "Context" }).click();
+    await expect(page.getByText("1 items")).toBeVisible();
+    await page.getByRole("button", { name: "Unpin" }).click();
+    await expect(page.getByText("0 items")).toBeVisible();
+    await page.getByRole("tab", { name: "Work" }).click();
+
+    // Composer assignment creates both a channel message and an authoritative TaskRecord.
+    const composer = page.getByRole("textbox", { name: "Message" });
+    await composer.fill("@analyst Prepare launch checklist");
+    await page.getByRole("button", { name: "Assign as task" }).click();
+    await page.getByRole("button", { name: "Send and create task" }).click();
+    await expect(composer).toHaveValue("");
+    await gotoTasks(page);
+    await expect(page.getByText("Prepare launch checklist").first()).toBeVisible();
+    await gotoChannel(page);
+
     // Controlled GenUI chrome (fixture demo) — chart / table / artifact
     await expect(page.getByRole("heading", { name: "Escalation drivers" })).toBeVisible();
     const chartGroup = page.getByRole("group", { name: "Chart view" });
@@ -28,6 +55,28 @@ test.describe("P0-504 prototype smoke (fixture mode)", () => {
     await expect(page.getByRole("heading", { name: "Support evidence" })).toBeVisible();
     await expect(page.getByLabel("Filter themes")).toBeVisible();
     await expect(page.getByRole("heading", { name: "Support operations brief" })).toBeVisible();
+
+    // Every visible rich-response control must produce a real state change, download, or route.
+    await page.getByRole("button", { name: "View source" }).click();
+    await expect(page.getByText(/428 synthetic conversations/i)).toBeVisible();
+
+    const csvDownload = page.waitForEvent("download");
+    await page.getByRole("button", { name: "Download full CSV" }).click();
+    expect((await csvDownload).suggestedFilename()).toBe("support-evidence.csv");
+
+    await page.getByRole("button", { name: "Open authenticated preview" }).click();
+    await expect(
+      page.getByRole("region", { name: "Authenticated support brief preview" }),
+    ).toBeVisible();
+    await page.getByRole("button", { name: "Close preview" }).click();
+
+    const pdfDownload = page.waitForEvent("download");
+    await page.getByRole("button", { name: "Download", exact: true }).click();
+    expect((await pdfDownload).suggestedFilename()).toBe("support-operations-brief.pdf");
+
+    await page.getByRole("link", { name: "Open task →" }).click();
+    await expect(page.getByRole("heading", { name: "Reduce billing escalations" })).toBeVisible();
+    await gotoChannel(page);
 
     // Trusted-host-shaped approval on Operator rich response
     const deny = page.getByRole("button", { name: "Deny" });

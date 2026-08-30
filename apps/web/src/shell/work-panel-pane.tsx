@@ -63,17 +63,20 @@ export function WorkPanelPane(props: { workspaceId: string; channelId: string; c
         id={tabPanelIds[activeTab]}
         aria-labelledby={`${tabListId}-${activeTab.toLowerCase()}`}
       >
-        {showFixture && activeTab === "Work" ? (
-          <FixtureWorkPanel onOpenDemoReceipt={() => workroomUi.openRunDrawer("run_4A91")} />
-        ) : activeTab === "Work" ? (
-          <LiveWorkTab
-            workspaceId={props.workspaceId}
-            channelId={props.channelId}
-            roster={rosterQuery.data?.coworkers ?? []}
-            runs={workroomUi.runs}
-            archived={props.channel.status === "archived"}
-            onOpenRun={workroomUi.openRunDrawer}
-          />
+        {activeTab === "Work" ? (
+          <div className="space-y-3">
+            {showFixture ? (
+              <FixtureWorkPanel onOpenDemoReceipt={() => workroomUi.openRunDrawer("run_4A91")} />
+            ) : null}
+            <LiveWorkTab
+              workspaceId={props.workspaceId}
+              channelId={props.channelId}
+              roster={rosterQuery.data?.coworkers ?? []}
+              runs={workroomUi.runs}
+              archived={props.channel.status === "archived"}
+              onOpenRun={workroomUi.openRunDrawer}
+            />
+          </div>
         ) : activeTab === "Artifacts" ? (
           <LiveArtifactsTab
             channelId={props.channelId}

@@ -244,7 +244,7 @@ export function ChannelTimeline(props: {
   const stickToBottomRef = useRef(true);
   const savedScrollTopRef = useRef(0);
   const coworkerById = new Map(props.roster.map((coworker) => [coworker.coworker_id, coworker]));
-  const visibleRunCards = Object.values(props.runs).filter((run) => run.status !== "complete");
+  const visibleRunCards = Object.values(props.runs);
   const activeRuns = visibleRunCards.filter(
     (run) => run.status === "running" || run.status === "needs_input",
   );
@@ -447,9 +447,11 @@ export function ChannelTimeline(props: {
               className={`rounded-lg border px-3 py-2 text-sm ${
                 run.status === "failed"
                   ? "border-red-200 bg-red-50 text-red-800"
-                  : run.status === "needs_input" || run.status === "partial"
-                    ? "border-amber-200 bg-amber-50 text-amber-900"
-                    : "border-violet-200 bg-violet-50 text-violet-900"
+                  : run.status === "complete"
+                    ? "border-emerald-200 bg-emerald-50 text-emerald-900"
+                    : run.status === "needs_input" || run.status === "partial"
+                      ? "border-amber-200 bg-amber-50 text-amber-900"
+                      : "border-violet-200 bg-violet-50 text-violet-900"
               }`}
             >
               <div className="flex flex-wrap items-center justify-between gap-2">
@@ -457,9 +459,11 @@ export function ChannelTimeline(props: {
                   <span className="font-medium">{coworker?.name ?? "Coworker"}</span>{" "}
                   {run.status === "running"
                     ? "is working…"
-                    : run.status === "partial"
-                      ? (run.message ?? "completed partially.")
-                      : run.message}
+                    : run.status === "complete"
+                      ? (run.message ?? "completed the work.")
+                      : run.status === "partial"
+                        ? (run.message ?? "completed partially.")
+                        : run.message}
                 </div>
                 <div className="flex items-center gap-2">
                   {run.lifecycle ? (

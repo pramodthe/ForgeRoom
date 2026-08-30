@@ -135,6 +135,25 @@ export const MOCK_TASKS = taskRecordV1Schema.array().parse([
     created_at: "2026-08-24T12:00:00+00:00",
     updated_at: "2026-08-24T12:00:00+00:00",
   },
+  {
+    schemaVersion: 1,
+    id: "task_billing_003",
+    workspace_id: MOCK_WORKSPACE_ID,
+    channel_id: "ch_general_001",
+    title: "Reduce billing escalations",
+    description: "Update the billing macro, assign an owner, and review results after 7 days.",
+    status: "in_progress",
+    assignee_type: "coworker",
+    assignee_id: "cw_operator_001",
+    source_message_id: "msg_demo_operator",
+    source_run_id: "run_4A91",
+    due_at: "2026-09-05T12:00:00+00:00",
+    current_revision: 2,
+    created_by_type: "coworker",
+    created_by_id: "cw_operator_001",
+    created_at: "2026-08-27T16:03:00+00:00",
+    updated_at: "2026-08-27T16:04:00+00:00",
+  },
 ]);
 
 export const MOCK_SKILL_DRAFTS = skillDraftSchema.array().parse([

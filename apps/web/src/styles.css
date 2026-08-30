@@ -38,6 +38,10 @@ body {
   background-color: var(--fr-surface);
 }
 
+.forgeroom-shell :where([class*="bg-white/70"], [class*="bg-white/80"]) {
+  background-color: var(--fr-surface-raised);
+}
+
 .forgeroom-shell :where([class*="bg-zinc-50"], .bg-zinc-100) {
   background-color: var(--fr-surface-raised);
 }
@@ -58,7 +62,7 @@ body {
   color: #71717a;
 }
 
-.forgeroom-shell :where(.border-zinc-100, .border-zinc-200, .divide-zinc-100) {
+.forgeroom-shell :where(.border-zinc-100, .border-zinc-200, .border-zinc-300, .divide-zinc-100) {
   border-color: var(--fr-border);
 }
 

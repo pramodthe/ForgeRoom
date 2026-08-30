@@ -14,6 +14,11 @@ type ChannelComposerProps = {
   roster: readonly ChannelRosterCoworker[];
   csrfToken: string;
   disabled?: boolean;
+  onCreateTask?: (input: {
+    posted: PostedChannelMessage;
+    body: string;
+    assigneeId: string | null;
+  }) => Promise<void>;
   onSent?: (result: PostedChannelMessage, body: string) => void;
 };
 
@@ -22,9 +27,11 @@ export function ChannelComposer({
   roster,
   csrfToken,
   disabled = false,
+  onCreateTask,
   onSent,
 }: ChannelComposerProps) {
   const [body, setBody] = useState("");
+  const [sendMode, setSendMode] = useState<"message" | "task">("message");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [sendIdempotencyKey, setSendIdempotencyKey] = useState<string | null>(null);
@@ -61,9 +68,27 @@ export function ChannelComposer({
         command: commandResult.command,
       });
       const sentBody = commandResult.command.body;
+      let taskError: string | null = null;
+      if (sendMode === "task" && onCreateTask) {
+        const recipientHandle = commandResult.command.recipient_handles[0];
+        const assigneeId =
+          commandResult.command.routing_mode === "direct"
+            ? (roster.find((row) => row.handle === recipientHandle)?.coworker_id ?? null)
+            : null;
+        try {
+          await onCreateTask({ posted: result, body: sentBody, assigneeId });
+        } catch (createError) {
+          taskError =
+            createError instanceof Error ? createError.message : "Unable to create the task.";
+        }
+      }
       setBody("");
+      setSendMode("message");
       setSendIdempotencyKey(null);
       onSent?.(result, sentBody);
+      if (taskError) {
+        setError(`Message sent, but the task was not created: ${taskError}`);
+      }
     } catch (sendError) {
       setError(sendError instanceof Error ? sendError.message : "Unable to send message.");
     } finally {
@@ -123,19 +148,36 @@ export function ChannelComposer({
           {error ? <p className="text-sm text-red-700">{error}</p> : null}
 
           <div className="flex items-center justify-between gap-3">
-            <p className="flex items-center gap-2 text-[10px] text-zinc-600">
-              <span
-                className="grid h-6 w-6 place-items-center rounded-lg bg-white/5 text-xs text-zinc-400"
-                aria-hidden="true"
+            <div className="flex min-w-0 items-center gap-2">
+              <div
+                className="flex rounded-lg border border-white/10 bg-white/[0.03] p-0.5"
+                aria-label="Send mode"
               >
-                @
-              </span>
-              Route to a coworker or @team · ⌘/Ctrl + Enter
-            </p>
+                <button
+                  type="button"
+                  className={`rounded-md px-2 py-1 text-[10px] font-medium transition ${sendMode === "message" ? "bg-white/10 text-zinc-100" : "text-zinc-500 hover:text-zinc-300"}`}
+                  aria-pressed={sendMode === "message"}
+                  onClick={() => setSendMode("message")}
+                >
+                  Message
+                </button>
+                <button
+                  type="button"
+                  className={`rounded-md px-2 py-1 text-[10px] font-medium transition ${sendMode === "task" ? "bg-violet-500/25 text-violet-200" : "text-zinc-500 hover:text-zinc-300"}`}
+                  aria-pressed={sendMode === "task"}
+                  onClick={() => setSendMode("task")}
+                >
+                  Assign as task
+                </button>
+              </div>
+              <p className="hidden text-[10px] text-zinc-600 xl:block">
+                {sendMode === "task" ? "Creates a linked TaskRecord" : "⌘/Ctrl + Enter"}
+              </p>
+            </div>
             <button
               type="button"
               className="grid h-8 w-8 place-items-center rounded-full bg-violet-500 text-sm font-semibold text-white shadow-sm transition hover:bg-violet-400 disabled:cursor-not-allowed disabled:bg-[#3a3a3a] disabled:text-zinc-600"
-              aria-label="Send"
+              aria-label={sendMode === "task" ? "Send and create task" : "Send"}
               disabled={!canSend}
               onClick={() => void handleSend()}
             >

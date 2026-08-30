@@ -3,6 +3,7 @@ import type { ChannelRosterCoworker, ChannelRosterResponse } from "@forgeroom/co
 import type { ConnectionFixture } from "../api/mock-fixtures";
 import { workspaceCoworkersPath } from "../routes/paths";
 import { Avatar } from "../ui/avatar";
+import type { TimelineRun } from "../ag-ui/channel-timeline-reducer";
 
 const AVAILABILITY_LABEL: Record<ChannelRosterCoworker["availability"], string> = {
   available: "Available",
@@ -26,6 +27,7 @@ type ChannelHeaderProps = {
   membershipBusy: boolean;
   archived?: boolean;
   membershipError?: string | null;
+  runs: Record<string, TimelineRun>;
 };
 
 export function ChannelHeader({
@@ -40,22 +42,25 @@ export function ChannelHeader({
   membershipBusy,
   archived = false,
   membershipError = null,
+  runs,
 }: ChannelHeaderProps) {
   const membershipControlsDisabled = membershipBusy || archived;
   const memberIds = new Set(roster.coworkers.map((row) => row.coworker_id));
   const addable = workspaceCoworkers.filter(
     (coworker) => coworker.status === "active" && !memberIds.has(coworker.id),
   );
-  const attentionCount = roster.coworkers.filter((row) => row.availability === "needs_you").length;
   const activeConnections = connections.filter(
     (connection) => connection.status === "active",
   ).length;
   const connectionsHealthy = connections.length > 0 && activeConnections === connections.length;
+  const runValues = Object.values(runs);
+  const activeRunCount = runValues.filter((run) => run.status === "running").length;
+  const blockedRunCount = runValues.filter((run) => run.status === "needs_input").length;
 
   return (
     <header className="shrink-0 border-b border-[#343434] bg-[#222222]">
       <div className="flex h-14 items-center justify-between gap-4 px-5">
-        <div className="flex min-w-0 items-center gap-3">
+        <div className="flex min-w-0 flex-1 items-center gap-3">
           <span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-emerald-400/15 text-xs font-semibold text-emerald-300">
             #
           </span>
@@ -72,14 +77,17 @@ export function ChannelHeader({
             <p className="mt-0.5 max-w-xl truncate text-[11px] text-zinc-500">{missionBrief}</p>
           </div>
         </div>
-        <div className="flex shrink-0 items-center gap-2 text-[10px]">
-          {attentionCount > 0 ? (
-            <span className="rounded-full bg-amber-400/10 px-2 py-1 font-medium text-amber-300">
-              {attentionCount} needs you
-            </span>
-          ) : null}
+        <div className="flex shrink-0 items-center gap-1.5 text-[10px]">
+          <span className="rounded-full border border-[#3c3c3c] bg-[#292929] px-2 py-1 text-zinc-400">
+            {activeRunCount} active
+          </span>
           <span
-            className="inline-flex items-center gap-1.5 rounded-full border border-[#3c3c3c] bg-[#292929] px-2 py-1 text-zinc-400"
+            className={`rounded-full px-2 py-1 font-medium ${blockedRunCount > 0 ? "bg-amber-400/10 text-amber-300" : "border border-[#3c3c3c] bg-[#292929] text-zinc-500"}`}
+          >
+            {blockedRunCount} blocked
+          </span>
+          <span
+            className="hidden items-center gap-1.5 rounded-full border border-[#3c3c3c] bg-[#292929] px-2 py-1 text-zinc-400 min-[1400px]:inline-flex"
             aria-label="Connector health"
           >
             <span
@@ -89,7 +97,10 @@ export function ChannelHeader({
               ? "Connection status unavailable"
               : `${activeConnections} of ${connections.length} connections healthy`}
           </span>
-          <span className="hidden text-zinc-500 xl:inline" aria-label="Service account badge">
+          <span
+            className="max-w-32 truncate text-[9px] text-zinc-500"
+            aria-label="Service account badge"
+          >
             {roster.service_account_label}
           </span>
           <span className="text-zinc-600" aria-hidden="true">
@@ -146,6 +157,12 @@ export function ChannelHeader({
           className="rounded-lg border border-[#3c3c3c] bg-[#292929] px-2.5 py-1.5 text-[11px] font-medium text-zinc-300 hover:bg-[#343434] hover:text-white"
         >
           Manage team
+        </Link>
+        <Link
+          to={workspaceCoworkersPath(workspaceId)}
+          className="rounded-lg bg-violet-500 px-2.5 py-1.5 text-[11px] font-medium text-white hover:bg-violet-400"
+        >
+          + New coworker
         </Link>
       </div>
 
