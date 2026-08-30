@@ -1,25 +1,31 @@
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { HostButton } from "@forgeroom/ui-components";
 import { useSession } from "../auth/session-context";
+import { useState } from "react";
 import {
   loginPath,
   workspaceChannelsPath,
   workspaceConnectionsPath,
   workspaceCoworkersPath,
+  workspaceFeedPath,
   workspaceSkillsPath,
   workspaceTasksPath,
 } from "../routes/paths";
+import { WorkspaceSearchDialog } from "./workspace-search-dialog";
 
 const NAV_ITEMS = [
-  { label: "Channels", glyph: "#", segment: "channels" },
+  { label: "Feed", glyph: "⌂", segment: "feed" },
+  { label: "Rooms", glyph: "#", segment: "channels" },
   { label: "Tasks", glyph: "✓", segment: "tasks" },
-  { label: "Coworkers", glyph: "◎", segment: "coworkers" },
+  { label: "Members", glyph: "◎", segment: "coworkers" },
   { label: "Skills", glyph: "✦", segment: "skills" },
   { label: "Connections", glyph: "↗", segment: "connections" },
 ] as const;
 
 function navHref(workspaceId: string, segment: (typeof NAV_ITEMS)[number]["segment"]): string {
   switch (segment) {
+    case "feed":
+      return workspaceFeedPath(workspaceId);
     case "channels":
       return workspaceChannelsPath(workspaceId);
     case "tasks":
@@ -41,6 +47,7 @@ export function AppHeader({ workspaceId }: AppHeaderProps) {
   const pathname = useRouterState({ select: (state) => state.location.pathname });
   const navigate = useNavigate();
   const { session, logout } = useSession();
+  const [searchOpen, setSearchOpen] = useState(false);
 
   if (!session) {
     return null;
@@ -59,7 +66,7 @@ export function AppHeader({ workspaceId }: AppHeaderProps) {
     <header className="z-40 flex h-16 shrink-0 items-center border-b border-[#303030] bg-[#171717] px-3 lg:h-full lg:w-[72px] lg:flex-col lg:border-r lg:border-b-0 lg:px-0 lg:py-3">
       <div className="flex min-w-0 flex-1 items-center gap-3 lg:w-full lg:flex-col">
         <Link
-          to={workspaceChannelsPath(workspaceId)}
+          to={workspaceFeedPath(workspaceId)}
           className="group flex shrink-0 items-center gap-2.5 lg:flex-col"
           aria-label="ForgeRoom home"
         >
@@ -74,6 +81,27 @@ export function AppHeader({ workspaceId }: AppHeaderProps) {
           aria-label="Primary"
           className="flex min-w-0 items-center gap-1 overflow-x-auto lg:mt-3 lg:w-full lg:flex-col lg:overflow-visible"
         >
+          <Link
+            to={workspaceFeedPath(workspaceId)}
+            title="Start new work"
+            aria-label="Start new work"
+            className="group relative flex h-10 min-w-10 items-center justify-center rounded-xl bg-emerald-300 text-emerald-950 transition hover:bg-emerald-200 lg:h-11 lg:w-11"
+          >
+            <span aria-hidden="true" className="text-lg leading-none">
+              +
+            </span>
+          </Link>
+          <button
+            type="button"
+            title="Find"
+            aria-label="Find"
+            onClick={() => setSearchOpen(true)}
+            className="group relative flex h-10 min-w-10 items-center justify-center rounded-xl text-zinc-500 transition-colors hover:bg-[#292929] hover:text-zinc-100 lg:h-11 lg:w-11"
+          >
+            <span aria-hidden="true" className="text-lg leading-none">
+              ⌕
+            </span>
+          </button>
           {NAV_ITEMS.map((item) => {
             const href = navHref(workspaceId, item.segment);
             const active = pathname.includes(`/${item.segment}`);
@@ -119,6 +147,9 @@ export function AppHeader({ workspaceId }: AppHeaderProps) {
           <span aria-hidden="true">⇥</span>
         </HostButton>
       </div>
+      {searchOpen ? (
+        <WorkspaceSearchDialog workspaceId={workspaceId} onClose={() => setSearchOpen(false)} />
+      ) : null}
     </header>
   );
 }

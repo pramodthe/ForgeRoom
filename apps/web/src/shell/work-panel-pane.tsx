@@ -1,4 +1,4 @@
-import { useId, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import type { Channel } from "@forgeroom/contracts";
 import { useQuery } from "@tanstack/react-query";
 import { isFixtureMode } from "../api/mode";
@@ -15,6 +15,7 @@ type WorkTab = (typeof TABS)[number];
 export function WorkPanelPane(props: { workspaceId: string; channelId: string; channel: Channel }) {
   const tabListId = useId();
   const [activeTab, setActiveTab] = useState<WorkTab>("Work");
+  const [isOpen, setIsOpen] = useState(false);
   const tabPanelIds: Record<WorkTab, string> = {
     Work: `${tabListId}-work`,
     Artifacts: `${tabListId}-artifacts`,
@@ -28,9 +29,32 @@ export function WorkPanelPane(props: { workspaceId: string; channelId: string; c
 
   const showFixture = isFixtureMode && props.channelId === "ch_general_001";
 
+  useEffect(() => {
+    if (workroomUi.selectedRunId) setIsOpen(true);
+  }, [workroomUi.selectedRunId]);
+
+  if (!isOpen) {
+    return (
+      <aside className="hidden h-full w-12 shrink-0 flex-col items-center border-l border-[#343434] bg-[#202020] py-3 xl:flex">
+        <button
+          type="button"
+          onClick={() => setIsOpen(true)}
+          className="grid h-9 w-9 place-items-center rounded-xl text-zinc-500 transition hover:bg-[#303030] hover:text-zinc-100"
+          aria-label="Open work panel"
+          title="Open work panel"
+        >
+          <span aria-hidden="true">◫</span>
+        </button>
+        <span className="mt-3 [writing-mode:vertical-rl] text-[9px] font-semibold uppercase tracking-[0.18em] text-zinc-700">
+          Work
+        </span>
+      </aside>
+    );
+  }
+
   return (
     <aside className="hidden h-full w-[304px] shrink-0 flex-col border-l border-[#343434] bg-[#202020] xl:flex">
-      <div className="flex h-14 items-center border-b border-[#343434] px-3">
+      <div className="flex h-14 items-center gap-2 border-b border-[#343434] px-3">
         <div
           className="flex w-full gap-1 rounded-xl bg-[#292929] p-1"
           role="tablist"
@@ -56,6 +80,15 @@ export function WorkPanelPane(props: { workspaceId: string; channelId: string; c
             </button>
           ))}
         </div>
+        <button
+          type="button"
+          onClick={() => setIsOpen(false)}
+          className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-zinc-500 hover:bg-[#303030] hover:text-zinc-100"
+          aria-label="Close work panel"
+          title="Close work panel"
+        >
+          <span aria-hidden="true">×</span>
+        </button>
       </div>
       <div
         className="flex-1 overflow-y-auto bg-[#202020] p-3 text-sm text-zinc-400"

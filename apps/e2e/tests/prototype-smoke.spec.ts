@@ -12,6 +12,23 @@ test.describe("P0-504 prototype smoke (fixture mode)", () => {
   test("covers seeded channel, Research coworker, GenUI chrome, approval, skill receipt", async ({
     page,
   }, testInfo) => {
+    await page.goto("/");
+    await page.evaluate('localStorage.removeItem("forgeroom:fixture:onboarding:v1:workspace_1")');
+    await page.goto("/onboarding");
+    await expect(page.getByRole("heading", { name: /Build a room where/i })).toBeVisible();
+    await page.getByRole("button", { name: "Get started" }).click();
+    await page.getByLabel("Agent name").fill("Atlas");
+    await page.getByRole("button", { name: "Continue" }).click();
+    await page.getByRole("button", { name: "Skip" }).click();
+    await page.getByLabel("Workspace or team name").fill("Launch team");
+    await page.getByRole("button", { name: "Continue" }).click();
+    await expect(page.getByRole("heading", { name: "Launch team is ready." })).toBeVisible();
+    await page.getByRole("button", { name: "Enter workspace" }).click();
+    await expect(page.getByRole("heading", { name: "What should we work on?" })).toBeVisible();
+    await page.getByRole("button", { name: "Find" }).click();
+    await page.getByLabel("Search workspace").fill("billing");
+    await expect(page.getByText("Reduce billing escalations").first()).toBeVisible();
+    await page.getByRole("button", { name: "Esc" }).click();
     await gotoChannel(page);
     await expect(page.getByRole("heading", { name: "# General" })).toBeVisible();
     await expect(page.getByText("Workspace service account")).toBeVisible();
@@ -30,6 +47,7 @@ test.describe("P0-504 prototype smoke (fixture mode)", () => {
 
     // Pinned context persists in the right-hand Context panel and can be removed.
     await page.getByRole("button", { name: "Pin message to channel context" }).first().click();
+    await page.getByRole("button", { name: "Open work panel" }).click();
     await page.getByRole("tab", { name: "Context" }).click();
     await expect(page.getByText("1 items")).toBeVisible();
     await page.getByRole("button", { name: "Unpin" }).click();
@@ -131,6 +149,7 @@ test.describe("P0-504 prototype smoke (fixture mode)", () => {
 
     // Demo receipt + save-as-skill entry (fixture work panel)
     await gotoChannel(page);
+    await page.getByRole("button", { name: "Open work panel" }).click();
     await page.getByRole("button", { name: "Inspect run receipt" }).click();
     await expect(
       page.getByRole("dialog", { name: /Weekly support operations review/i }),

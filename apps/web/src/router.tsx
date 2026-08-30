@@ -7,14 +7,18 @@ import {
 } from "@tanstack/react-router";
 import { fetchSession } from "./auth-api";
 import { resolveDefaultChannelId } from "./api/workspace-api";
+import { isFixtureMode } from "./api/mode";
 import { isSessionExpired, sessionWorkspaceMismatch } from "./auth/session";
 import { ChannelPage, ChannelsIndexRedirect } from "./pages/channel-page";
 import { ConnectionsPage } from "./pages/connections-page";
 import { CoworkerDetailPage, CoworkersPage } from "./pages/coworkers-page";
+import { FeedPage } from "./pages/feed-page";
 import { LoginPage, RootRedirect } from "./pages/login-page";
+import { OnboardingPage } from "./pages/onboarding-page";
 import { SkillDetailPage, SkillsPage } from "./pages/skills-page";
 import { TaskDetailPage, TasksPage } from "./pages/tasks-page";
-import { loginPath, workspaceChannelPath } from "./routes/paths";
+import { isFixtureOnboardingComplete } from "./onboarding/fixture-onboarding";
+import { loginPath, onboardingPath, workspaceChannelPath, workspaceFeedPath } from "./routes/paths";
 import { WorkspaceLayout } from "./shell/workspace-layout";
 
 async function requireAuthenticatedWorkspace(workspaceId: string, pathname: string) {
@@ -39,6 +43,9 @@ async function requireAuthenticatedWorkspace(workspaceId: string, pathname: stri
       replace: true,
     });
   }
+  if (isFixtureMode && !isFixtureOnboardingComplete(session.workspace_id)) {
+    throw redirect({ to: onboardingPath(), replace: true });
+  }
   return session;
 }
 
@@ -61,6 +68,24 @@ const loginRoute = createRoute({
   component: LoginPage,
 });
 
+const onboardingRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/onboarding",
+  component: OnboardingPage,
+  beforeLoad: async () => {
+    const session = await fetchSession();
+    if (!session || isSessionExpired(session)) {
+      throw redirect({ to: loginPath(), search: { redirect: onboardingPath() } });
+    }
+    if (!isFixtureMode || isFixtureOnboardingComplete(session.workspace_id)) {
+      throw redirect({
+        to: workspaceFeedPath(session.workspace_id),
+        replace: true,
+      });
+    }
+  },
+});
+
 const workspaceRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/w/$workspaceId",
@@ -74,6 +99,12 @@ const channelsIndexRoute = createRoute({
   getParentRoute: () => workspaceRoute,
   path: "/channels",
   component: ChannelsIndexRedirect,
+});
+
+const feedRoute = createRoute({
+  getParentRoute: () => workspaceRoute,
+  path: "/feed",
+  component: FeedPage,
 });
 
 const channelRoute = createRoute({
@@ -127,7 +158,9 @@ const connectionsRoute = createRoute({
 const routeTree = rootRoute.addChildren([
   indexRoute,
   loginRoute,
+  onboardingRoute,
   workspaceRoute.addChildren([
+    feedRoute,
     channelsIndexRoute,
     channelRoute,
     tasksRoute,
@@ -151,6 +184,8 @@ declare module "@tanstack/react-router" {
 export const P0_REGISTERED_ROUTES = [
   "/",
   "/login",
+  "/onboarding",
+  "/w/$workspaceId/feed",
   "/w/$workspaceId/channels",
   "/w/$workspaceId/channels/$channelId",
   "/w/$workspaceId/tasks",

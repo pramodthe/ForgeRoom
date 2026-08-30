@@ -29,7 +29,8 @@ describe("P0 layout and state coverage baseline", () => {
 
     expect(layout).toContain("forgeroom-shell");
     expect(header).toContain('aria-label="Primary"');
-    expect(header).toContain('label: "Channels"');
+    expect(header).toContain('label: "Rooms"');
+    expect(header).toContain('label: "Feed"');
     expect(styles).toContain(".forgeroom-shell");
     expect(styles).toContain("color-scheme: dark");
   });
