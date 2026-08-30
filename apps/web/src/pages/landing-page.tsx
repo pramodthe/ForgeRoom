@@ -28,8 +28,8 @@ export function LandingPage() {
     : loginPath();
 
   return (
-    <main className="min-h-full overflow-x-hidden bg-[#0a0b0b] text-white">
-      <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(circle_at_50%_-10%,rgba(110,231,183,0.13),transparent_35%),radial-gradient(circle_at_8%_36%,rgba(139,92,246,0.08),transparent_24%)]" />
+    <main className="min-h-full overflow-x-hidden bg-[#171717] text-white">
+      <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(circle_at_50%_-10%,rgba(139,92,246,0.18),transparent_35%),radial-gradient(circle_at_8%_36%,rgba(217,70,239,0.08),transparent_24%)]" />
       <div className="pointer-events-none fixed inset-0 opacity-[0.17] [background-image:linear-gradient(rgba(255,255,255,.06)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.06)_1px,transparent_1px)] [background-size:64px_64px] [mask-image:linear-gradient(to_bottom,black,transparent_68%)]" />
 
       <header className="relative z-20 mx-auto flex h-20 max-w-7xl items-center justify-between px-5 sm:px-8">
@@ -64,13 +64,13 @@ export function LandingPage() {
         className="relative mx-auto max-w-7xl px-5 pb-24 pt-16 sm:px-8 sm:pt-24 lg:pt-28"
       >
         <div className="mx-auto max-w-4xl text-center">
-          <div className="inline-flex items-center gap-2 rounded-full border border-emerald-300/20 bg-emerald-300/[0.07] px-3 py-1.5 text-[11px] font-medium text-emerald-200">
-            <span className="h-1.5 w-1.5 rounded-full bg-emerald-300 shadow-[0_0_12px_rgba(110,231,183,.9)]" />
+          <div className="inline-flex items-center gap-2 rounded-full border border-violet-400/20 bg-violet-400/[0.08] px-3 py-1.5 text-[11px] font-medium text-violet-200">
+            <span className="h-1.5 w-1.5 rounded-full bg-violet-400 shadow-[0_0_12px_rgba(167,139,250,.9)]" />
             A shared workspace for people and AI
           </div>
           <h1 className="mt-7 text-balance text-5xl font-medium leading-[1.02] tracking-[-0.045em] text-white sm:text-6xl lg:text-[78px]">
             Where teams and AI coworkers{" "}
-            <span className="bg-gradient-to-r from-emerald-200 via-emerald-300 to-cyan-300 bg-clip-text text-transparent">
+            <span className="bg-gradient-to-r from-violet-300 via-fuchsia-300 to-violet-200 bg-clip-text text-transparent">
               get work done.
             </span>
           </h1>
@@ -81,7 +81,7 @@ export function LandingPage() {
           <div className="mt-9 flex flex-col items-center justify-center gap-3 sm:flex-row">
             <Link
               to={workspacePath}
-              className="group inline-flex w-full items-center justify-center gap-2 rounded-full bg-emerald-300 px-6 py-3.5 text-sm font-semibold text-emerald-950 shadow-[0_16px_50px_rgba(110,231,183,.15)] transition hover:-translate-y-0.5 hover:bg-emerald-200 sm:w-auto"
+              className="group inline-flex w-full items-center justify-center gap-2 rounded-full bg-violet-500 px-6 py-3.5 text-sm font-semibold text-white shadow-[0_16px_50px_rgba(139,92,246,.22)] transition hover:-translate-y-0.5 hover:bg-violet-400 sm:w-auto"
             >
               Enter ForgeRoom <span aria-hidden="true">→</span>
             </Link>
@@ -125,10 +125,10 @@ export function LandingPage() {
           {CAPABILITIES.map(([title, detail], index) => (
             <article
               key={title}
-              className="group min-h-56 rounded-2xl border border-white/[0.08] bg-white/[0.025] p-6 transition hover:-translate-y-1 hover:border-emerald-200/20 hover:bg-white/[0.04]"
+              className="group min-h-56 rounded-2xl border border-white/[0.08] bg-[#202020] p-6 transition hover:-translate-y-1 hover:border-violet-400/25 hover:bg-[#242424]"
             >
               <div className="flex items-start justify-between">
-                <span className="grid h-10 w-10 place-items-center rounded-xl border border-white/10 bg-white/[0.04] text-sm text-emerald-200">
+                <span className="grid h-10 w-10 place-items-center rounded-xl border border-violet-400/20 bg-violet-400/10 text-sm text-violet-200">
                   {index + 1}
                 </span>
                 <span className="font-mono text-[10px] text-zinc-700">0{index + 1}</span>
@@ -156,7 +156,7 @@ export function LandingPage() {
           </p>
           <Link
             to={workspacePath}
-            className="mt-8 inline-flex items-center gap-2 rounded-full bg-white px-6 py-3.5 text-sm font-semibold text-zinc-950 transition hover:-translate-y-0.5 hover:bg-emerald-100"
+            className="mt-8 inline-flex items-center gap-2 rounded-full bg-white px-6 py-3.5 text-sm font-semibold text-zinc-950 transition hover:-translate-y-0.5 hover:bg-violet-100"
           >
             Explore the workspace <span aria-hidden="true">→</span>
           </Link>
@@ -179,9 +179,9 @@ export function LandingPage() {
 function ProductPreview() {
   return (
     <div className="relative mx-auto mt-16 max-w-6xl sm:mt-20">
-      <div className="absolute -inset-8 -z-10 bg-[radial-gradient(ellipse_at_center,rgba(110,231,183,.12),transparent_66%)] blur-2xl" />
-      <div className="overflow-hidden rounded-2xl border border-white/[0.12] bg-[#151616] shadow-[0_40px_120px_rgba(0,0,0,.55)]">
-        <div className="flex h-11 items-center gap-2 border-b border-white/[0.08] bg-[#121313] px-4">
+      <div className="absolute -inset-8 -z-10 bg-[radial-gradient(ellipse_at_center,rgba(139,92,246,.16),transparent_66%)] blur-2xl" />
+      <div className="overflow-hidden rounded-2xl border border-[#3a3a3a] bg-[#1b1b1b] shadow-[0_40px_120px_rgba(0,0,0,.55)]">
+        <div className="flex h-11 items-center gap-2 border-b border-[#303030] bg-[#171717] px-4">
           <span className="h-2.5 w-2.5 rounded-full bg-[#ff6b63]/70" />
           <span className="h-2.5 w-2.5 rounded-full bg-[#f5c451]/70" />
           <span className="h-2.5 w-2.5 rounded-full bg-emerald-400/70" />
@@ -190,8 +190,8 @@ function ProductPreview() {
           </span>
         </div>
         <div className="grid min-h-[390px] grid-cols-[48px_128px_1fr] sm:grid-cols-[60px_220px_1fr] lg:min-h-[560px] lg:grid-cols-[64px_300px_1fr]">
-          <div className="flex flex-col items-center gap-4 border-r border-white/[0.07] bg-[#111212] py-4">
-            <span className="grid h-8 w-8 place-items-center rounded-lg bg-emerald-300 text-[9px] font-black text-emerald-950">
+          <div className="flex flex-col items-center gap-4 border-r border-[#303030] bg-[#171717] py-4">
+            <span className="grid h-8 w-8 place-items-center rounded-lg bg-gradient-to-br from-violet-500 to-fuchsia-500 text-[9px] font-black text-white">
               FR
             </span>
             {["+", "⌕", "⌂", "#", "✓", "◎"].map((item, index) => (
@@ -203,7 +203,7 @@ function ProductPreview() {
               </span>
             ))}
           </div>
-          <div className="border-r border-white/[0.07] bg-[#181919] p-3 sm:p-4">
+          <div className="border-r border-[#303030] bg-[#202020] p-3 sm:p-4">
             <div className="text-xs font-medium text-zinc-200 sm:text-sm">Feed</div>
             <div className="mt-4 hidden gap-2 text-[8px] text-zinc-600 sm:flex">
               <span className="rounded-full bg-white/10 px-2 py-1 text-zinc-300">All</span>
@@ -221,16 +221,16 @@ function ProductPreview() {
               <PreviewFeedItem tone="emerald" title="Operator" detail="Approval requested" />
             </div>
           </div>
-          <div className="relative flex min-w-0 flex-col items-center justify-center bg-[#1b1c1c] px-3 py-10 sm:px-8">
+          <div className="relative flex min-w-0 flex-col items-center justify-center bg-[#1d1d1d] px-3 py-10 sm:px-8">
             <div className="absolute right-4 top-4 flex -space-x-1.5">
-              <span className="grid h-6 w-6 place-items-center rounded-full border-2 border-[#1b1c1c] bg-violet-300 text-[7px] font-bold text-violet-950">
+              <span className="grid h-6 w-6 place-items-center rounded-full border-2 border-[#1d1d1d] bg-violet-300 text-[7px] font-bold text-violet-950">
                 A
               </span>
-              <span className="grid h-6 w-6 place-items-center rounded-full border-2 border-[#1b1c1c] bg-sky-300 text-[7px] font-bold text-sky-950">
+              <span className="grid h-6 w-6 place-items-center rounded-full border-2 border-[#1d1d1d] bg-sky-300 text-[7px] font-bold text-sky-950">
                 O
               </span>
             </div>
-            <span className="grid h-10 w-10 place-items-center rounded-xl bg-emerald-300 text-xs font-black text-emerald-950">
+            <span className="grid h-10 w-10 place-items-center rounded-xl bg-violet-500 text-xs font-black text-white">
               F
             </span>
             <div className="mt-5 text-center text-base font-medium tracking-tight text-zinc-100 sm:text-2xl lg:text-3xl">
@@ -239,7 +239,7 @@ function ProductPreview() {
             <div className="mt-2 hidden text-center text-xs text-zinc-600 sm:block">
               Start with an outcome. We’ll coordinate the right coworkers.
             </div>
-            <div className="mt-8 w-full max-w-xl rounded-xl border border-white/[0.12] bg-[#242525] p-3 shadow-2xl sm:p-4">
+            <div className="mt-8 w-full max-w-xl rounded-xl border border-[#4a4a4a] bg-[#292929] p-3 shadow-2xl sm:p-4">
               <div className="flex items-center gap-2 border-b border-white/[0.06] pb-3 text-[8px] text-zinc-600 sm:text-[9px]">
                 <span>Work in</span>
                 <span className="rounded-md bg-white/[0.05] px-2 py-1 text-zinc-400"># Launch</span>
@@ -254,7 +254,7 @@ function ProductPreview() {
                   </span>
                   <span className="rounded-md px-2 py-1 text-[8px] text-zinc-600">Task</span>
                 </div>
-                <span className="grid h-7 w-7 place-items-center rounded-full bg-emerald-300 text-xs text-emerald-950">
+                <span className="grid h-7 w-7 place-items-center rounded-full bg-violet-500 text-xs text-white">
                   ↑
                 </span>
               </div>
@@ -339,7 +339,7 @@ function WorkflowStep({
 }) {
   return (
     <li className="grid grid-cols-[48px_1fr] gap-4 rounded-2xl border border-white/[0.07] bg-white/[0.025] p-5 transition hover:border-white/[0.13] hover:bg-white/[0.04] sm:grid-cols-[64px_1fr] sm:p-6">
-      <span className="font-mono text-xs text-emerald-300/70">{number}</span>
+      <span className="font-mono text-xs text-violet-300/80">{number}</span>
       <div>
         <h3 className="text-base font-medium text-zinc-100 sm:text-lg">{title}</h3>
         <p className="mt-1.5 text-sm leading-6 text-zinc-500">{detail}</p>
@@ -351,10 +351,10 @@ function WorkflowStep({
 function GovernanceSection() {
   return (
     <section id="governance" className="relative mx-auto max-w-7xl scroll-mt-16 px-5 py-28 sm:px-8">
-      <div className="overflow-hidden rounded-[28px] border border-emerald-200/15 bg-gradient-to-br from-emerald-200/[0.08] via-white/[0.025] to-violet-400/[0.06] p-7 sm:p-10 lg:p-14">
+      <div className="overflow-hidden rounded-[28px] border border-violet-400/20 bg-gradient-to-br from-violet-500/[0.11] via-[#202020] to-fuchsia-500/[0.07] p-7 sm:p-10 lg:p-14">
         <div className="grid gap-12 lg:grid-cols-[1fr_0.9fr] lg:items-center">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-300">
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-violet-300">
               Control without the bottleneck
             </p>
             <h2 className="mt-4 max-w-2xl text-3xl font-medium leading-tight tracking-[-0.035em] sm:text-5xl">
@@ -398,7 +398,7 @@ function ApprovalPreview() {
         <span className="rounded-lg border border-white/10 py-2.5 text-center text-[10px] text-zinc-400">
           Deny
         </span>
-        <span className="rounded-lg bg-emerald-300 py-2.5 text-center text-[10px] font-semibold text-emerald-950">
+        <span className="rounded-lg bg-violet-500 py-2.5 text-center text-[10px] font-semibold text-white">
           Approve action
         </span>
       </div>
@@ -423,7 +423,7 @@ function SectionHeading(props: {
 }) {
   return (
     <div className={props.align === "left" ? "max-w-xl" : "mx-auto max-w-3xl text-center"}>
-      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-300">
+      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-violet-300">
         {props.eyebrow}
       </p>
       <h2 className="mt-4 text-3xl font-medium leading-tight tracking-[-0.035em] text-white sm:text-5xl">
@@ -442,7 +442,7 @@ function BrandMark(props: { compact?: boolean; large?: boolean }) {
       : "h-9 w-9 rounded-xl text-[10px]";
   return (
     <span
-      className={`grid place-items-center bg-gradient-to-br from-emerald-200 to-emerald-400 font-black text-emerald-950 shadow-[0_8px_24px_rgba(110,231,183,.12)] ${size}`}
+      className={`grid place-items-center bg-gradient-to-br from-violet-500 to-fuchsia-500 font-black text-white shadow-[0_8px_24px_rgba(139,92,246,.22)] ${size}`}
     >
       FR
     </span>
