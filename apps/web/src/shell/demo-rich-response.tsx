@@ -77,6 +77,30 @@ function downloadFixtureFile(fileName: string, mimeType: string, contents: BlobP
   window.setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
+type FixtureChoiceOutcome =
+  { kind: "submitted"; answer: "reconnect" | "readonly" } | { kind: "cancelled" };
+
+function fixtureInteractionKey(workspaceId: string, interaction: string): string {
+  return `forgeroom:fixture:interaction:v1:${workspaceId}:${interaction}`;
+}
+
+function readFixtureInteraction<T>(workspaceId: string, interaction: string): T | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const value = window.localStorage.getItem(fixtureInteractionKey(workspaceId, interaction));
+    return value ? (JSON.parse(value) as T) : null;
+  } catch {
+    return null;
+  }
+}
+
+function recordFixtureInteraction(workspaceId: string, interaction: string, value: unknown): void {
+  window.localStorage.setItem(
+    fixtureInteractionKey(workspaceId, interaction),
+    JSON.stringify(value),
+  );
+}
+
 export function SupportInsightsCard() {
   const [view, setView] = useState<"chart" | "table">("chart");
   const [sourceOpen, setSourceOpen] = useState(false);
@@ -512,10 +536,23 @@ export function OperationsPlanCards({ workspaceId }: { workspaceId: string }) {
 }
 
 export function ConnectionRecoveryCards({ workspaceId }: { workspaceId: string }) {
-  const [answer, setAnswer] = useState("reconnect");
-  const [submitted, setSubmitted] = useState(false);
+  const initialChoice = readFixtureInteraction<FixtureChoiceOutcome>(
+    workspaceId,
+    "recovery-choice",
+  );
+  const [answer, setAnswer] = useState<"reconnect" | "readonly">(
+    initialChoice?.kind === "submitted" ? initialChoice.answer : "reconnect",
+  );
+  const [choiceOutcome, setChoiceOutcome] = useState<FixtureChoiceOutcome | null>(initialChoice);
   const [questionAnswer, setQuestionAnswer] = useState("Pramod");
-  const [recordedQuestionAnswer, setRecordedQuestionAnswer] = useState<string | null>(null);
+  const [recordedQuestionAnswer, setRecordedQuestionAnswer] = useState<string | null>(() =>
+    readFixtureInteraction<string>(workspaceId, "connector-owner"),
+  );
+
+  function recordChoice(outcome: FixtureChoiceOutcome) {
+    recordFixtureInteraction(workspaceId, "recovery-choice", outcome);
+    setChoiceOutcome(outcome);
+  }
 
   return (
     <div className="space-y-3">
@@ -551,19 +588,27 @@ export function ConnectionRecoveryCards({ workspaceId }: { workspaceId: string }
         <p className="mt-1 text-xs leading-5 text-zinc-600">
           This answer only guides Operator. It does not reconnect an account or approve an action.
         </p>
-        {submitted ? (
-          <p
-            className="mt-3 rounded-lg bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-800"
-            role="status"
-          >
-            Choice recorded: {answer === "reconnect" ? "wait for reconnect" : "finish read-only"}.
-          </p>
+        {choiceOutcome ? (
+          <div className="mt-3 rounded-lg bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-800">
+            <p role="status">
+              {choiceOutcome.kind === "submitted"
+                ? `Choice recorded: ${choiceOutcome.answer === "reconnect" ? "wait for reconnect" : "finish read-only"}.`
+                : "Choice cancelled. No answer was recorded."}
+            </p>
+            <button
+              type="button"
+              className="mt-2 text-[11px] font-semibold underline underline-offset-2"
+              onClick={() => setChoiceOutcome(null)}
+            >
+              Choose again
+            </button>
+          </div>
         ) : (
           <form
             className="mt-3 space-y-2"
             onSubmit={(event) => {
               event.preventDefault();
-              setSubmitted(true);
+              recordChoice({ kind: "submitted", answer });
             }}
           >
             <label className="flex cursor-pointer gap-2 rounded-xl border border-zinc-200 p-3 text-xs">
@@ -597,7 +642,7 @@ export function ConnectionRecoveryCards({ workspaceId }: { workspaceId: string }
             <div className="flex justify-end gap-2 pt-1">
               <button
                 type="button"
-                onClick={() => setAnswer("reconnect")}
+                onClick={() => recordChoice({ kind: "cancelled" })}
                 className="rounded-lg px-3 py-2 text-xs font-medium text-zinc-500"
               >
                 Cancel
@@ -643,7 +688,11 @@ export function ConnectionRecoveryCards({ workspaceId }: { workspaceId: string }
             <button
               type="button"
               disabled={questionAnswer.trim().length === 0}
-              onClick={() => setRecordedQuestionAnswer(questionAnswer.trim())}
+              onClick={() => {
+                const recorded = questionAnswer.trim();
+                recordFixtureInteraction(workspaceId, "connector-owner", recorded);
+                setRecordedQuestionAnswer(recorded);
+              }}
               className="rounded-lg bg-zinc-950 px-3 py-2 text-xs font-semibold text-white"
             >
               Send answer

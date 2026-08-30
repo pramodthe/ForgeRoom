@@ -1,6 +1,6 @@
 import { Link, useParams } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { CoworkerDraft } from "@forgeroom/contracts";
+import type { CoworkerDraft, CoworkerUpdateCommand } from "@forgeroom/contracts";
 import { LoadingState, RouteErrorState } from "@forgeroom/ui-components";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -36,6 +36,63 @@ import {
 } from "./review-flow-helpers";
 import { approvalPolicyLines, summarizeCoworkerGrants } from "./settings-helpers";
 import { coworkerDisplaySummary } from "./coworker-display";
+
+export function parseExactGrantList(value: string): string[] {
+  return [
+    ...new Set(
+      value
+        .split("\n")
+        .map((item) => item.trim())
+        .filter(Boolean),
+    ),
+  ];
+}
+
+export function formatExactGrantList(items: readonly string[]): string {
+  return items.join("\n");
+}
+
+export type CoworkerCapabilityEdits = {
+  name: string;
+  handle: string;
+  title: string;
+  instructions: string;
+  modelPreset: string;
+  toolGrants: string;
+  skillBindings: string;
+  componentGrants: string;
+  genUiEnabled: boolean;
+};
+
+export function buildCoworkerUpdateCommand(
+  coworker: CoworkerDetail,
+  edits: CoworkerCapabilityEdits,
+): CoworkerUpdateCommand {
+  const modelPreset = edits.modelPreset.trim();
+  if (!modelPreset) throw new Error("Model preset is required.");
+  const componentVersionIds = parseExactGrantList(edits.componentGrants);
+  if (edits.genUiEnabled && componentVersionIds.length === 0) {
+    throw new Error("Add at least one published component version or turn GenUI off.");
+  }
+  return {
+    name: edits.name,
+    handle: edits.handle,
+    title: edits.title,
+    standing_instructions: edits.instructions,
+    model_preset: modelPreset,
+    native_subagents_enabled: false,
+    channel_ids: coworker.config.channel_ids,
+    budget: coworker.config.budget,
+    task_record_grants: coworker.config.task_record_grants,
+    tool_grants: parseExactGrantList(edits.toolGrants),
+    skill_version_ids: parseExactGrantList(edits.skillBindings),
+    component_version_ids: edits.genUiEnabled ? componentVersionIds : [],
+  };
+}
+
+function sandboxEnabledFromGrants(toolGrants: readonly string[]): boolean {
+  return toolGrants.some((grant) => grant.toUpperCase().includes("SANDBOX"));
+}
 
 export function CoworkersPage() {
   const { workspaceId } = useParams({ from: "/w/$workspaceId/coworkers" });
@@ -772,6 +829,17 @@ function CoworkerEditor({
   const [handle, setHandle] = useState(coworker.handle);
   const [title, setTitle] = useState(coworker.title);
   const [instructions, setInstructions] = useState(coworker.config.standing_instructions);
+  const [modelPreset, setModelPreset] = useState(coworker.config.model_preset);
+  const [toolGrants, setToolGrants] = useState(formatExactGrantList(coworker.config.tool_grants));
+  const [skillBindings, setSkillBindings] = useState(
+    formatExactGrantList(coworker.config.skill_version_ids),
+  );
+  const [componentGrants, setComponentGrants] = useState(
+    formatExactGrantList(coworker.config.component_version_ids),
+  );
+  const [genUiEnabled, setGenUiEnabled] = useState(
+    coworker.config.component_version_ids.length > 0,
+  );
   const [saved, setSaved] = useState(false);
   const [disableConfirm, setDisableConfirm] = useState(false);
   const analyst = coworker.handle === "analyst";
@@ -782,20 +850,17 @@ function CoworkerEditor({
       return updateCoworker({
         coworkerId: coworker.id,
         csrfToken: session.csrf_token,
-        command: {
+        command: buildCoworkerUpdateCommand(coworker, {
           name,
           handle,
           title,
-          standing_instructions: instructions,
-          model_preset: coworker.config.model_preset,
-          native_subagents_enabled: false,
-          channel_ids: coworker.config.channel_ids,
-          budget: coworker.config.budget,
-          task_record_grants: coworker.config.task_record_grants,
-          tool_grants: coworker.config.tool_grants,
-          skill_version_ids: coworker.config.skill_version_ids,
-          component_version_ids: coworker.config.component_version_ids,
-        },
+          instructions,
+          modelPreset,
+          toolGrants,
+          skillBindings,
+          componentGrants,
+          genUiEnabled,
+        }),
       });
     },
     onSuccess: async (updated) => {
@@ -920,10 +985,10 @@ function CoworkerEditor({
             {(updateMutation.error ?? disableMutation.error)?.message}
           </div>
         ) : null}
-        <div className="mt-5 grid grid-cols-[1fr_280px] gap-4">
+        <div className="mt-5 grid grid-cols-1 gap-4 lg:grid-cols-[1fr_280px]">
           <section className="space-y-4">
             <EditorSection title="Identity">
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <Field label="Name" value={name} onChange={setName} />
                 <Field label="Handle" value={handle} onChange={setHandle} />
                 <Field label="Role title" value={title} onChange={setTitle} />
@@ -931,9 +996,10 @@ function CoworkerEditor({
               <label className="mt-3 block text-xs text-zinc-500">
                 Model preset
                 <input
-                  value={coworker.config.model_preset}
-                  readOnly
-                  className="mt-1.5 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2.5 text-sm text-zinc-700"
+                  value={modelPreset}
+                  onChange={(event) => setModelPreset(event.target.value)}
+                  placeholder="openai/gpt-5-4-mini"
+                  className="mt-1.5 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-sm text-zinc-700"
                 />
               </label>
               <details className="mt-4 rounded-xl border border-zinc-200 bg-zinc-50/70">
@@ -959,24 +1025,61 @@ function CoworkerEditor({
               </details>
             </EditorSection>
             <EditorSection title="Exact tool grants">
-              <div className="flex flex-wrap gap-2">
-                {coworker.config.tool_grants.map((tool) => (
-                  <span
-                    key={tool}
-                    className="rounded-lg border border-zinc-200 bg-zinc-50 px-2.5 py-1.5 text-xs font-medium text-zinc-700"
-                  >
-                    ✓ {tool}
-                  </span>
-                ))}
-                {coworker.config.tool_grants.length === 0 ? (
-                  <span className="text-xs text-zinc-400">No tool grants</span>
-                ) : null}
-              </div>
+              <ExactGrantEditor
+                label="Tool names"
+                value={toolGrants}
+                onChange={setToolGrants}
+                rows={5}
+                help="One exact connector or host-tool name per line. Removing a line revokes that grant."
+              />
             </EditorSection>
             <EditorSection title="Skills & controlled components">
-              <div className="grid grid-cols-2 gap-3">
-                <GrantList title="Private skills" items={coworker.config.skill_version_ids} />
-                <GrantList title="Components" items={coworker.config.component_version_ids} />
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <ExactGrantEditor
+                  label="Private skill version IDs"
+                  value={skillBindings}
+                  onChange={setSkillBindings}
+                  rows={5}
+                  help="Only published private skill versions can be bound."
+                />
+                <div>
+                  <ToggleControl
+                    label="GenUI"
+                    description="Allow only the controlled component versions listed below."
+                    checked={genUiEnabled}
+                    onChange={setGenUiEnabled}
+                  />
+                  <div className="mt-3">
+                    <ExactGrantEditor
+                      label="Controlled component version IDs"
+                      value={componentGrants}
+                      onChange={setComponentGrants}
+                      rows={4}
+                      disabled={!genUiEnabled}
+                      help={
+                        genUiEnabled
+                          ? "One published, granted agent-tool component version per line."
+                          : "Turn GenUI on to edit controlled component grants."
+                      }
+                    />
+                  </div>
+                </div>
+              </div>
+            </EditorSection>
+            <EditorSection title="Runtime capabilities">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <ToggleControl
+                  label="Sandbox"
+                  description="Derived from exact SANDBOX tool grants above. The update contract has no separate sandbox switch."
+                  checked={sandboxEnabledFromGrants(parseExactGrantList(toolGrants))}
+                  disabled
+                />
+                <ToggleControl
+                  label="Native subagents"
+                  description="Unavailable in P0. Coworkers cannot create native child agents."
+                  checked={false}
+                  disabled
+                />
               </div>
             </EditorSection>
             <EditorSection title="Approval settings">
@@ -996,7 +1099,7 @@ function CoworkerEditor({
                 Runtime
               </h2>
               <dl className="mt-4 space-y-3 text-xs">
-                <SideDetail label="Model preset" value={coworker.config.model_preset} />
+                <SideDetail label="Model preset" value={modelPreset.trim() || "Required"} />
                 <SideDetail
                   label="Turn budget"
                   value={`${coworker.config.budget.max_turn_tokens.toLocaleString()} tokens`}
@@ -1008,14 +1111,14 @@ function CoworkerEditor({
                 <SideDetail
                   label="Sandbox"
                   value={
-                    coworker.config.tool_grants.some((tool) => tool.includes("SANDBOX"))
-                      ? "Granted"
-                      : "Not granted"
+                    sandboxEnabledFromGrants(parseExactGrantList(toolGrants))
+                      ? "Enabled by runtime policy"
+                      : "Disabled by runtime policy"
                   }
                 />
                 <SideDetail
                   label="GenUI components"
-                  value={String(coworker.config.component_version_ids.length)}
+                  value={genUiEnabled ? String(parseExactGrantList(componentGrants).length) : "Off"}
                 />
                 <SideDetail label="Native subagents" value="Unavailable in P0" />
               </dl>
@@ -1059,19 +1162,66 @@ function Field({
     </label>
   );
 }
-function GrantList({ title, items }: { title: string; items: string[] }) {
+function ExactGrantEditor({
+  label,
+  value,
+  onChange,
+  help,
+  rows,
+  disabled = false,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  help: string;
+  rows: number;
+  disabled?: boolean;
+}) {
   return (
-    <div className="rounded-xl bg-zinc-50 p-3">
-      <h3 className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">{title}</h3>
-      <ul className="mt-2 space-y-2">
-        {items.map((item) => (
-          <li key={item} className="text-xs font-medium text-zinc-700">
-            ✓ {item}
-          </li>
-        ))}
-        {items.length === 0 ? <li className="text-xs text-zinc-400">None</li> : null}
-      </ul>
-    </div>
+    <label className="block text-xs font-medium text-zinc-700">
+      {label}
+      <textarea
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        rows={rows}
+        disabled={disabled}
+        spellCheck={false}
+        className="mt-1.5 w-full resize-y rounded-xl border border-zinc-200 bg-white p-3 font-mono text-xs leading-5 text-zinc-800 disabled:cursor-not-allowed disabled:bg-zinc-100 disabled:text-zinc-400"
+      />
+      <span className="mt-1.5 block text-[11px] font-normal leading-4 text-zinc-500">{help}</span>
+    </label>
+  );
+}
+
+function ToggleControl({
+  label,
+  description,
+  checked,
+  onChange,
+  disabled = false,
+}: {
+  label: string;
+  description: string;
+  checked: boolean;
+  onChange?: (checked: boolean) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <label
+      className={`flex items-start gap-3 rounded-xl border p-3 ${disabled ? "border-zinc-200 bg-zinc-50" : "border-zinc-200 bg-white"}`}
+    >
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(event) => onChange?.(event.target.checked)}
+        disabled={disabled}
+        className="mt-0.5 h-4 w-4 rounded border-zinc-300 text-violet-600"
+      />
+      <span>
+        <span className="block text-xs font-semibold text-zinc-800">{label}</span>
+        <span className="mt-0.5 block text-[11px] leading-4 text-zinc-500">{description}</span>
+      </span>
+    </label>
   );
 }
 function SideDetail({ label, value }: { label: string; value: string }) {

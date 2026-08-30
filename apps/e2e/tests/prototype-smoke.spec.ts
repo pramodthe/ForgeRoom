@@ -100,6 +100,17 @@ test.describe("P0-504 prototype smoke (fixture mode)", () => {
     });
     await page.getByRole("button", { name: "Done" }).click();
 
+    // Capability editor saves real model and exact-grant changes across refresh.
+    await page.getByRole("link", { name: /Analyst/i }).click();
+    await page.getByLabel("Model preset").fill("demo-fast");
+    const toolGrants = page.getByLabel("Tool names");
+    await toolGrants.fill(`${await toolGrants.inputValue()}\nSUPPORT_EXPORT`);
+    await page.getByRole("button", { name: "Save changes" }).click();
+    await expect(page.getByText(/Changes saved.*sessions will rotate/i)).toBeVisible();
+    await page.reload();
+    await expect(page.getByLabel("Model preset")).toHaveValue("demo-fast");
+    await expect(page.getByLabel("Tool names")).toHaveValue(/SUPPORT_EXPORT/);
+
     // Authoritative Task list
     await gotoTasks(page);
     await expect(page.getByText(/Reconcile the synthetic demo record/i).first()).toBeVisible();
@@ -109,7 +120,13 @@ test.describe("P0-504 prototype smoke (fixture mode)", () => {
     await expect(page.getByRole("heading", { name: "# Operations" })).toBeVisible();
     const choiceHeading = page.getByText(/How should I continue/i);
     if (await choiceHeading.isVisible()) {
+      await page.getByRole("button", { name: "Cancel" }).click();
+      await expect(page.getByText(/Choice cancelled/i)).toBeVisible();
+      await page.reload();
+      await expect(page.getByText(/Choice cancelled/i)).toBeVisible();
+      await page.getByRole("button", { name: "Choose again" }).click();
       await page.getByRole("button", { name: /Submit choice/i }).click();
+      await expect(page.getByText(/Choice recorded: wait for reconnect/i)).toBeVisible();
     }
 
     // Demo receipt + save-as-skill entry (fixture work panel)
