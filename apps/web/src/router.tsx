@@ -13,7 +13,8 @@ import { ChannelPage, ChannelsIndexRedirect } from "./pages/channel-page";
 import { ConnectionsPage } from "./pages/connections-page";
 import { CoworkerDetailPage, CoworkersPage } from "./pages/coworkers-page";
 import { FeedPage } from "./pages/feed-page";
-import { LoginPage, RootRedirect } from "./pages/login-page";
+import { LandingPage } from "./pages/landing-page";
+import { LoginPage } from "./pages/login-page";
 import { OnboardingPage } from "./pages/onboarding-page";
 import { SkillDetailPage, SkillsPage } from "./pages/skills-page";
 import { TaskDetailPage, TasksPage } from "./pages/tasks-page";
@@ -56,7 +57,7 @@ const rootRoute = createRootRoute({
 const indexRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/",
-  component: RootRedirect,
+  component: LandingPage,
 });
 
 const loginRoute = createRoute({

@@ -14,7 +14,10 @@ test.describe("P0-504 prototype smoke (fixture mode)", () => {
   }, testInfo) => {
     await page.goto("/");
     await page.evaluate('localStorage.removeItem("forgeroom:fixture:onboarding:v1:workspace_1")');
-    await page.goto("/onboarding");
+    await expect(
+      page.getByRole("heading", { name: /Where teams and AI coworkers get work done/i }),
+    ).toBeVisible();
+    await page.getByRole("link", { name: "Enter ForgeRoom" }).click();
     await expect(page.getByRole("heading", { name: /Build a room where/i })).toBeVisible();
     await page.getByRole("button", { name: "Get started" }).click();
     await page.getByLabel("Agent name").fill("Atlas");

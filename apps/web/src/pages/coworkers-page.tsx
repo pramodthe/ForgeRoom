@@ -811,9 +811,7 @@ export function CoworkerDetailPage() {
         action={<Link to={workspaceCoworkersPath(workspaceId)}>Back to coworkers</Link>}
       />
     );
-  return (
-    <CoworkerEditor key={coworker.config_revision} workspaceId={workspaceId} coworker={coworker} />
-  );
+  return <CoworkerEditor key={coworker.id} workspaceId={workspaceId} coworker={coworker} />;
 }
 
 function CoworkerEditor({

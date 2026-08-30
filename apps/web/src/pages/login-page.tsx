@@ -1,5 +1,5 @@
 import { useMutation } from "@tanstack/react-query";
-import { Link, Navigate, useNavigate, useSearch } from "@tanstack/react-router";
+import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import { useState, type FormEvent } from "react";
 import { HostButton } from "@forgeroom/ui-components";
 import { login } from "../auth-api";
@@ -177,18 +177,4 @@ function LoginFeature({ title, detail }: { title: string; detail: string }) {
       <div className="mt-1 text-[11px] text-zinc-400">{detail}</div>
     </div>
   );
-}
-
-export function RootRedirect() {
-  const { session, isLoading } = useSession();
-
-  if (isLoading) {
-    return <p className="p-8 text-sm text-zinc-600">Loading session…</p>;
-  }
-
-  if (!session) {
-    return <Navigate to={loginPath()} />;
-  }
-
-  return <AuthenticatedChannelRedirect workspaceId={session.workspace_id} />;
 }
