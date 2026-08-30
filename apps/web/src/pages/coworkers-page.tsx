@@ -1,6 +1,7 @@
 import { Link, useParams } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { CoworkerDraft, CoworkerUpdateCommand } from "@forgeroom/contracts";
+import { coworkerModelPresetError, P0_COWORKER_MODEL_PRESETS } from "@forgeroom/contracts";
 import { LoadingState, RouteErrorState } from "@forgeroom/ui-components";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -69,7 +70,8 @@ export function buildCoworkerUpdateCommand(
   edits: CoworkerCapabilityEdits,
 ): CoworkerUpdateCommand {
   const modelPreset = edits.modelPreset.trim();
-  if (!modelPreset) throw new Error("Model preset is required.");
+  const modelPresetError = coworkerModelPresetError(modelPreset);
+  if (modelPresetError) throw new Error(modelPresetError);
   const componentVersionIds = parseExactGrantList(edits.componentGrants);
   if (edits.genUiEnabled && componentVersionIds.length === 0) {
     throw new Error("Add at least one published component version or turn GenUI off.");
@@ -811,7 +813,13 @@ export function CoworkerDetailPage() {
         action={<Link to={workspaceCoworkersPath(workspaceId)}>Back to coworkers</Link>}
       />
     );
-  return <CoworkerEditor key={coworker.id} workspaceId={workspaceId} coworker={coworker} />;
+  return (
+    <CoworkerEditor
+      key={`${coworker.id}:${coworker.config_revision}`}
+      workspaceId={workspaceId}
+      coworker={coworker}
+    />
+  );
 }
 
 function CoworkerEditor({
@@ -993,12 +1001,17 @@ function CoworkerEditor({
               </div>
               <label className="mt-3 block text-xs text-zinc-500">
                 Model preset
-                <input
+                <select
                   value={modelPreset}
                   onChange={(event) => setModelPreset(event.target.value)}
-                  placeholder="openai/gpt-5-4-mini"
                   className="mt-1.5 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-sm text-zinc-700"
-                />
+                >
+                  {P0_COWORKER_MODEL_PRESETS.map((preset) => (
+                    <option key={preset} value={preset}>
+                      {preset}
+                    </option>
+                  ))}
+                </select>
               </label>
               <details className="mt-4 rounded-xl border border-zinc-200 bg-zinc-50/70">
                 <summary className="cursor-pointer px-3 py-2.5 text-xs font-medium text-zinc-700">

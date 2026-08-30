@@ -126,7 +126,10 @@ export {
   coworkerProfileSchema,
   RESERVED_COWORKER_HANDLES,
   isReservedCoworkerHandle,
+  P0_COWORKER_MODEL_PRESETS,
+  coworkerModelPresetError,
 } from "./coworkers";
+export type { P0CoworkerModelPreset } from "./coworkers";
 export type {
   CoworkerDraft,
   CoworkerDraftState,

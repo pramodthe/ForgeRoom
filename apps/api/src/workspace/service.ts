@@ -45,6 +45,7 @@ import {
   channelRosterResponseSchema,
   channelSchema,
   coworkerProfileSchema,
+  coworkerModelPresetError,
   isReservedCoworkerHandle,
   taskRecordV1Schema,
 } from "@forgeroom/contracts";
@@ -3754,6 +3755,13 @@ export function createWorkspaceService(options?: {
         return {
           ok: false,
           error: { code: "conflict", message: "Disabled coworkers cannot be edited." },
+        };
+      }
+      const modelPresetError = coworkerModelPresetError(command.model_preset);
+      if (modelPresetError) {
+        return {
+          ok: false,
+          error: { code: "validation_failed", message: modelPresetError },
         };
       }
       const handleConflict = (await store.listCoworkers(loaded.value.workspaceId)).find(

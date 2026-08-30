@@ -81,6 +81,9 @@ describe("coworker capability editor helpers", () => {
     expect(() => buildCoworkerUpdateCommand(coworker, { ...base, modelPreset: " " })).toThrow(
       "Model preset is required.",
     );
+    expect(() =>
+      buildCoworkerUpdateCommand(coworker, { ...base, modelPreset: "anthropic/claude-3-5-sonnet" }),
+    ).toThrow("Model preset must be one of: default, openai/gpt-5-4-mini.");
     expect(() => buildCoworkerUpdateCommand(coworker, { ...base, genUiEnabled: true })).toThrow(
       "Add at least one published component version or turn GenUI off.",
     );

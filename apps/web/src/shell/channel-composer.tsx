@@ -9,6 +9,12 @@ import {
 } from "./composer-routing";
 import { buildWorkflowStarters } from "./workflow-starters";
 
+type PendingTaskCreate = {
+  posted: PostedChannelMessage;
+  body: string;
+  assigneeId: string | null;
+};
+
 type ChannelComposerProps = {
   channelId: string;
   roster: readonly ChannelRosterCoworker[];
@@ -35,6 +41,7 @@ export function ChannelComposer({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [sendIdempotencyKey, setSendIdempotencyKey] = useState<string | null>(null);
+  const [pendingTaskCreate, setPendingTaskCreate] = useState<PendingTaskCreate | null>(null);
   const composerRef = useRef<HTMLTextAreaElement>(null);
   const workflowStarters = useMemo(() => buildWorkflowStarters(roster), [roster]);
 
@@ -44,7 +51,25 @@ export function ChannelComposer({
   );
   const blocked = composerSendBlocked(preview.resolution);
   const blockReason = composerBlockReason(preview.resolution);
-  const canSend = !disabled && !submitting && body.trim().length > 0 && !blocked;
+  const canSend =
+    !disabled && !submitting && body.trim().length > 0 && !blocked && !pendingTaskCreate;
+
+  async function retryTaskCreate() {
+    if (!pendingTaskCreate || !onCreateTask) {
+      return;
+    }
+    setSubmitting(true);
+    setError(null);
+    try {
+      await onCreateTask(pendingTaskCreate);
+      setPendingTaskCreate(null);
+      setSendMode("message");
+    } catch (createError) {
+      setError(createError instanceof Error ? createError.message : "Unable to create the task.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
 
   async function handleSend() {
     if (!canSend) {
@@ -77,17 +102,22 @@ export function ChannelComposer({
             : null;
         try {
           await onCreateTask({ posted: result, body: sentBody, assigneeId });
+          setPendingTaskCreate(null);
         } catch (createError) {
+          setPendingTaskCreate({ posted: result, body: sentBody, assigneeId });
           taskError =
             createError instanceof Error ? createError.message : "Unable to create the task.";
         }
       }
       setBody("");
-      setSendMode("message");
+      if (!taskError) {
+        setSendMode("message");
+      }
       setSendIdempotencyKey(null);
       onSent?.(result, sentBody);
       if (taskError) {
         setError(`Message sent, but the task was not created: ${taskError}`);
+        return;
       }
     } catch (sendError) {
       setError(sendError instanceof Error ? sendError.message : "Unable to send message.");
@@ -146,6 +176,22 @@ export function ChannelComposer({
           {body.trim() ? <RecipientPreview preview={preview} blockReason={blockReason} /> : null}
 
           {error ? <p className="text-sm text-red-700">{error}</p> : null}
+
+          {pendingTaskCreate ? (
+            <div className="flex items-center justify-between gap-3 rounded-lg border border-amber-400/20 bg-amber-400/10 px-3 py-2 text-xs text-amber-200">
+              <span>
+                The channel message was sent, but the linked task still needs to be created.
+              </span>
+              <button
+                type="button"
+                className="shrink-0 rounded-md bg-amber-500/20 px-2.5 py-1 text-[10px] font-semibold text-amber-100"
+                disabled={submitting}
+                onClick={() => void retryTaskCreate()}
+              >
+                {submitting ? "Retrying…" : "Retry task create"}
+              </button>
+            </div>
+          ) : null}
 
           <div className="flex items-center justify-between gap-3">
             <div className="flex min-w-0 items-center gap-2">

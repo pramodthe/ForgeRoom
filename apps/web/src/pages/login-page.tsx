@@ -4,13 +4,13 @@ import { useState, type FormEvent } from "react";
 import { HostButton } from "@forgeroom/ui-components";
 import { login } from "../auth-api";
 import { useSession } from "../auth/session-context";
-import { resolveDefaultChannelId } from "../api/workspace-api";
 import { isFixtureMode } from "../api/mode";
 import { isFixtureOnboardingComplete } from "../onboarding/fixture-onboarding";
 import {
-  postLoginDestination,
+  isSafePostLoginRedirect,
   loginPath,
   onboardingPath,
+  parseWorkspaceIdFromPath,
   workspaceFeedPath,
 } from "../routes/paths";
 import { AuthenticatedChannelRedirect } from "../shell/authenticated-channel-redirect";
@@ -28,19 +28,19 @@ export function LoginPage() {
     onSuccess: async (nextSession) => {
       setError(null);
       await refreshSession();
-      const channelId = await resolveDefaultChannelId(nextSession.workspace_id);
-      if (!channelId) {
-        setError("No channels are available in this workspace yet.");
+      if (isFixtureMode && !isFixtureOnboardingComplete(nextSession.workspace_id)) {
+        await navigate({ to: onboardingPath() });
         return;
       }
-      await navigate({
-        to:
-          isFixtureMode && !isFixtureOnboardingComplete(nextSession.workspace_id)
-            ? onboardingPath()
-            : search.redirect
-              ? postLoginDestination(search.redirect, nextSession.workspace_id, channelId)
-              : workspaceFeedPath(nextSession.workspace_id),
-      });
+      if (
+        search.redirect &&
+        isSafePostLoginRedirect(search.redirect) &&
+        parseWorkspaceIdFromPath(search.redirect) === nextSession.workspace_id
+      ) {
+        await navigate({ to: search.redirect });
+        return;
+      }
+      await navigate({ to: workspaceFeedPath(nextSession.workspace_id) });
     },
     onError: (err: Error) => setError(err.message),
   });

@@ -12,7 +12,6 @@ import {
   listCoworkers,
   removeChannelCoworker,
 } from "../api/workspace-api";
-import { newIdempotencyKey } from "../api/http-client";
 import { runExistingChannelMessage } from "../ag-ui/run-existing-channel-message";
 import { useChannelTimeline } from "../ag-ui/use-channel-timeline";
 import { useSession } from "../auth/session-context";
@@ -181,7 +180,7 @@ export function ChannelTimelinePane({
                 source_message_id: posted.message_id,
                 source_run_id: null,
                 due_at: null,
-                idempotency_key: newIdempotencyKey("task_create"),
+                idempotency_key: `task_create_${posted.message_id}`,
               },
             });
             await Promise.all([

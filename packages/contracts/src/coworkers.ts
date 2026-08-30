@@ -11,6 +11,22 @@ import { taskRecordOperationSchema } from "./tasks";
 /** Case-insensitive handles reserved for routing syntax — cannot name a coworker. */
 export const RESERVED_COWORKER_HANDLES = ["team"] as const;
 
+/** P0 TrueForge model presets that are known to provision successfully. */
+export const P0_COWORKER_MODEL_PRESETS = ["default", "openai/gpt-5-4-mini"] as const;
+
+export type P0CoworkerModelPreset = (typeof P0_COWORKER_MODEL_PRESETS)[number];
+
+export function coworkerModelPresetError(preset: string): string | null {
+  const trimmed = preset.trim();
+  if (!trimmed) {
+    return "Model preset is required.";
+  }
+  if (!(P0_COWORKER_MODEL_PRESETS as readonly string[]).includes(trimmed)) {
+    return `Model preset must be one of: ${P0_COWORKER_MODEL_PRESETS.join(", ")}.`;
+  }
+  return null;
+}
+
 export function isReservedCoworkerHandle(handle: string): boolean {
   const lowered = handle.toLowerCase();
   return RESERVED_COWORKER_HANDLES.some((reserved) => reserved === lowered);
@@ -25,6 +41,30 @@ function rejectReservedCoworkerHandle(value: { handle: string }, ctx: z.Refineme
     });
   }
 }
+
+function rejectInvalidCoworkerModelPreset(
+  value: { model_preset: string },
+  ctx: z.RefinementCtx,
+): void {
+  const message = coworkerModelPresetError(value.model_preset);
+  if (message) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message,
+      path: ["model_preset"],
+    });
+  }
+}
+
+function rejectInvalidCoworkerProposal(value: CoworkerProposalShape, ctx: z.RefinementCtx): void {
+  rejectReservedCoworkerHandle(value, ctx);
+  rejectInvalidCoworkerModelPreset(value, ctx);
+}
+
+type CoworkerProposalShape = {
+  handle: string;
+  model_preset: string;
+};
 
 export const coworkerDraftStateSchema = z.enum([
   "draft",
@@ -73,7 +113,7 @@ const coworkerProposalBaseSchema = z
   .strict();
 
 export const coworkerProposalSchema = coworkerProposalBaseSchema.superRefine(
-  rejectReservedCoworkerHandle,
+  rejectInvalidCoworkerProposal,
 );
 
 export const coworkerEffectivePreviewSchema = z
@@ -150,7 +190,7 @@ export const coworkerDraftRejectCommandSchema = z
 
 export const coworkerUpdateCommandSchema = coworkerProposalBaseSchema
   .omit({ schemaVersion: true })
-  .superRefine(rejectReservedCoworkerHandle);
+  .superRefine(rejectInvalidCoworkerProposal);
 
 export const coworkerDisableCommandSchema = z
   .object({

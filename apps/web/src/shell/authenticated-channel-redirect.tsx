@@ -5,7 +5,9 @@ import { resolveDefaultChannelId } from "../api/workspace-api";
 import { isFixtureMode } from "../api/mode";
 import { isFixtureOnboardingComplete } from "../onboarding/fixture-onboarding";
 import {
+  isSafePostLoginRedirect,
   onboardingPath,
+  parseWorkspaceIdFromPath,
   postLoginDestination,
   workspaceChannelPath,
   workspaceFeedPath,
@@ -56,6 +58,16 @@ function ChannelRedirectState({
 
   const channelId = channelQuery.data;
   if (!channelId) {
+    if (
+      redirect !== undefined &&
+      isSafePostLoginRedirect(redirect) &&
+      parseWorkspaceIdFromPath(redirect) === workspaceId
+    ) {
+      return <Navigate to={redirect} replace />;
+    }
+    if (defaultToFeed) {
+      return <Navigate to={workspaceFeedPath(workspaceId)} replace />;
+    }
     return (
       <RouteErrorState
         title="No channels yet"
