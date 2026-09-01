@@ -1,0 +1,28 @@
+{
+  "name": "ForgeRoom",
+  "user": "ubuntu",
+  "install": "bash scripts/cloud-agent-install.sh",
+  "start": "bash scripts/cloud-agent-start.sh",
+  "ports": [
+    {
+      "name": "api",
+      "port": 3000
+    },
+    {
+      "name": "web",
+      "port": 5173
+    }
+  ],
+  "terminals": [
+    {
+      "name": "api",
+      "command": "pnpm dev",
+      "description": "ForgeRoom Hono API on 0.0.0.0:3000 with the embedded worker. Auto-runs Postgres migrations on boot."
+    },
+    {
+      "name": "web",
+      "command": "pnpm dev:web",
+      "description": "Vite dev server for the React workroom on localhost:5173, proxying /api and /health to the API."
+    }
+  ]
+}
