@@ -23,13 +23,6 @@
 
 <!-- List added, removed, or changed environment variables/configuration, or state: "None." -->
 
-## Qodo Code Review Evidence
-
-- Qodo review: <!-- link to the Qodo-reviewed PR / review thread -->
-- High-severity findings fixed: <!-- list the fixes, or "None found." -->
-- High-severity findings dismissed/deferred: <!-- include the reason, or "None." -->
-- Follow-up review after the final push: <!-- link or commit SHA -->
-
 ## AI assistance
 
 - [ ] AI tools contributed meaningfully to this change; I reviewed and can explain the resulting code/configuration.
@@ -38,8 +31,5 @@
 ## Merge checklist
 
 - [ ] The change is limited to the scope described above.
-- [ ] Qodo reviewed this substantive change before merge.
-- [ ] Every valid High-severity Qodo finding is fixed, or dismissed with a documented reason.
-- [ ] A follow-up Qodo review covers the final pushed commit.
 - [ ] A human reviewer made the merge decision and approved the PR.
 - [ ] Merge uses a merge commit (`gh pr merge --merge`), not squash or rebase, unless the user asked otherwise.
