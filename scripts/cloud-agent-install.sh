@@ -19,7 +19,12 @@ fi
 echo "[install] Installing workspace dependencies..."
 pnpm install --frozen-lockfile
 
-# 3. Local development .env (gitignored). Never used outside local dev.
+# 3. Playwright browser for the @forgeroom/e2e suite (matches CI). The base
+# image already carries the required system libraries.
+echo "[install] Installing Playwright Chromium..."
+pnpm --filter @forgeroom/e2e exec playwright install chromium
+
+# 4. Local development .env (gitignored). Never used outside local dev.
 if [ ! -f .env ]; then
   echo "[install] Writing local .env from development defaults..."
   cat > .env <<'ENV'
@@ -48,7 +53,7 @@ AUTH_STORE=
 DATABASE_URL=postgres://forgeroom:forgeroom@127.0.0.1:5432/forgeroom
 PAUSE_PAYLOAD_ENCRYPTION_SECRET=
 ARTIFACT_STORAGE_DIR=
-TRUEFORGE_BASE_URL=
+TRUEFORGE_BASE_URL=http://127.0.0.1:8790
 TRUEFORGE_API_KEY=
 OPENAI_API_KEY=
 MODEL_PROVIDER_API_KEY=

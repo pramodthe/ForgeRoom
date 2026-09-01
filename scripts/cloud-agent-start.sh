@@ -23,10 +23,15 @@ for _ in $(seq 1 30); do
   sleep 1
 done
 
-# Ensure the application role exists.
+# Ensure the application role exists. The official postgres Docker image used by
+# infra/compose.yaml makes POSTGRES_USER a SUPERUSER; match that so the
+# @forgeroom/db test-harness can create/drop fresh temporary databases and
+# terminate their backends (pg_terminate_backend) between integration tests.
 if ! sudo -u postgres psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='forgeroom'" | grep -q 1; then
   echo "[start] Creating forgeroom role..."
-  sudo -u postgres psql -c "CREATE ROLE forgeroom LOGIN PASSWORD 'forgeroom';"
+  sudo -u postgres psql -c "CREATE ROLE forgeroom LOGIN SUPERUSER CREATEDB PASSWORD 'forgeroom';"
+else
+  sudo -u postgres psql -c "ALTER ROLE forgeroom SUPERUSER CREATEDB;" >/dev/null
 fi
 
 # Ensure the application database exists.
