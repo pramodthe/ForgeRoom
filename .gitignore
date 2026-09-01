@@ -1,6 +1,3 @@
-# Qodo local review context and generated results.
-.qodo/
-
 # Local credentials and environment-specific configuration.
 .env
 .env.*
