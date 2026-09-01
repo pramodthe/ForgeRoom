@@ -6,13 +6,19 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-# 1. System dependency: PostgreSQL 16 (only install when missing).
-if ! command -v pg_ctlcluster >/dev/null 2>&1; then
-  echo "[install] Installing PostgreSQL 16..."
+# 1. System dependency: PostgreSQL 16 (pinned to match infra/compose.yaml's
+# postgres:16). Install only when the versioned package is missing, and pin the
+# major version explicitly so a future base-image change to a different default
+# PostgreSQL does not diverge from the cluster the start script manages.
+PG_MAJOR=16
+if ! dpkg -s "postgresql-${PG_MAJOR}" >/dev/null 2>&1; then
+  echo "[install] Installing PostgreSQL ${PG_MAJOR}..."
   sudo apt-get update -qq
-  sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq postgresql postgresql-contrib
+  # postgresql-<major> already bundles the contrib modules; the migrations use
+  # no CREATE EXTENSION, so no separate contrib package is required.
+  sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq "postgresql-${PG_MAJOR}"
 else
-  echo "[install] PostgreSQL already present; skipping apt install."
+  echo "[install] PostgreSQL ${PG_MAJOR} already present; skipping apt install."
 fi
 
 # 2. Workspace dependencies (pinned via pnpm + lockfile).
