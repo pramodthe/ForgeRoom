@@ -1,5 +1,6 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { listChannelPendingApprovals } from "../api/channel-resources-api";
+import { isFixtureMode } from "../api/mode";
 import { TrustedApprovalCard } from "./trusted-approval-card";
 
 export function PendingApprovalsStrip(props: { channelId: string; archived: boolean }) {
@@ -7,8 +8,8 @@ export function PendingApprovalsStrip(props: { channelId: string; archived: bool
   const pendingQuery = useQuery({
     queryKey: ["channel-pending-approvals", props.channelId],
     queryFn: () => listChannelPendingApprovals(props.channelId),
-    enabled: !props.archived,
-    refetchInterval: props.archived ? false : 10_000,
+    enabled: !props.archived && !isFixtureMode,
+    refetchInterval: props.archived || isFixtureMode ? false : 10_000,
   });
 
   const proposalIds = pendingQuery.data?.proposal_ids ?? [];

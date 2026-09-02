@@ -2,7 +2,14 @@ import { useQuery } from "@tanstack/react-query";
 import { Navigate } from "@tanstack/react-router";
 import { LoadingState, RouteErrorState } from "@forgeroom/ui-components";
 import { resolveDefaultChannelId } from "../api/workspace-api";
-import { postLoginDestination, workspaceChannelPath } from "../routes/paths";
+import { isFixtureMode } from "../api/mode";
+import { isFixtureOnboardingComplete } from "../onboarding/fixture-onboarding";
+import {
+  onboardingPath,
+  postLoginDestination,
+  workspaceChannelPath,
+  workspaceFeedPath,
+} from "../routes/paths";
 
 type AuthenticatedChannelRedirectProps = {
   workspaceId: string;
@@ -13,16 +20,22 @@ function ChannelRedirectState({
   workspaceId,
   redirect,
   loadingTitle,
+  defaultToFeed = false,
 }: {
   workspaceId: string;
   redirect?: string;
   loadingTitle: string;
+  defaultToFeed?: boolean;
 }) {
   const channelQuery = useQuery({
     queryKey: ["default-channel", workspaceId],
     queryFn: () => resolveDefaultChannelId(workspaceId),
     retry: false,
   });
+
+  if (isFixtureMode && !isFixtureOnboardingComplete(workspaceId)) {
+    return <Navigate to={onboardingPath()} replace />;
+  }
 
   if (channelQuery.isLoading) {
     return <LoadingState title={loadingTitle} />;
@@ -56,7 +69,9 @@ function ChannelRedirectState({
       to={
         redirect !== undefined
           ? postLoginDestination(redirect, workspaceId, channelId)
-          : workspaceChannelPath(workspaceId, channelId)
+          : defaultToFeed
+            ? workspaceFeedPath(workspaceId)
+            : workspaceChannelPath(workspaceId, channelId)
       }
       replace
     />
@@ -72,6 +87,7 @@ export function AuthenticatedChannelRedirect({
       workspaceId={workspaceId}
       redirect={redirect}
       loadingTitle="Loading workspace…"
+      defaultToFeed
     />
   );
 }

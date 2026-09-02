@@ -82,12 +82,14 @@ const fixtureCoworkers = new Map<string, CoworkerDetail>();
 const fixtureTimelines = new Map<string, ChannelTimelineMessagesResponse>();
 const fixtureTasks = new Map<string, TaskRecordV1>();
 const fixtureTaskRevisions = new Map<string, TaskRevision[]>();
+const fixturePins = new Map<string, ChannelPin[]>();
 let fixtureRunSkill: SkillVersion | null = null;
 export type FixtureApprovalDecision = "pending" | "approved" | "denied" | "changes_requested";
 const fixtureApprovalDecisions = new Map<string, FixtureApprovalDecision>();
 const FIXTURE_COWORKER_STORAGE_PREFIX = "forgeroom:fixture:coworker:v1:";
 const FIXTURE_TIMELINE_STORAGE_PREFIX = "forgeroom:fixture:timeline:v1:";
 const FIXTURE_TASK_STORAGE_PREFIX = "forgeroom:fixture:task:v1:";
+const FIXTURE_PINS_STORAGE_PREFIX = "forgeroom:fixture:pins:v1:";
 const FIXTURE_RUN_SKILL_STORAGE_KEY = "forgeroom:fixture:skill:v1:run_4A91";
 const FIXTURE_APPROVAL_STORAGE_PREFIX = "forgeroom:fixture:approval:v1:";
 
@@ -294,6 +296,24 @@ function getFixtureTaskById(taskId: string): TaskRecordV1 | null {
   }
 }
 
+function allFixtureTasks(): TaskRecordV1[] {
+  const base = MOCK_TASKS.map((task) => fixtureTask(task));
+  const storage = fixtureStorage();
+  if (storage) {
+    const storedIds: string[] = [];
+    for (let index = 0; index < storage.length; index += 1) {
+      const key = storage.key(index);
+      if (key?.startsWith(FIXTURE_TASK_STORAGE_PREFIX)) {
+        storedIds.push(key.slice(FIXTURE_TASK_STORAGE_PREFIX.length));
+      }
+    }
+    for (const taskId of storedIds) getFixtureTaskById(taskId);
+  }
+  const mockIds = new Set(base.map((task) => task.id));
+  const created = [...fixtureTasks.values()].filter((task) => !mockIds.has(task.id));
+  return [...base, ...created];
+}
+
 function fixtureTaskRevisionData(task: TaskRecordV1): TaskRevision["data"] {
   return {
     schemaVersion: task.schemaVersion,
@@ -430,6 +450,51 @@ function assertWorkspace(workspaceId: string): void {
   }
 }
 
+function assertFixtureChannel(channelId: string): void {
+  if (!MOCK_CHANNELS.some((channel) => channel.id === channelId)) {
+    throw new Error("channel_not_found");
+  }
+}
+
+function fixturePinsStorageKey(channelId: string): string {
+  return `${FIXTURE_PINS_STORAGE_PREFIX}${channelId}`;
+}
+
+function fixtureChannelPins(channelId: string): ChannelPin[] {
+  const existing = fixturePins.get(channelId);
+  if (existing) return existing;
+  const storage = fixtureStorage();
+  if (!storage) {
+    fixturePins.set(channelId, []);
+    return [];
+  }
+  const storageKey = fixturePinsStorageKey(channelId);
+  try {
+    const raw = storage.getItem(storageKey);
+    if (!raw) {
+      fixturePins.set(channelId, []);
+      return [];
+    }
+    const pins = channelPinsListResponseSchema.parse(JSON.parse(raw)).pins;
+    fixturePins.set(channelId, pins);
+    return pins;
+  } catch {
+    storage.removeItem(storageKey);
+    fixturePins.set(channelId, []);
+    return [];
+  }
+}
+
+function persistFixturePins(channelId: string, pins: readonly ChannelPin[]): void {
+  const parsed = channelPinsListResponseSchema.parse({
+    schemaVersion: 1,
+    channel_id: channelId,
+    pins,
+  });
+  commitFixtureStorage([{ key: fixturePinsStorageKey(channelId), value: JSON.stringify(parsed) }]);
+  fixturePins.set(channelId, parsed.pins);
+}
+
 export async function listChannels(workspaceId: string): Promise<Channel[]> {
   if (useMockApi) {
     assertWorkspace(workspaceId);
@@ -508,9 +573,8 @@ export async function listChannelRoster(
 
 export async function listChannelTasks(channelId: string): Promise<TaskRecordV1[]> {
   if (useMockApi) {
-    return MOCK_TASKS.map((task) => fixtureTask(task)).filter(
-      (task) => task.channel_id === channelId,
-    );
+    assertFixtureChannel(channelId);
+    return allFixtureTasks().filter((task) => task.channel_id === channelId);
   }
   const body = await apiFetch<{ tasks: unknown[]; request_id: string }>(
     `/api/channels/${encodeURIComponent(channelId)}/tasks`,
@@ -520,7 +584,8 @@ export async function listChannelTasks(channelId: string): Promise<TaskRecordV1[
 
 export async function listChannelPins(channelId: string): Promise<ChannelPin[]> {
   if (useMockApi) {
-    return [];
+    assertFixtureChannel(channelId);
+    return [...fixtureChannelPins(channelId)];
   }
   const body = await apiFetch<unknown>(`/api/channels/${encodeURIComponent(channelId)}/pins`);
   const parsed = channelPinsListResponseSchema.parse(
@@ -546,6 +611,20 @@ export async function createChannelPin(input: {
     label: input.label,
     idempotency_key: newIdempotencyKey("pin"),
   });
+  if (useMockApi) {
+    assertFixtureChannel(input.channelId);
+    const pin = channelPinSchema.parse({
+      id: `pin_fixture_${crypto.randomUUID()}`,
+      channel_id: input.channelId,
+      source_message_id: command.source_message_id,
+      source_artifact_id: command.source_artifact_id,
+      label: command.label,
+      pinned_by: MOCK_SESSION.user.id,
+      created_at: new Date().toISOString(),
+    });
+    persistFixturePins(input.channelId, [...fixtureChannelPins(input.channelId), pin]);
+    return pin;
+  }
   const body = await apiFetch<{ pin: unknown; sequence: number; request_id: string }>(
     `/api/channels/${encodeURIComponent(input.channelId)}/pins`,
     {
@@ -566,6 +645,17 @@ export async function removeChannelPin(input: {
     schemaVersion: 1,
     idempotency_key: newIdempotencyKey("unpin"),
   });
+  if (useMockApi) {
+    assertFixtureChannel(input.channelId);
+    const pins = fixtureChannelPins(input.channelId);
+    const removed = pins.find((pin) => pin.id === input.pinId);
+    if (!removed) throw new Error("pin_not_found");
+    persistFixturePins(
+      input.channelId,
+      pins.filter((pin) => pin.id !== input.pinId),
+    );
+    return removed;
+  }
   const body = await apiFetch<{ pin: unknown; request_id: string }>(
     `/api/channels/${encodeURIComponent(input.channelId)}/pins/${encodeURIComponent(input.pinId)}`,
     {
@@ -580,12 +670,7 @@ export async function removeChannelPin(input: {
 export async function listTasks(workspaceId: string): Promise<TaskRecordV1[]> {
   if (useMockApi) {
     assertWorkspace(workspaceId);
-    const mockIds = new Set(MOCK_TASKS.map((task) => task.id));
-    const base = MOCK_TASKS.map((task) => fixtureTask(task));
-    const created = [...fixtureTasks.values()].filter(
-      (task) => task.workspace_id === workspaceId && !mockIds.has(task.id),
-    );
-    return [...base, ...created];
+    return allFixtureTasks().filter((task) => task.workspace_id === workspaceId);
   }
   const channels = await listChannels(workspaceId);
   const responses = await Promise.all(
@@ -926,6 +1011,18 @@ export async function addChannelCoworker(input: {
   csrfToken: string;
 }): Promise<void> {
   if (useMockApi) {
+    assertFixtureChannel(input.channelId);
+    const current = findFixtureCoworker(input.coworkerId);
+    if (!current) throw new Error("coworker_not_found");
+    if (current.config.channel_ids.includes(input.channelId)) return;
+    persistFixtureCoworker({
+      ...current,
+      config_revision: current.config_revision + 1,
+      config: {
+        ...current.config,
+        channel_ids: [...current.config.channel_ids, input.channelId],
+      },
+    });
     return;
   }
   const command: ChannelParticipantAddCommand = {
@@ -948,6 +1045,20 @@ export async function removeChannelCoworker(input: {
   csrfToken: string;
 }): Promise<void> {
   if (useMockApi) {
+    assertFixtureChannel(input.channelId);
+    const current = findFixtureCoworker(input.coworkerId);
+    if (!current) throw new Error("coworker_not_found");
+    if (!current.config.channel_ids.includes(input.channelId)) return;
+    persistFixtureCoworker({
+      ...current,
+      config_revision: current.config_revision + 1,
+      config: {
+        ...current.config,
+        channel_ids: current.config.channel_ids.filter(
+          (channelId) => channelId !== input.channelId,
+        ),
+      },
+    });
     return;
   }
   await apiFetch(

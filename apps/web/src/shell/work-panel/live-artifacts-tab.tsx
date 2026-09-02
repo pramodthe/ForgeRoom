@@ -51,11 +51,11 @@ export function LiveArtifactsTab(props: {
   return (
     <div className="space-y-3">
       <p className="px-1 text-xs text-zinc-500">1 artifact from the latest linked run</p>
-      <section className="rounded-xl border border-zinc-200 bg-white p-3 shadow-sm">
-        <div className="flex h-28 items-center justify-center rounded-lg bg-violet-100 text-2xl font-semibold text-violet-700">
+      <section className="rounded-xl border border-white/10 bg-[#292929] p-3 shadow-sm">
+        <div className="flex h-28 items-center justify-center rounded-lg bg-violet-400/15 text-2xl font-semibold text-violet-300">
           {label}
         </div>
-        <h3 className="mt-3 font-medium text-zinc-900">{artifact.name}</h3>
+        <h3 className="mt-3 font-medium text-zinc-100">{artifact.name}</h3>
         <p className="mt-0.5 text-[11px] text-zinc-500">
           {artifact.mime_type} · rev {artifact.revision}
         </p>
@@ -74,7 +74,7 @@ export function LiveArtifactsTab(props: {
             />
             <a
               href={apiUrl(`/api/artifacts/${encodeURIComponent(artifact.id)}/download`)}
-              className="font-medium text-violet-700"
+              className="font-medium text-violet-300"
             >
               Download
             </a>
@@ -87,8 +87,8 @@ export function LiveArtifactsTab(props: {
 
 function PanelMessage({ title, detail }: { title: string; detail: string }) {
   return (
-    <div className="rounded-xl border border-dashed border-zinc-300 bg-white px-4 py-8 text-center">
-      <p className="font-medium text-zinc-800">{title}</p>
+    <div className="rounded-xl border border-dashed border-white/15 bg-white/[0.03] px-4 py-8 text-center">
+      <p className="font-medium text-zinc-200">{title}</p>
       <p className="mt-1 text-xs text-zinc-500">{detail}</p>
     </div>
   );

@@ -21,8 +21,121 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+.forgeroom-shell {
+  --fr-canvas: #1b1b1b;
+  --fr-surface: #242424;
+  --fr-surface-raised: #292929;
+  --fr-border: #3a3a3a;
+  color-scheme: dark;
+  background: var(--fr-canvas);
+}
+
+/*
+ * Workspace pages share legacy utility-based cards. These scoped semantic overrides keep every
+ * trusted card readable in the dark conversation shell without changing the login experience.
+ */
+.forgeroom-shell :where(.bg-white) {
+  background-color: var(--fr-surface);
+}
+
+.forgeroom-shell :where([class*="bg-white/70"], [class*="bg-white/80"]) {
+  background-color: var(--fr-surface-raised);
+}
+
+.forgeroom-shell :where([class*="bg-zinc-50"], .bg-zinc-100) {
+  background-color: var(--fr-surface-raised);
+}
+
+.forgeroom-shell :where(.text-zinc-950, .text-zinc-900, .text-zinc-800) {
+  color: #f4f4f5;
+}
+
+.forgeroom-shell :where(.text-zinc-700, .text-zinc-600) {
+  color: #d4d4d8;
+}
+
+.forgeroom-shell :where(.text-zinc-500) {
+  color: #a1a1aa;
+}
+
+.forgeroom-shell :where(.text-zinc-400) {
+  color: #71717a;
+}
+
+.forgeroom-shell :where(.border-zinc-100, .border-zinc-200, .border-zinc-300, .divide-zinc-100) {
+  border-color: var(--fr-border);
+}
+
+.forgeroom-shell :where([class*="ring-zinc-"], [class*="ring-white/"]) {
+  --tw-ring-color: rgb(255 255 255 / 0.08);
+}
+
+.forgeroom-shell :where([class*="bg-violet-50"]) {
+  background-color: rgb(139 92 246 / 0.11);
+}
+
+.forgeroom-shell :where([class*="bg-sky-50"]) {
+  background-color: rgb(14 165 233 / 0.1);
+}
+
+.forgeroom-shell :where([class*="bg-emerald-50"]) {
+  background-color: rgb(16 185 129 / 0.1);
+}
+
+.forgeroom-shell :where([class*="bg-amber-50"]) {
+  background-color: rgb(245 158 11 / 0.1);
+}
+
+.forgeroom-shell :where([class*="bg-red-50"]) {
+  background-color: rgb(239 68 68 / 0.1);
+}
+
+.forgeroom-shell :where(.text-violet-700, .text-violet-800, .text-violet-900) {
+  color: #c4b5fd;
+}
+
+.forgeroom-shell :where(.text-sky-700, .text-sky-800, .text-sky-900) {
+  color: #7dd3fc;
+}
+
+.forgeroom-shell :where(.text-emerald-700, .text-emerald-800, .text-emerald-900) {
+  color: #6ee7b7;
+}
+
+.forgeroom-shell :where(.text-amber-700, .text-amber-800, .text-amber-900) {
+  color: #fcd34d;
+}
+
+.forgeroom-shell :where(.text-red-700, .text-red-800, .text-red-900) {
+  color: #fca5a5;
+}
+
+.forgeroom-shell :where([class*="border-violet-"]) {
+  border-color: rgb(167 139 250 / 0.28);
+}
+
+.forgeroom-shell :where([class*="border-sky-"]) {
+  border-color: rgb(56 189 248 / 0.24);
+}
+
+.forgeroom-shell :where([class*="border-emerald-"]) {
+  border-color: rgb(52 211 153 / 0.24);
+}
+
+.forgeroom-shell :where([class*="border-amber-"]) {
+  border-color: rgb(251 191 36 / 0.28);
+}
+
+.forgeroom-shell :where([class*="border-red-"]) {
+  border-color: rgb(248 113 113 / 0.28);
+}
+
+.forgeroom-shell :where(input, textarea, select) {
+  caret-color: #a78bfa;
+}
+
 :where(button, a, input, textarea, select, summary):focus-visible {
-  outline: 2px solid #7c3aed;
+  outline: 2px solid #a78bfa;
   outline-offset: 2px;
 }
 

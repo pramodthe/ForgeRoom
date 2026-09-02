@@ -1,11 +1,18 @@
 import { useMutation } from "@tanstack/react-query";
-import { Link, Navigate, useNavigate, useSearch } from "@tanstack/react-router";
+import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import { useState, type FormEvent } from "react";
 import { HostButton } from "@forgeroom/ui-components";
 import { login } from "../auth-api";
 import { useSession } from "../auth/session-context";
 import { resolveDefaultChannelId } from "../api/workspace-api";
-import { postLoginDestination, loginPath } from "../routes/paths";
+import { isFixtureMode } from "../api/mode";
+import { isFixtureOnboardingComplete } from "../onboarding/fixture-onboarding";
+import {
+  postLoginDestination,
+  loginPath,
+  onboardingPath,
+  workspaceFeedPath,
+} from "../routes/paths";
 import { AuthenticatedChannelRedirect } from "../shell/authenticated-channel-redirect";
 
 export function LoginPage() {
@@ -13,7 +20,7 @@ export function LoginPage() {
   const search = useSearch({ from: "/login" });
   const { session, isLoading, refreshSession } = useSession();
   const [email, setEmail] = useState("owner@example.test");
-  const [password, setPassword] = useState("");
+  const [password, setPassword] = useState(isFixtureMode ? "demo" : "");
   const [error, setError] = useState<string | null>(null);
 
   const loginMutation = useMutation({
@@ -27,7 +34,12 @@ export function LoginPage() {
         return;
       }
       await navigate({
-        to: postLoginDestination(search.redirect, nextSession.workspace_id, channelId),
+        to:
+          isFixtureMode && !isFixtureOnboardingComplete(nextSession.workspace_id)
+            ? onboardingPath()
+            : search.redirect
+              ? postLoginDestination(search.redirect, nextSession.workspace_id, channelId)
+              : workspaceFeedPath(nextSession.workspace_id),
       });
     },
     onError: (err: Error) => setError(err.message),
@@ -104,6 +116,11 @@ export function LoginPage() {
           <p className="mt-2 text-sm leading-6 text-zinc-500">
             Sign in to coordinate coworkers and review governed actions.
           </p>
+          {isFixtureMode ? (
+            <p className="mt-3 rounded-lg bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
+              Demo credentials are prefilled. Select Enter workspace to continue.
+            </p>
+          ) : null}
           <form className="mt-8 space-y-4" onSubmit={onSubmit}>
             <label className="block text-xs font-medium text-zinc-700">
               Email
@@ -160,18 +177,4 @@ function LoginFeature({ title, detail }: { title: string; detail: string }) {
       <div className="mt-1 text-[11px] text-zinc-400">{detail}</div>
     </div>
   );
-}
-
-export function RootRedirect() {
-  const { session, isLoading } = useSession();
-
-  if (isLoading) {
-    return <p className="p-8 text-sm text-zinc-600">Loading session…</p>;
-  }
-
-  if (!session) {
-    return <Navigate to={loginPath()} />;
-  }
-
-  return <AuthenticatedChannelRedirect workspaceId={session.workspace_id} />;
 }

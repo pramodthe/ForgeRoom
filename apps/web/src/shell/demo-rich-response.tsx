@@ -5,7 +5,7 @@ import {
   recordFixtureApprovalDecision,
   type FixtureApprovalDecision,
 } from "../api/workspace-api";
-import { workspaceConnectionsPath } from "../routes/paths";
+import { workspaceConnectionsPath, workspaceTaskDetailPath } from "../routes/paths";
 
 const SUPPORT_DATA = [
   { label: "Billing", value: 38, color: "bg-violet-500" },
@@ -21,8 +21,89 @@ const SUPPORT_ROWS = [
   { theme: "Other", conversations: 51, escalation: "3.2%", trend: "-0.4%" },
 ] as const;
 
+export function supportEvidenceCsv(): string {
+  return [
+    "Theme,Conversations,Escalation,7d trend",
+    ...SUPPORT_ROWS.map(
+      (row) => `${row.theme},${row.conversations},${row.escalation},${row.trend}`,
+    ),
+  ].join("\n");
+}
+
+export function supportBriefPdf(): ArrayBuffer {
+  const stream = [
+    "BT",
+    "/F1 18 Tf",
+    "72 720 Td",
+    "(Support operations brief) Tj",
+    "0 -32 Td",
+    "/F1 11 Tf",
+    "(428 support conversations reviewed.) Tj",
+    "0 -18 Td",
+    "(Billing and onboarding are the main escalation drivers.) Tj",
+    "0 -18 Td",
+    "(Recommended action: update the billing response macro and review in seven days.) Tj",
+    "ET",
+  ].join("\n");
+  const objects = [
+    "<< /Type /Catalog /Pages 2 0 R >>",
+    "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>",
+    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+    `<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`,
+  ];
+  const offsets: number[] = [];
+  let pdf = "%PDF-1.4\n";
+  objects.forEach((object, index) => {
+    offsets.push(pdf.length);
+    pdf += `${index + 1} 0 obj\n${object}\nendobj\n`;
+  });
+  const xrefOffset = pdf.length;
+  pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  pdf += offsets.map((offset) => `${String(offset).padStart(10, "0")} 00000 n \n`).join("");
+  pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF\n`;
+  const bytes = new TextEncoder().encode(pdf);
+  return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+}
+
+function downloadFixtureFile(fileName: string, mimeType: string, contents: BlobPart): void {
+  const url = URL.createObjectURL(new Blob([contents], { type: mimeType }));
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = fileName;
+  document.body.append(anchor);
+  anchor.click();
+  anchor.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
+type FixtureChoiceOutcome =
+  { kind: "submitted"; answer: "reconnect" | "readonly" } | { kind: "cancelled" };
+
+function fixtureInteractionKey(workspaceId: string, interaction: string): string {
+  return `forgeroom:fixture:interaction:v1:${workspaceId}:${interaction}`;
+}
+
+function readFixtureInteraction<T>(workspaceId: string, interaction: string): T | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const value = window.localStorage.getItem(fixtureInteractionKey(workspaceId, interaction));
+    return value ? (JSON.parse(value) as T) : null;
+  } catch {
+    return null;
+  }
+}
+
+function recordFixtureInteraction(workspaceId: string, interaction: string, value: unknown): void {
+  window.localStorage.setItem(
+    fixtureInteractionKey(workspaceId, interaction),
+    JSON.stringify(value),
+  );
+}
+
 export function SupportInsightsCard() {
   const [view, setView] = useState<"chart" | "table">("chart");
+  const [sourceOpen, setSourceOpen] = useState(false);
   return (
     <section className="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm">
       <div className="flex items-start justify-between gap-4 border-b border-zinc-100 px-4 py-3">
@@ -101,10 +182,26 @@ export function SupportInsightsCard() {
       </div>
       <div className="flex items-center justify-between bg-zinc-50 px-4 py-2 text-[11px] text-zinc-500">
         <span>Source: Support export · revision 3</span>
-        <button type="button" className="font-medium text-zinc-700 hover:text-zinc-950">
+        <button
+          type="button"
+          className="font-medium text-zinc-700 hover:text-zinc-950"
+          aria-expanded={sourceOpen}
+          aria-controls="support-insights-source"
+          onClick={() => setSourceOpen((open) => !open)}
+        >
           View source
         </button>
       </div>
+      {sourceOpen ? (
+        <div
+          id="support-insights-source"
+          className="border-t border-zinc-100 px-4 py-3 text-xs leading-5 text-zinc-500"
+          role="note"
+        >
+          Support export · 428 synthetic conversations · Aug 19–26 · revision 3. The chart and table
+          are derived from the same stored fixture artifact.
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -192,7 +289,17 @@ export function SupportEvidenceTable() {
       </div>
       <footer className="flex items-center justify-between bg-zinc-50 px-4 py-2 text-[11px] text-zinc-500">
         <span>Source artifact art_support_csv · revision 3</span>
-        <button type="button" className="font-medium text-zinc-700">
+        <button
+          type="button"
+          className="font-medium text-zinc-700"
+          onClick={() =>
+            downloadFixtureFile(
+              "support-evidence.csv",
+              "text/csv;charset=utf-8",
+              supportEvidenceCsv(),
+            )
+          }
+        >
           Download full CSV
         </button>
       </footer>
@@ -201,6 +308,7 @@ export function SupportEvidenceTable() {
 }
 
 export function SupportBriefArtifactCard() {
+  const [previewOpen, setPreviewOpen] = useState(false);
   return (
     <section className="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm">
       <div className="grid grid-cols-[150px_1fr]">
@@ -237,18 +345,57 @@ export function SupportBriefArtifactCard() {
             <button
               type="button"
               className="rounded-lg bg-zinc-950 px-3 py-2 text-xs font-semibold text-white"
+              aria-expanded={previewOpen}
+              aria-controls="support-brief-preview"
+              onClick={() => setPreviewOpen((open) => !open)}
             >
               Open authenticated preview
             </button>
             <button
               type="button"
               className="rounded-lg border border-zinc-200 px-3 py-2 text-xs font-medium text-zinc-700"
+              onClick={() =>
+                downloadFixtureFile(
+                  "support-operations-brief.pdf",
+                  "application/pdf",
+                  supportBriefPdf(),
+                )
+              }
             >
               Download
             </button>
           </div>
         </div>
       </div>
+      {previewOpen ? (
+        <div
+          id="support-brief-preview"
+          className="border-t border-zinc-100 bg-zinc-50 px-4 py-4"
+          role="region"
+          aria-label="Authenticated support brief preview"
+        >
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <div className="text-[10px] font-semibold uppercase tracking-wide text-violet-700">
+                Authenticated fixture preview
+              </div>
+              <h4 className="mt-1 text-sm font-semibold text-zinc-900">Executive summary</h4>
+              <p className="mt-1 text-xs leading-5 text-zinc-600">
+                Resolution time improved 17%. Billing and onboarding remain the largest escalation
+                drivers. Update the billing response macro, assign an owner, and review the impact
+                after seven days.
+              </p>
+            </div>
+            <button
+              type="button"
+              className="rounded-lg border border-zinc-200 px-2 py-1 text-[11px] text-zinc-600"
+              onClick={() => setPreviewOpen(false)}
+            >
+              Close preview
+            </button>
+          </div>
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -304,9 +451,12 @@ export function OperationsPlanCards({ workspaceId }: { workspaceId: string }) {
           <span className="text-zinc-500">
             Assigned to <strong className="font-medium text-zinc-800">Operator</strong>
           </span>
-          <button type="button" className="font-medium text-violet-700 hover:text-violet-900">
+          <Link
+            to={workspaceTaskDetailPath(workspaceId, "task_billing_003")}
+            className="font-medium text-violet-700 hover:text-violet-900"
+          >
             Open task →
-          </button>
+          </Link>
         </div>
       </section>
 
@@ -386,9 +536,23 @@ export function OperationsPlanCards({ workspaceId }: { workspaceId: string }) {
 }
 
 export function ConnectionRecoveryCards({ workspaceId }: { workspaceId: string }) {
-  const [answer, setAnswer] = useState("reconnect");
-  const [submitted, setSubmitted] = useState(false);
-  const [questionAnswered, setQuestionAnswered] = useState(false);
+  const initialChoice = readFixtureInteraction<FixtureChoiceOutcome>(
+    workspaceId,
+    "recovery-choice",
+  );
+  const [answer, setAnswer] = useState<"reconnect" | "readonly">(
+    initialChoice?.kind === "submitted" ? initialChoice.answer : "reconnect",
+  );
+  const [choiceOutcome, setChoiceOutcome] = useState<FixtureChoiceOutcome | null>(initialChoice);
+  const [questionAnswer, setQuestionAnswer] = useState("Pramod");
+  const [recordedQuestionAnswer, setRecordedQuestionAnswer] = useState<string | null>(() =>
+    readFixtureInteraction<string>(workspaceId, "connector-owner"),
+  );
+
+  function recordChoice(outcome: FixtureChoiceOutcome) {
+    recordFixtureInteraction(workspaceId, "recovery-choice", outcome);
+    setChoiceOutcome(outcome);
+  }
 
   return (
     <div className="space-y-3">
@@ -424,19 +588,27 @@ export function ConnectionRecoveryCards({ workspaceId }: { workspaceId: string }
         <p className="mt-1 text-xs leading-5 text-zinc-600">
           This answer only guides Operator. It does not reconnect an account or approve an action.
         </p>
-        {submitted ? (
-          <p
-            className="mt-3 rounded-lg bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-800"
-            role="status"
-          >
-            Choice recorded: {answer === "reconnect" ? "wait for reconnect" : "finish read-only"}.
-          </p>
+        {choiceOutcome ? (
+          <div className="mt-3 rounded-lg bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-800">
+            <p role="status">
+              {choiceOutcome.kind === "submitted"
+                ? `Choice recorded: ${choiceOutcome.answer === "reconnect" ? "wait for reconnect" : "finish read-only"}.`
+                : "Choice cancelled. No answer was recorded."}
+            </p>
+            <button
+              type="button"
+              className="mt-2 text-[11px] font-semibold underline underline-offset-2"
+              onClick={() => setChoiceOutcome(null)}
+            >
+              Choose again
+            </button>
+          </div>
         ) : (
           <form
             className="mt-3 space-y-2"
             onSubmit={(event) => {
               event.preventDefault();
-              setSubmitted(true);
+              recordChoice({ kind: "submitted", answer });
             }}
           >
             <label className="flex cursor-pointer gap-2 rounded-xl border border-zinc-200 p-3 text-xs">
@@ -470,7 +642,7 @@ export function ConnectionRecoveryCards({ workspaceId }: { workspaceId: string }
             <div className="flex justify-end gap-2 pt-1">
               <button
                 type="button"
-                onClick={() => setAnswer("reconnect")}
+                onClick={() => recordChoice({ kind: "cancelled" })}
                 className="rounded-lg px-3 py-2 text-xs font-medium text-zinc-500"
               >
                 Cancel
@@ -497,23 +669,30 @@ export function ConnectionRecoveryCards({ workspaceId }: { workspaceId: string }
           Do not paste passwords, API keys, OAuth codes, or other credentials. One question is
           waiting; no approval shares this pause group.
         </p>
-        {questionAnswered ? (
+        {recordedQuestionAnswer ? (
           <p
             className="mt-3 rounded-lg bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-800"
             role="status"
           >
-            Answer encrypted and recorded. Resume will start after confirmation.
+            Prototype answer recorded locally for {recordedQuestionAnswer}. Runtime resume is not
+            connected in fixture mode.
           </p>
         ) : (
           <div className="mt-3 flex gap-2">
             <input
               aria-label="Connector review owner"
-              defaultValue="Pramod"
+              value={questionAnswer}
+              onChange={(event) => setQuestionAnswer(event.target.value)}
               className="min-w-0 flex-1 rounded-lg border border-amber-200 bg-white px-3 py-2 text-xs outline-none focus:border-amber-500"
             />
             <button
               type="button"
-              onClick={() => setQuestionAnswered(true)}
+              disabled={questionAnswer.trim().length === 0}
+              onClick={() => {
+                const recorded = questionAnswer.trim();
+                recordFixtureInteraction(workspaceId, "connector-owner", recorded);
+                setRecordedQuestionAnswer(recorded);
+              }}
               className="rounded-lg bg-zinc-950 px-3 py-2 text-xs font-semibold text-white"
             >
               Send answer

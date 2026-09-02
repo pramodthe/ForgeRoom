@@ -4,6 +4,7 @@ import {
   type MentionRouterCoworker,
 } from "@forgeroom/orchestration/router";
 import type { ChannelRosterCoworker } from "../api/workspace-api";
+import { toolLabels } from "../ui/tool-labels";
 
 export type ComposerMessageCommand = {
   body: string;
@@ -26,7 +27,7 @@ export type ComposerRecipientPreview = {
 function rosterAvailabilityForRouting(
   availability: ChannelRosterCoworker["availability"],
 ): boolean {
-  return availability !== "disabled" && availability !== "cancelling" && availability !== "offline";
+  return availability === "available";
 }
 
 export function rosterToRouterCoworkers(
@@ -57,7 +58,7 @@ export function previewComposerRecipients(input: {
   const rosterByHandle = new Map(input.roster.map((row) => [row.handle.toLowerCase(), row]));
   const recipients = resolution.recipient_handles.map((handle) => {
     const row = rosterByHandle.get(handle.toLowerCase());
-    const tools = row?.effective_tools ?? [];
+    const tools = toolLabels(row?.effective_tools ?? []);
     const toolsSummary =
       tools.length === 0
         ? "No tools granted"

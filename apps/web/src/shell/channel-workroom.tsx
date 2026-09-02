@@ -55,15 +55,15 @@ export function ChannelWorkroom({ workspaceId, channelId }: ChannelWorkroomProps
   return (
     <ChannelWorkroomUiProvider key={channelId}>
       <TrustedHitlHostProvider>
-        <div className="flex h-full min-h-0 min-w-[1440px] flex-col lg:flex-row">
+        <div className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-[#1b1b1b] lg:flex-row">
           <ChannelListPane
             workspaceId={workspaceId}
             channels={channelsQuery.data ?? []}
             selectedChannelId={channelId}
             connections={connections}
           />
-          <div className="flex min-w-0 flex-1 justify-center">
-            <div className="flex h-full w-full max-w-[820px] min-w-0 flex-col border-x border-zinc-200">
+          <div className="flex min-w-0 flex-1 justify-center bg-[#1d1d1d]">
+            <div className="flex h-full w-full min-w-0 flex-col">
               <ChannelTimelinePane
                 channel={channel}
                 workspaceId={workspaceId}

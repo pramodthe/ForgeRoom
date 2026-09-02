@@ -30,6 +30,7 @@ import {
   parseWorkspaceIdFromPath,
   postLoginDestination,
   workspaceChannelPath,
+  workspaceFeedPath,
   workspaceTasksPath,
 } from "./routes/paths";
 import { P0_REGISTERED_ROUTES } from "./router";
@@ -39,6 +40,8 @@ describe("P0 route contract", () => {
     expect(P0_REGISTERED_ROUTES).toEqual([
       "/",
       "/login",
+      "/onboarding",
+      "/w/$workspaceId/feed",
       "/w/$workspaceId/channels",
       "/w/$workspaceId/channels/$channelId",
       "/w/$workspaceId/tasks",
@@ -56,6 +59,7 @@ describe("P0 route contract", () => {
       "/w/workspace_1/channels/ch_general_001",
     );
     expect(workspaceTasksPath(MOCK_WORKSPACE_ID)).toBe("/w/workspace_1/tasks");
+    expect(workspaceFeedPath(MOCK_WORKSPACE_ID)).toBe("/w/workspace_1/feed");
   });
 
   it("encodes reserved characters in dynamic path segments", () => {
@@ -65,6 +69,8 @@ describe("P0 route contract", () => {
 
   it("documents the UX path contract", () => {
     expect(P0_ROUTE_CONTRACT).toContain("/login");
+    expect(P0_ROUTE_CONTRACT).toContain("/onboarding");
+    expect(P0_ROUTE_CONTRACT).toContain("/w/$workspaceId/feed");
     expect(P0_ROUTE_CONTRACT).toContain("/w/$workspaceId/channels/$channelId");
     expect(P0_ROUTE_CONTRACT).toContain("/w/$workspaceId/connections");
   });
