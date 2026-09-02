@@ -119,5 +119,3 @@ Before implementing: read `specs/README.md`, `specs/AGENT_WORKFLOW.md`, the task
 ## Merge policy
 
 Merge PRs into `main` with a **merge commit** (`gh pr merge --merge`). Do not squash or rebase unless explicitly asked. Preserve branch history so task work and review fixes stay inspectable.
-
-`AGENTS.md` additionally describes the Qodo review toolbox conventions used in this repo (pre-PR local review, structured PR findings, Review Standards).
